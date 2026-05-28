@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 rustapi-core = { path = "../core" }
 rustapi-sql = { path = "../sql" }
+anyhow.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
 serde.workspace = true
