@@ -2,7 +2,7 @@
 
 use crate::registry::SchemaRegistry;
 use chrono::Utc;
-use rustapi_core::{ContentType, Error, NewContentType};
+use rustapi_core::{ContentType, Error, NewContentType, PatchContentType};
 use sqlx::{PgPool, Postgres, Transaction};
 use tracing::instrument;
 use uuid::Uuid;
@@ -73,6 +73,90 @@ impl SchemaService {
         self.registry.insert(ct.clone()).await;
 
         Ok(ct)
+    }
+
+    #[instrument(skip(self, payload), fields(name = %name))]
+    pub async fn patch(
+        &self,
+        name: &str,
+        payload: PatchContentType,
+    ) -> Result<ContentType, Error> {
+        let existing = self
+            .registry
+            .get(name)
+            .await
+            .ok_or(Error::NotFound)?;
+        payload.validate(&existing).map_err(Error::from)?;
+
+        let mut new_fields = existing.fields.clone();
+        new_fields.retain(|f| !payload.drop_fields.contains(&f.name));
+        for f in &payload.add_fields {
+            new_fields.push(f.clone());
+        }
+
+        let mut tx: Transaction<'_, Postgres> = self.pool.begin().await.map_err(internal)?;
+
+        for drop_name in &payload.drop_fields {
+            let sql = rustapi_sql::drop_column(name, drop_name)
+                .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
+            sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
+        }
+        for f in &payload.add_fields {
+            let sql = rustapi_sql::add_column(name, f)
+                .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
+            sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
+        }
+
+        let new_display = payload
+            .display_name
+            .clone()
+            .unwrap_or_else(|| existing.display_name.clone());
+
+        let now = Utc::now();
+        sqlx::query(
+            "UPDATE _content_types SET display_name = $1, fields = $2, updated_at = $3 WHERE name = $4",
+        )
+        .bind(&new_display)
+        .bind(sqlx::types::Json(&new_fields))
+        .bind(now)
+        .bind(name)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_db_err)?;
+
+        tx.commit().await.map_err(internal)?;
+
+        let updated = ContentType {
+            id: existing.id,
+            name: existing.name.clone(),
+            display_name: new_display,
+            fields: new_fields,
+            created_at: existing.created_at,
+            updated_at: now,
+        };
+        self.registry.insert(updated.clone()).await;
+        Ok(updated)
+    }
+
+    #[instrument(skip(self), fields(name = %name))]
+    pub async fn delete(&self, name: &str) -> Result<(), Error> {
+        if self.registry.get(name).await.is_none() {
+            return Err(Error::NotFound);
+        }
+        let drop_sql = rustapi_sql::drop_table(name)
+            .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
+
+        let mut tx = self.pool.begin().await.map_err(internal)?;
+        sqlx::query(&drop_sql).execute(&mut *tx).await.map_err(map_db_err)?;
+        sqlx::query("DELETE FROM _content_types WHERE name = $1")
+            .bind(name)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_db_err)?;
+        tx.commit().await.map_err(internal)?;
+
+        self.registry.remove(name).await;
+        Ok(())
     }
 }
 
