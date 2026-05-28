@@ -15,7 +15,7 @@ pub fn is_valid_ident(s: &str) -> bool {
 }
 
 pub fn is_reserved(s: &str) -> bool {
-    RESERVED_FIELD_NAMES.iter().any(|r| *r == s)
+    RESERVED_FIELD_NAMES.contains(&s)
 }
 
 #[cfg(test)]
