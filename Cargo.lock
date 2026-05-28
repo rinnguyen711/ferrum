@@ -1803,6 +1803,7 @@ dependencies = [
  "chrono",
  "rustapi-core",
  "serde_json",
+ "thiserror 1.0.69",
  "uuid",
 ]
 
