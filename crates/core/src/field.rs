@@ -1,5 +1,6 @@
 //! Field types and value coercion.
 
+use crate::reserved::{is_reserved, is_valid_ident};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -127,8 +128,6 @@ mod tests {
         );
     }
 }
-
-use crate::reserved::{is_reserved, is_valid_ident};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Field {
