@@ -1,0 +1,228 @@
+//! DML string + bind-plan builders. Always returns `(String, Vec<BoundValue>)`.
+//! HTTP layer translates `BoundValue` into sqlx binds.
+
+use crate::filter::Filter;
+use crate::ident::{quote_ident, table_name, IdentError};
+use crate::sort::Sort;
+use rustapi_core::{BoundValue, ContentType, FieldKind};
+use std::collections::BTreeMap;
+use uuid::Uuid;
+
+#[derive(Debug, thiserror::Error)]
+pub enum DmlError {
+    #[error(transparent)]
+    Ident(#[from] IdentError),
+    #[error("unknown field `{0}` in payload")]
+    UnknownField(String),
+}
+
+pub type SqlAndBinds = (String, Vec<BoundValue>);
+
+/// `INSERT INTO ct_<name> (cols...) VALUES ($1, $2, ...) RETURNING *`
+pub fn insert(ct: &ContentType, values: &BTreeMap<String, BoundValue>) -> Result<SqlAndBinds, DmlError> {
+    let table = table_name(&ct.name)?;
+    let allowed: std::collections::HashSet<&str> = ct.fields.iter().map(|f| f.name.as_str()).collect();
+    let mut cols = vec![];
+    let mut placeholders = vec![];
+    let mut binds = vec![];
+    for (i, (name, val)) in values.iter().enumerate() {
+        if !allowed.contains(name.as_str()) {
+            return Err(DmlError::UnknownField(name.clone()));
+        }
+        cols.push(quote_ident(name)?);
+        placeholders.push(format!("${}", i + 1));
+        binds.push(val.clone());
+    }
+    let sql = if cols.is_empty() {
+        format!("INSERT INTO {table} DEFAULT VALUES RETURNING *")
+    } else {
+        let cols_s = cols.join(", ");
+        let ph_s = placeholders.join(", ");
+        format!("INSERT INTO {table} ({cols_s}) VALUES ({ph_s}) RETURNING *")
+    };
+    Ok((sql, binds))
+}
+
+/// `UPDATE ct_<name> SET col=$1, ..., updated_at=now() WHERE id=$N RETURNING *`
+pub fn update(
+    ct: &ContentType,
+    id: Uuid,
+    values: &BTreeMap<String, BoundValue>,
+) -> Result<SqlAndBinds, DmlError> {
+    let table = table_name(&ct.name)?;
+    let allowed: std::collections::HashSet<&str> = ct.fields.iter().map(|f| f.name.as_str()).collect();
+    let mut sets = vec![];
+    let mut binds: Vec<BoundValue> = vec![];
+    for (i, (name, val)) in values.iter().enumerate() {
+        if !allowed.contains(name.as_str()) {
+            return Err(DmlError::UnknownField(name.clone()));
+        }
+        let col = quote_ident(name)?;
+        let placeholder = i + 1;
+        sets.push(format!("{col} = ${placeholder}"));
+        binds.push(val.clone());
+    }
+    sets.push("\"updated_at\" = now()".into());
+    let id_placeholder = binds.len() + 1;
+    binds.push(BoundValue::Str(id.to_string()));
+    let sets_s = sets.join(", ");
+    let sql = format!(
+        "UPDATE {table} SET {sets_s} WHERE \"id\" = ${id_placeholder}::uuid RETURNING *"
+    );
+    Ok((sql, binds))
+}
+
+/// `DELETE FROM ct_<name> WHERE id=$1`
+pub fn delete(ct_name: &str, id: Uuid) -> Result<SqlAndBinds, DmlError> {
+    let table = table_name(ct_name)?;
+    let sql = format!("DELETE FROM {table} WHERE \"id\" = $1::uuid");
+    Ok((sql, vec![BoundValue::Str(id.to_string())]))
+}
+
+/// `SELECT * FROM ct_<name> WHERE id=$1`
+pub fn select_by_id(ct_name: &str, id: Uuid) -> Result<SqlAndBinds, DmlError> {
+    let table = table_name(ct_name)?;
+    let sql = format!("SELECT * FROM {table} WHERE \"id\" = $1::uuid");
+    Ok((sql, vec![BoundValue::Str(id.to_string())]))
+}
+
+/// `SELECT * FROM ct_<name> [WHERE ...] ORDER BY <col> <dir> LIMIT $1 OFFSET $2`
+pub fn select_list(
+    ct_name: &str,
+    _filter: &Filter,
+    sort: &Sort,
+    limit: i64,
+    offset: i64,
+) -> Result<SqlAndBinds, DmlError> {
+    let table = table_name(ct_name)?;
+    let col = quote_ident(&sort.column)?;
+    let dir = sort.dir.as_sql();
+    // Filter::None in v1 — no WHERE clause emitted.
+    let sql = format!(
+        "SELECT * FROM {table} ORDER BY {col} {dir} LIMIT $1 OFFSET $2"
+    );
+    Ok((sql, vec![BoundValue::I64(limit), BoundValue::I64(offset)]))
+}
+
+/// `SELECT count(*) FROM ct_<name>`
+pub fn count(ct_name: &str, _filter: &Filter) -> Result<SqlAndBinds, DmlError> {
+    let table = table_name(ct_name)?;
+    Ok((format!("SELECT count(*) FROM {table}"), vec![]))
+}
+
+/// Discriminator for `BoundValue` used by row-decoding helpers.
+pub fn pg_cast(kind: FieldKind) -> &'static str {
+    match kind {
+        FieldKind::String | FieldKind::Text => "text",
+        FieldKind::Integer => "int8",
+        FieldKind::Float => "float8",
+        FieldKind::Boolean => "bool",
+        FieldKind::Datetime => "timestamptz",
+        _ => "text",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sort::{Sort, SortDir};
+    use chrono::Utc;
+    use rustapi_core::{ContentType, Field};
+    use serde_json::json;
+
+    fn ct(fields: Vec<Field>) -> ContentType {
+        ContentType {
+            id: Uuid::nil(),
+            name: "post".into(),
+            display_name: "Post".into(),
+            fields,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn field(name: &str, kind: FieldKind) -> Field {
+        Field {
+            name: name.into(),
+            kind,
+            required: false,
+            unique: false,
+            default: json!(null),
+            max_length: None,
+            kind_meta: json!({}),
+        }
+    }
+
+    #[test]
+    fn insert_basic() {
+        let c = ct(vec![field("title", FieldKind::String)]);
+        let mut vals = BTreeMap::new();
+        vals.insert("title".into(), BoundValue::Str("Hi".into()));
+        let (sql, binds) = insert(&c, &vals).unwrap();
+        assert_eq!(sql, "INSERT INTO \"ct_post\" (\"title\") VALUES ($1) RETURNING *");
+        assert_eq!(binds, vec![BoundValue::Str("Hi".into())]);
+    }
+
+    #[test]
+    fn insert_empty_uses_defaults() {
+        let c = ct(vec![field("title", FieldKind::String)]);
+        let (sql, binds) = insert(&c, &BTreeMap::new()).unwrap();
+        assert_eq!(sql, "INSERT INTO \"ct_post\" DEFAULT VALUES RETURNING *");
+        assert!(binds.is_empty());
+    }
+
+    #[test]
+    fn insert_rejects_unknown_field() {
+        let c = ct(vec![field("title", FieldKind::String)]);
+        let mut vals = BTreeMap::new();
+        vals.insert("nope".into(), BoundValue::Null);
+        assert!(matches!(insert(&c, &vals), Err(DmlError::UnknownField(_))));
+    }
+
+    #[test]
+    fn update_sets_updated_at_and_id_clause() {
+        let c = ct(vec![field("title", FieldKind::String)]);
+        let mut vals = BTreeMap::new();
+        vals.insert("title".into(), BoundValue::Str("New".into()));
+        let id = Uuid::new_v4();
+        let (sql, binds) = update(&c, id, &vals).unwrap();
+        assert!(sql.starts_with("UPDATE \"ct_post\" SET \"title\" = $1"));
+        assert!(sql.contains("\"updated_at\" = now()"));
+        assert!(sql.ends_with("WHERE \"id\" = $2::uuid RETURNING *"));
+        assert_eq!(binds[0], BoundValue::Str("New".into()));
+        assert_eq!(binds[1], BoundValue::Str(id.to_string()));
+    }
+
+    #[test]
+    fn delete_works() {
+        let id = Uuid::new_v4();
+        let (sql, binds) = delete("post", id).unwrap();
+        assert_eq!(sql, "DELETE FROM \"ct_post\" WHERE \"id\" = $1::uuid");
+        assert_eq!(binds, vec![BoundValue::Str(id.to_string())]);
+    }
+
+    #[test]
+    fn select_by_id_works() {
+        let id = Uuid::new_v4();
+        let (sql, _binds) = select_by_id("post", id).unwrap();
+        assert_eq!(sql, "SELECT * FROM \"ct_post\" WHERE \"id\" = $1::uuid");
+    }
+
+    #[test]
+    fn select_list_orders_and_paginates() {
+        let s = Sort { column: "created_at".into(), dir: SortDir::Desc };
+        let (sql, binds) = select_list("post", &Filter::None, &s, 25, 50).unwrap();
+        assert_eq!(
+            sql,
+            "SELECT * FROM \"ct_post\" ORDER BY \"created_at\" DESC LIMIT $1 OFFSET $2"
+        );
+        assert_eq!(binds, vec![BoundValue::I64(25), BoundValue::I64(50)]);
+    }
+
+    #[test]
+    fn count_basic() {
+        let (sql, binds) = count("post", &Filter::None).unwrap();
+        assert_eq!(sql, "SELECT count(*) FROM \"ct_post\"");
+        assert!(binds.is_empty());
+    }
+}
