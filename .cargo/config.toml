@@ -1,0 +1,7 @@
+[build]
+# Keep default
+
+[target.'cfg(all())']
+rustflags = [
+    "-Dwarnings",
+]
