@@ -20,7 +20,7 @@
 
 ```toml
 [toolchain]
-channel = "1.82.0"
+channel = "1.88.0"
 components = ["rustfmt", "clippy"]
 profile = "minimal"
 ```
@@ -66,7 +66,7 @@ members = [
 
 [workspace.package]
 edition = "2021"
-rust-version = "1.82"
+rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 authors = ["rustapi contributors"]
 

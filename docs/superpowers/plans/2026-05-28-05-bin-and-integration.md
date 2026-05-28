@@ -739,7 +739,7 @@ Headless CMS framework in Rust. v1 in progress — see [design spec](docs/superp
 
 ## Dev
 
-Requires: Rust 1.82, Docker (for integration tests).
+Requires: Rust 1.88, Docker (for integration tests).
 
 ```sh
 # Build
