@@ -331,6 +331,13 @@ pub fn render_where(filter: &Filter, start_placeholder: usize) -> Result<(String
             (Op::Eq | Op::Ne, FilterValue::Null(_)) => {
                 return Err(DmlError::InvalidFilter("Eq/Ne require Bound value"));
             }
+            // Phase 2.2 ops: arms added in later tasks. Until then any
+            // attempt to render one bails with a clear error.
+            _ => {
+                return Err(DmlError::InvalidFilter(
+                    "operator not yet implemented in render_where",
+                ));
+            }
         };
         parts.push(fragment);
     }

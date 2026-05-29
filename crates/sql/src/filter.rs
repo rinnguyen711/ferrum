@@ -1,5 +1,6 @@
-//! Filter expressions. v1 shipped `None` only. Phase 2.1 adds equality + null
-//! ops combined with implicit AND. Combinators (OR / NOT) land in phase 2.3.
+//! Filter expressions. Phase 2.1 shipped `$eq` / `$ne` / `$null` combined with
+//! implicit AND. Phase 2.2 adds order / set / string operators. Combinators
+//! (`$or` / `$not`) land in phase 2.3.
 
 use rustapi_core::{BoundValue, FieldKind};
 
@@ -18,10 +19,7 @@ pub struct Condition {
     /// Already validated as an identifier by upstream callers. The SQL emitter
     /// re-validates via `quote_ident`.
     pub column: String,
-    /// Column kind, used by `render_where` to pick the right Postgres cast
-    /// for the placeholder. The parser fills this from the schema or the
-    /// `SYSTEM_COLUMNS` table; `BoundValue` alone can't disambiguate a Uuid
-    /// column from a String column at emission time.
+    /// Column kind, used by `render_where` to pick the right Postgres cast.
     pub kind: FieldKind,
     pub op: Op,
     pub value: FilterValue,
@@ -36,19 +34,61 @@ impl Condition {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Op {
+    // Phase 2.1
     Eq,
     Ne,
     IsNull,
+    // Phase 2.2 — order
+    Gt,
+    Gte,
+    Lt,
+    Lte,
+    // Phase 2.2 — set
+    In,
+    NotIn,
+    // Phase 2.2 — string
+    Contains,
+    StartsWith,
+    EndsWith,
+    ContainsI,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum FilterValue {
-    /// Used by `$eq` / `$ne`. When the inner `BoundValue` is `Null(kind)` the
-    /// emitter rewrites to `IS NULL` / `IS NOT NULL`.
+    /// Used by `$eq` / `$ne` / order ops / string ops. When the inner
+    /// `BoundValue` is `Null(kind)` the emitter rewrites `Eq`/`Ne` to
+    /// `IS NULL` / `IS NOT NULL` (phase 2.1 behavior).
     Bound(BoundValue),
     /// Used by `$null`: true = IS NULL, false = IS NOT NULL.
     Null(bool),
+    /// Used by `$in` / `$nin`. Empty list is rejected by the parser
+    /// AND defensively re-checked by `render_where`.
+    List(Vec<BoundValue>),
+}
+
+/// True iff `op` is meaningful for `kind`. The parser enforces the rejection;
+/// the emitter trusts this contract.
+pub fn op_allows_kind(op: Op, kind: FieldKind) -> bool {
+    use FieldKind::*;
+    use Op::*;
+    match op {
+        Eq | Ne | IsNull => matches!(
+            kind,
+            String | Text | Integer | Float | Boolean | Datetime | Uuid
+        ),
+        Gt | Gte | Lt | Lte => matches!(kind, Integer | Float | Datetime),
+        In | NotIn => matches!(
+            kind,
+            String | Text | Integer | Float | Boolean | Datetime | Uuid
+        ),
+        Contains | StartsWith | EndsWith | ContainsI => {
+            matches!(kind, String | Text)
+        }
+        // Same-crate `#[non_exhaustive]` does not require a wildcard. If a
+        // new `Op` lands in this crate, the build breaks here until the
+        // matrix gets an explicit entry — intentional safety.
+    }
 }
 
 #[cfg(test)]
@@ -66,5 +106,77 @@ mod tests {
         assert_eq!(c.column, "title");
         assert_eq!(c.kind, FieldKind::String);
         assert_eq!(c.op, Op::Eq);
+    }
+
+    #[test]
+    fn op_allows_kind_order_only_on_numeric_and_datetime() {
+        for kind in [FieldKind::Integer, FieldKind::Float, FieldKind::Datetime] {
+            assert!(op_allows_kind(Op::Gt, kind));
+            assert!(op_allows_kind(Op::Gte, kind));
+            assert!(op_allows_kind(Op::Lt, kind));
+            assert!(op_allows_kind(Op::Lte, kind));
+        }
+        for kind in [
+            FieldKind::String,
+            FieldKind::Text,
+            FieldKind::Boolean,
+            FieldKind::Uuid,
+        ] {
+            assert!(!op_allows_kind(Op::Gt, kind));
+            assert!(!op_allows_kind(Op::Lt, kind));
+        }
+    }
+
+    #[test]
+    fn op_allows_kind_string_ops_only_on_string_kinds() {
+        for kind in [FieldKind::String, FieldKind::Text] {
+            assert!(op_allows_kind(Op::Contains, kind));
+            assert!(op_allows_kind(Op::StartsWith, kind));
+            assert!(op_allows_kind(Op::EndsWith, kind));
+            assert!(op_allows_kind(Op::ContainsI, kind));
+        }
+        for kind in [
+            FieldKind::Integer,
+            FieldKind::Float,
+            FieldKind::Boolean,
+            FieldKind::Datetime,
+            FieldKind::Uuid,
+        ] {
+            assert!(!op_allows_kind(Op::Contains, kind));
+            assert!(!op_allows_kind(Op::ContainsI, kind));
+        }
+    }
+
+    #[test]
+    fn op_allows_kind_set_ops_on_every_kind() {
+        for kind in [
+            FieldKind::String,
+            FieldKind::Text,
+            FieldKind::Integer,
+            FieldKind::Float,
+            FieldKind::Boolean,
+            FieldKind::Datetime,
+            FieldKind::Uuid,
+        ] {
+            assert!(op_allows_kind(Op::In, kind));
+            assert!(op_allows_kind(Op::NotIn, kind));
+        }
+    }
+
+    #[test]
+    fn op_allows_kind_phase_2_1_ops_unchanged() {
+        for kind in [
+            FieldKind::String,
+            FieldKind::Text,
+            FieldKind::Integer,
+            FieldKind::Float,
+            FieldKind::Boolean,
+            FieldKind::Datetime,
+            FieldKind::Uuid,
+        ] {
+            assert!(op_allows_kind(Op::Eq, kind));
+            assert!(op_allows_kind(Op::Ne, kind));
+            assert!(op_allows_kind(Op::IsNull, kind));
+        }
     }
 }
