@@ -24,6 +24,8 @@ pub struct ValidationErrors {
     pub fields: Vec<FieldValidation>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub db: Option<DbInfo>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -32,11 +34,20 @@ pub struct FieldValidation {
     pub reason: String,
 }
 
+/// Surfaces a Postgres error to the client per spec §5.6
+/// (`error.details.db = {code, message}`).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DbInfo {
+    pub code: String,
+    pub message: String,
+}
+
 impl ValidationErrors {
     pub fn single(msg: impl Into<String>) -> Self {
         Self {
             fields: vec![],
             message: Some(msg.into()),
+            db: None,
         }
     }
 
@@ -47,6 +58,18 @@ impl ValidationErrors {
                 reason: reason.into(),
             }],
             message: None,
+            db: None,
+        }
+    }
+
+    pub fn db(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            fields: vec![],
+            message: Some("database rejected the operation".into()),
+            db: Some(DbInfo {
+                code: code.into(),
+                message: message.into(),
+            }),
         }
     }
 }

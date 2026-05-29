@@ -181,12 +181,19 @@ impl PatchContentType {
         }
         let existing_names: std::collections::HashSet<&str> =
             existing.fields.iter().map(|f| f.name.as_str()).collect();
+        let drop_set: std::collections::HashSet<&str> =
+            self.drop_fields.iter().map(|s| s.as_str()).collect();
 
         for f in &self.add_fields {
             f.validate().map_err(|e| PatchError::BadField {
                 name: f.name.clone(),
                 source: e,
             })?;
+            // Reject drop+add of the same name in one patch: this would be a
+            // rename or kind change, both unsupported in v1 per spec §4.1.
+            if drop_set.contains(f.name.as_str()) {
+                return Err(PatchError::DuplicateAddField(f.name.clone()));
+            }
             if existing_names.contains(f.name.as_str()) {
                 return Err(PatchError::DuplicateAddField(f.name.clone()));
             }
@@ -272,5 +279,27 @@ mod patch_tests {
             drop_fields: vec![],
         };
         assert!(matches!(p.validate(&existing()).unwrap_err(), PatchError::DuplicateAddField(_)));
+    }
+
+    #[test]
+    fn drop_then_add_same_name_rejected() {
+        // Spec §4.1: rename and kind change are unsupported in v1.
+        let p = PatchContentType {
+            display_name: None,
+            add_fields: vec![Field {
+                name: "title".into(),
+                kind: FieldKind::Text,
+                required: false,
+                unique: false,
+                default: json!(null),
+                max_length: None,
+                kind_meta: json!({}),
+            }],
+            drop_fields: vec!["title".into()],
+        };
+        assert!(matches!(
+            p.validate(&existing()).unwrap_err(),
+            PatchError::DuplicateAddField(_)
+        ));
     }
 }

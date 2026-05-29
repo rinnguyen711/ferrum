@@ -18,7 +18,9 @@ pub enum FieldKind {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BoundValue {
-    Null,
+    /// Carries the field kind so the sqlx binder can emit a kind-typed NULL
+    /// (avoids PG `42804 datatype mismatch` on placeholder cast).
+    Null(FieldKind),
     Str(String),
     I64(i64),
     F64(f64),
@@ -30,7 +32,7 @@ impl BoundValue {
     pub fn from_json(kind: FieldKind, v: &serde_json::Value) -> Result<Self, CoerceError> {
         use serde_json::Value as V;
         if v.is_null() {
-            return Ok(BoundValue::Null);
+            return Ok(BoundValue::Null(kind));
         }
         match (kind, v) {
             (FieldKind::String | FieldKind::Text, V::String(s)) => Ok(BoundValue::Str(s.clone())),
@@ -116,8 +118,19 @@ mod tests {
     fn coerce_null_passes_through() {
         assert_eq!(
             BoundValue::from_json(FieldKind::String, &serde_json::Value::Null).unwrap(),
-            BoundValue::Null
+            BoundValue::Null(FieldKind::String)
         );
+    }
+
+    #[test]
+    fn null_carries_kind() {
+        // Each call returns a BoundValue::Null tagged with the requested kind.
+        for kind in [FieldKind::Integer, FieldKind::Boolean, FieldKind::Datetime] {
+            assert_eq!(
+                BoundValue::from_json(kind, &serde_json::Value::Null).unwrap(),
+                BoundValue::Null(kind)
+            );
+        }
     }
 
     #[test]

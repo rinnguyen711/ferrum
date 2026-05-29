@@ -8,7 +8,7 @@ pub mod principal;
 pub mod reserved;
 pub mod system;
 
-pub use error::{Error, FieldValidation, ValidationErrors};
+pub use error::{DbInfo, Error, FieldValidation, ValidationErrors};
 pub use event::Event;
 pub use field::{BoundValue, CoerceError, Field, FieldError, FieldKind};
 pub use principal::{Action, Principal};

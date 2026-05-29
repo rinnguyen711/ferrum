@@ -116,7 +116,19 @@ async fn update(
 ) -> Result<Json<Value>, ApiError> {
     ensure(&state, &principal, Action::ContentWrite, &ct_name).await?;
     let ct = state.schemas.registry().get(&ct_name).await.ok_or(ApiError(Error::NotFound))?;
-    let binds_map = body_to_binds(&ct, body, true)?;
+    let mut binds_map = body_to_binds(&ct, body, true)?;
+
+    // PUT is full-replace per spec §6.2: fields absent from the body that are
+    // not required get explicitly nulled. Required-with-no-default would have
+    // been rejected by body_to_binds; required-with-default keeps its existing
+    // value (we can't infer the default safely from the wire-encoded SQL
+    // literal, so we omit and let the column keep its current value — same
+    // shape as if the client had POSTed the entry without that field).
+    for f in &ct.fields {
+        if !binds_map.contains_key(&f.name) && !f.required {
+            binds_map.insert(f.name.clone(), rustapi_core::BoundValue::Null(f.kind));
+        }
+    }
 
     let (sql, binds) = rustapi_sql::update(&ct, id, &binds_map)
         .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
@@ -149,14 +161,15 @@ async fn delete_one(
 fn db(e: sqlx::Error) -> ApiError {
     if let sqlx::Error::Database(d) = &e {
         if let Some(code) = d.code() {
-            match code.as_ref() {
-                "23505" => return ApiError(Error::Conflict(d.message().to_string())),
-                "23514" | "23503" | "23502" => {
-                    return ApiError(Error::Validation(rustapi_core::ValidationErrors::single(d.message())))
-                }
-                _ => {}
+            if code.as_ref() == "23505" {
+                return ApiError(Error::Conflict(d.message().to_string()));
             }
         }
+        let code = d.code().map(|c| c.into_owned()).unwrap_or_default();
+        return ApiError(Error::Validation(rustapi_core::ValidationErrors::db(
+            code,
+            d.message(),
+        )));
     }
     ApiError(Error::Internal(anyhow::anyhow!(e)))
 }

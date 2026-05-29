@@ -169,14 +169,14 @@ fn map_db_err(e: sqlx::Error) -> Error {
         if let Some(code) = db.code() {
             // 23505 = unique_violation; 23514 = check_violation;
             // 23503 = fk_violation; 23502 = not_null_violation
-            match code.as_ref() {
-                "23505" => return Error::Conflict(db.message().to_string()),
-                "23514" | "23503" | "23502" => {
-                    return Error::Validation(rustapi_core::ValidationErrors::single(db.message()))
-                }
-                _ => {}
+            if code.as_ref() == "23505" {
+                return Error::Conflict(db.message().to_string());
             }
         }
+        // Per spec §5.6, surface other DB errors (DDL failures, constraint
+        // violations) as 422 with the PG code + message under details.db.
+        let code = db.code().map(|c| c.into_owned()).unwrap_or_default();
+        return Error::Validation(rustapi_core::ValidationErrors::db(code, db.message()));
     }
     internal(e)
 }

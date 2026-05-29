@@ -21,10 +21,23 @@ impl IntoResponse for ApiError {
             Error::NotFound => (StatusCode::NOT_FOUND, "not_found", "resource not found".to_string(), None),
             Error::Validation(v) => {
                 let msg = v.message.clone().unwrap_or_else(|| "validation failed".into());
-                let details = if v.fields.is_empty() {
+                let mut detail_obj = serde_json::Map::new();
+                if !v.fields.is_empty() {
+                    detail_obj.insert(
+                        "fields".into(),
+                        serde_json::to_value(&v.fields).unwrap_or(serde_json::Value::Null),
+                    );
+                }
+                if let Some(db) = &v.db {
+                    detail_obj.insert(
+                        "db".into(),
+                        serde_json::to_value(db).unwrap_or(serde_json::Value::Null),
+                    );
+                }
+                let details = if detail_obj.is_empty() {
                     None
                 } else {
-                    Some(serde_json::to_value(&v.fields).unwrap_or(serde_json::Value::Null))
+                    Some(serde_json::Value::Object(detail_obj))
                 };
                 (StatusCode::UNPROCESSABLE_ENTITY, "validation_failed", msg, details)
             }
@@ -74,6 +87,20 @@ mod tests {
         let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(body["error"]["code"], "validation_failed");
-        assert_eq!(body["error"]["details"][0]["field"], "title");
+        assert_eq!(body["error"]["details"]["fields"][0]["field"], "title");
+    }
+
+    #[tokio::test]
+    async fn validation_includes_db_info() {
+        let v = rustapi_core::ValidationErrors::db("23502", "null value in column \"x\"");
+        let resp = ApiError(Error::Validation(v)).into_response();
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["error"]["details"]["db"]["code"], "23502");
+        assert!(body["error"]["details"]["db"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("null value"));
     }
 }

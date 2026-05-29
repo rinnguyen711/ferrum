@@ -96,6 +96,52 @@ async fn unknown_field_rejected() {
 }
 
 #[tokio::test]
+async fn put_full_replace_nulls_absent_optional_fields() {
+    let app = TestApp::spawn().await;
+    make_post_type(&app).await;
+
+    // Create with all optional fields populated
+    let resp = app
+        .admin(app.client.post(app.url("/api/post")))
+        .json(&json!({"title": "Hi", "views": 99, "published": true}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201);
+    let id = resp.json::<serde_json::Value>().await.unwrap()["id"].as_str().unwrap().to_string();
+
+    // PUT without `views` — full replace should null it
+    let resp = app
+        .admin(app.client.put(app.url(&format!("/api/post/{id}"))))
+        .json(&json!({"title": "Hi v2", "published": false}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    let updated: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(updated["title"], "Hi v2");
+    assert!(updated["views"].is_null(), "views should be nulled by PUT, got {:?}", updated["views"]);
+    assert_eq!(updated["published"], false);
+}
+
+#[tokio::test]
+async fn post_explicit_null_for_optional_int() {
+    let app = TestApp::spawn().await;
+    make_post_type(&app).await;
+
+    // Explicit JSON null for optional integer field — exercises typed-null bind.
+    let resp = app
+        .admin(app.client.post(app.url("/api/post")))
+        .json(&json!({"title": "x", "views": null}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "{}", resp.text().await.unwrap());
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(body["views"].is_null());
+}
+
+#[tokio::test]
 async fn pagination_and_sort() {
     let app = TestApp::spawn().await;
     make_post_type(&app).await;

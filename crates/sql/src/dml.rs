@@ -175,7 +175,7 @@ mod tests {
     fn insert_rejects_unknown_field() {
         let c = ct(vec![field("title", FieldKind::String)]);
         let mut vals = BTreeMap::new();
-        vals.insert("nope".into(), BoundValue::Null);
+        vals.insert("nope".into(), BoundValue::Null(FieldKind::String));
         assert!(matches!(insert(&c, &vals), Err(DmlError::UnknownField(_))));
     }
 
