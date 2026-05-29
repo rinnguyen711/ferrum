@@ -112,7 +112,8 @@ pub fn count(ct_name: &str, _filter: &Filter) -> Result<SqlAndBinds, DmlError> {
     Ok((format!("SELECT count(*) FROM {table}"), vec![]))
 }
 
-/// Discriminator for `BoundValue` used by row-decoding helpers.
+/// Postgres type-cast string for a FieldKind. Used by row-decoding helpers
+/// and by `render_where` to type placeholders in filter conditions.
 pub fn pg_cast(kind: FieldKind) -> &'static str {
     match kind {
         FieldKind::String | FieldKind::Text => "text",
@@ -384,6 +385,24 @@ mod where_tests {
             " WHERE \"a\" = $1::int8 AND \"b\" <> $2::text AND \"c\" IS NULL"
         );
         assert_eq!(binds, vec![BoundValue::I64(7), BoundValue::Str("x".into())]);
+    }
+
+    #[test]
+    fn is_null_between_eq_skips_placeholder_correctly() {
+        // Locks the invariant that `placeholder` increments only when a bind
+        // is pushed: IsNull in the middle must not skip a `$N` number for the
+        // following Eq, and total binds must match the placeholder count.
+        let f = Filter::All(vec![
+            Condition::new("a", Op::Eq, FilterValue::Bound(BoundValue::I64(1))),
+            Condition::new("b", Op::IsNull, FilterValue::Null(true)),
+            Condition::new("c", Op::Eq, FilterValue::Bound(BoundValue::I64(2))),
+        ]);
+        let (sql, binds) = render_where(&f, 1).unwrap();
+        assert_eq!(
+            sql,
+            " WHERE \"a\" = $1::int8 AND \"b\" IS NULL AND \"c\" = $2::int8"
+        );
+        assert_eq!(binds, vec![BoundValue::I64(1), BoundValue::I64(2)]);
     }
 
     #[test]
