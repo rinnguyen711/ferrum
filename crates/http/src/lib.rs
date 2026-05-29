@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+pub mod entry;
 pub mod error;
 pub mod middleware;
 pub mod query;
