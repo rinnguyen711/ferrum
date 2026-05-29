@@ -375,11 +375,25 @@ pub fn render_where(filter: &Filter, start_placeholder: usize) -> Result<(String
             (Op::In | Op::NotIn, _) => {
                 return Err(DmlError::InvalidFilter("set op requires List value"));
             }
-            // Phase 2.2 string ops: arm added in next task.
-            _ => {
-                return Err(DmlError::InvalidFilter(
-                    "operator not yet implemented in render_where",
-                ));
+            (Op::Contains | Op::StartsWith | Op::EndsWith, FilterValue::Bound(BoundValue::Str(s))) => {
+                binds.push(BoundValue::Str(s.clone()));
+                let p = placeholder;
+                placeholder += 1;
+                format!("{col} LIKE ${p}::text ESCAPE '\\'")
+            }
+            (Op::ContainsI, FilterValue::Bound(BoundValue::Str(s))) => {
+                binds.push(BoundValue::Str(s.clone()));
+                let p = placeholder;
+                placeholder += 1;
+                format!("{col} ILIKE ${p}::text ESCAPE '\\'")
+            }
+            (Op::Contains | Op::StartsWith | Op::EndsWith | Op::ContainsI, _) => {
+                return Err(DmlError::InvalidFilter("string op requires Bound(Str)"));
+            }
+            // Phase 2.1 ops with a List value: invalid combinations the
+            // parser doesn't produce. Belt + suspenders.
+            (Op::Eq | Op::Ne | Op::IsNull, FilterValue::List(_)) => {
+                return Err(DmlError::InvalidFilter("phase-2.1 op cannot take List"));
             }
         };
         parts.push(fragment);
@@ -735,5 +749,82 @@ mod where_tests {
             sql,
             " WHERE \"title\" = $1::text AND \"views\" IN ($2::int8, $3::int8)"
         );
+    }
+
+    #[test]
+    fn contains_uses_like_escape() {
+        let f = Filter::All(vec![Condition::new(
+            "title",
+            FieldKind::String,
+            Op::Contains,
+            FilterValue::Bound(BoundValue::Str("%foo%".into())),
+        )]);
+        let (sql, binds) = render_where(&f, 1).unwrap();
+        assert_eq!(sql, " WHERE \"title\" LIKE $1::text ESCAPE '\\'");
+        assert_eq!(binds, vec![BoundValue::Str("%foo%".into())]);
+    }
+
+    #[test]
+    fn containsi_uses_ilike() {
+        let f = Filter::All(vec![Condition::new(
+            "title",
+            FieldKind::String,
+            Op::ContainsI,
+            FilterValue::Bound(BoundValue::Str("%foo%".into())),
+        )]);
+        let (sql, _binds) = render_where(&f, 1).unwrap();
+        assert_eq!(sql, " WHERE \"title\" ILIKE $1::text ESCAPE '\\'");
+    }
+
+    #[test]
+    fn starts_with_emits_like() {
+        let f = Filter::All(vec![Condition::new(
+            "slug",
+            FieldKind::Text,
+            Op::StartsWith,
+            FilterValue::Bound(BoundValue::Str("blog-%".into())),
+        )]);
+        let (sql, _binds) = render_where(&f, 1).unwrap();
+        assert_eq!(sql, " WHERE \"slug\" LIKE $1::text ESCAPE '\\'");
+    }
+
+    #[test]
+    fn ends_with_emits_like() {
+        let f = Filter::All(vec![Condition::new(
+            "slug",
+            FieldKind::Text,
+            Op::EndsWith,
+            FilterValue::Bound(BoundValue::Str("%-2026".into())),
+        )]);
+        let (sql, _binds) = render_where(&f, 1).unwrap();
+        assert_eq!(sql, " WHERE \"slug\" LIKE $1::text ESCAPE '\\'");
+    }
+
+    #[test]
+    fn string_op_rejects_non_string_bound() {
+        let f = Filter::All(vec![Condition::new(
+            "views",
+            FieldKind::Integer,
+            Op::Contains,
+            FilterValue::Bound(BoundValue::I64(7)),
+        )]);
+        assert!(matches!(
+            render_where(&f, 1),
+            Err(DmlError::InvalidFilter(_))
+        ));
+    }
+
+    #[test]
+    fn string_op_rejects_null_filter_value() {
+        let f = Filter::All(vec![Condition::new(
+            "title",
+            FieldKind::String,
+            Op::Contains,
+            FilterValue::Null(true),
+        )]);
+        assert!(matches!(
+            render_where(&f, 1),
+            Err(DmlError::InvalidFilter(_))
+        ));
     }
 }
