@@ -1767,6 +1767,7 @@ dependencies = [
  "async-trait",
  "axum",
  "chrono",
+ "regex",
  "rustapi-core",
  "rustapi-schema",
  "rustapi-sql",
@@ -1778,6 +1779,7 @@ dependencies = [
  "tower",
  "tower-http",
  "tracing",
+ "url",
  "uuid",
 ]
 
