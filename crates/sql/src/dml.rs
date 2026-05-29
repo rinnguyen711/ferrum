@@ -91,7 +91,7 @@ pub fn select_by_id(ct_name: &str, id: Uuid) -> Result<SqlAndBinds, DmlError> {
 /// `SELECT * FROM ct_<name> [WHERE ...] ORDER BY <col> <dir> LIMIT $1 OFFSET $2`
 pub fn select_list(
     ct_name: &str,
-    _filter: &Filter,
+    filter: &Filter,
     sort: &Sort,
     limit: i64,
     offset: i64,
@@ -99,17 +99,24 @@ pub fn select_list(
     let table = table_name(ct_name)?;
     let col = quote_ident(&sort.column)?;
     let dir = sort.dir.as_sql();
-    // Filter::None in v1 — no WHERE clause emitted.
+
+    let (where_sql, mut binds) = render_where(filter, 1)?;
+    let limit_ph = binds.len() + 1;
+    let offset_ph = binds.len() + 2;
+    binds.push(BoundValue::I64(limit));
+    binds.push(BoundValue::I64(offset));
+
     let sql = format!(
-        "SELECT * FROM {table} ORDER BY {col} {dir} LIMIT $1 OFFSET $2"
+        "SELECT * FROM {table}{where_sql} ORDER BY {col} {dir} LIMIT ${limit_ph} OFFSET ${offset_ph}"
     );
-    Ok((sql, vec![BoundValue::I64(limit), BoundValue::I64(offset)]))
+    Ok((sql, binds))
 }
 
-/// `SELECT count(*) FROM ct_<name>`
-pub fn count(ct_name: &str, _filter: &Filter) -> Result<SqlAndBinds, DmlError> {
+/// `SELECT count(*) FROM ct_<name> [WHERE ...]`
+pub fn count(ct_name: &str, filter: &Filter) -> Result<SqlAndBinds, DmlError> {
     let table = table_name(ct_name)?;
-    Ok((format!("SELECT count(*) FROM {table}"), vec![]))
+    let (where_sql, binds) = render_where(filter, 1)?;
+    Ok((format!("SELECT count(*) FROM {table}{where_sql}"), binds))
 }
 
 /// Postgres type-cast string for a FieldKind. Used by row-decoding helpers
@@ -227,6 +234,40 @@ mod tests {
         let (sql, binds) = count("post", &Filter::None).unwrap();
         assert_eq!(sql, "SELECT count(*) FROM \"ct_post\"");
         assert!(binds.is_empty());
+    }
+
+    #[test]
+    fn select_list_with_filter_shifts_pagination() {
+        let s = Sort { column: "created_at".into(), dir: SortDir::Desc };
+        let f = Filter::All(vec![Condition::new(
+            "title",
+            Op::Eq,
+            FilterValue::Bound(BoundValue::Str("hi".into())),
+        )]);
+        let (sql, binds) = select_list("post", &f, &s, 25, 50).unwrap();
+        assert_eq!(
+            sql,
+            "SELECT * FROM \"ct_post\" WHERE \"title\" = $1::text ORDER BY \"created_at\" DESC LIMIT $2 OFFSET $3"
+        );
+        assert_eq!(
+            binds,
+            vec![BoundValue::Str("hi".into()), BoundValue::I64(25), BoundValue::I64(50)]
+        );
+    }
+
+    #[test]
+    fn count_with_filter() {
+        let f = Filter::All(vec![Condition::new(
+            "views",
+            Op::Ne,
+            FilterValue::Bound(BoundValue::I64(0)),
+        )]);
+        let (sql, binds) = count("post", &f).unwrap();
+        assert_eq!(
+            sql,
+            "SELECT count(*) FROM \"ct_post\" WHERE \"views\" <> $1::int8"
+        );
+        assert_eq!(binds, vec![BoundValue::I64(0)]);
     }
 }
 
