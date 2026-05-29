@@ -122,6 +122,17 @@ pub fn count(ct_name: &str, filter: &Filter) -> Result<SqlAndBinds, DmlError> {
 
 /// Postgres type-cast string for a FieldKind. Used by row-decoding helpers
 /// and by `render_where` to type placeholders in filter conditions.
+fn order_symbol(op: Op) -> &'static str {
+    match op {
+        Op::Gt => ">",
+        Op::Gte => ">=",
+        Op::Lt => "<",
+        Op::Lte => "<=",
+        // Unreachable: caller filters by op group before calling.
+        _ => "?",
+    }
+}
+
 pub fn pg_cast(kind: FieldKind) -> &'static str {
     match kind {
         FieldKind::String | FieldKind::Text => "text",
@@ -331,8 +342,21 @@ pub fn render_where(filter: &Filter, start_placeholder: usize) -> Result<(String
             (Op::Eq | Op::Ne, FilterValue::Null(_)) => {
                 return Err(DmlError::InvalidFilter("Eq/Ne require Bound value"));
             }
-            // Phase 2.2 ops: arms added in later tasks. Until then any
-            // attempt to render one bails with a clear error.
+            (Op::Gt | Op::Gte | Op::Lt | Op::Lte, FilterValue::Bound(BoundValue::Null(_))) => {
+                return Err(DmlError::InvalidFilter("order op cannot compare against NULL"));
+            }
+            (Op::Gt | Op::Gte | Op::Lt | Op::Lte, FilterValue::Bound(v)) => {
+                let cast = pg_cast(c.kind);
+                binds.push(v.clone());
+                let p = placeholder;
+                placeholder += 1;
+                let sym = order_symbol(c.op);
+                format!("{col} {sym} ${p}::{cast}")
+            }
+            (Op::Gt | Op::Gte | Op::Lt | Op::Lte, _) => {
+                return Err(DmlError::InvalidFilter("order op requires Bound value"));
+            }
+            // Phase 2.2 set + string ops: arms added in later tasks.
             _ => {
                 return Err(DmlError::InvalidFilter(
                     "operator not yet implemented in render_where",
@@ -518,6 +542,86 @@ mod where_tests {
             "a",
             FieldKind::Integer,
             Op::Eq,
+            FilterValue::Null(true),
+        )]);
+        assert!(matches!(
+            render_where(&f, 1),
+            Err(DmlError::InvalidFilter(_))
+        ));
+    }
+
+    #[test]
+    fn gt_integer() {
+        let f = Filter::All(vec![Condition::new(
+            "views",
+            FieldKind::Integer,
+            Op::Gt,
+            FilterValue::Bound(BoundValue::I64(5)),
+        )]);
+        let (sql, binds) = render_where(&f, 1).unwrap();
+        assert_eq!(sql, " WHERE \"views\" > $1::int8");
+        assert_eq!(binds, vec![BoundValue::I64(5)]);
+    }
+
+    #[test]
+    fn gte_float() {
+        let f = Filter::All(vec![Condition::new(
+            "score",
+            FieldKind::Float,
+            Op::Gte,
+            FilterValue::Bound(BoundValue::F64(0.5)),
+        )]);
+        let (sql, binds) = render_where(&f, 1).unwrap();
+        assert_eq!(sql, " WHERE \"score\" >= $1::float8");
+        assert_eq!(binds, vec![BoundValue::F64(0.5)]);
+    }
+
+    #[test]
+    fn lt_datetime() {
+        use chrono::{DateTime, Utc};
+        let t: DateTime<Utc> = "2026-01-01T00:00:00Z".parse().unwrap();
+        let f = Filter::All(vec![Condition::new(
+            "created_at",
+            FieldKind::Datetime,
+            Op::Lt,
+            FilterValue::Bound(BoundValue::DateTime(t)),
+        )]);
+        let (sql, _binds) = render_where(&f, 1).unwrap();
+        assert_eq!(sql, " WHERE \"created_at\" < $1::timestamptz");
+    }
+
+    #[test]
+    fn lte_integer() {
+        let f = Filter::All(vec![Condition::new(
+            "views",
+            FieldKind::Integer,
+            Op::Lte,
+            FilterValue::Bound(BoundValue::I64(100)),
+        )]);
+        let (sql, _binds) = render_where(&f, 1).unwrap();
+        assert_eq!(sql, " WHERE \"views\" <= $1::int8");
+    }
+
+    #[test]
+    fn order_op_rejects_typed_null() {
+        let f = Filter::All(vec![Condition::new(
+            "views",
+            FieldKind::Integer,
+            Op::Gt,
+            FilterValue::Bound(BoundValue::Null(FieldKind::Integer)),
+        )]);
+        assert!(matches!(
+            render_where(&f, 1),
+            Err(DmlError::InvalidFilter(_))
+        ));
+    }
+
+    #[test]
+    fn order_op_rejects_filter_value_null() {
+        let f = Filter::All(vec![Condition::new(
+            "views",
+            FieldKind::Integer,
+            Op::Gt,
             FilterValue::Null(true),
         )]);
         assert!(matches!(
