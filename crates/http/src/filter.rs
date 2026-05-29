@@ -104,13 +104,16 @@ fn coerce_value(field: FieldOrSystem<'_>, op: Op, col: &str, raw: &str) -> Resul
     match op {
         Op::IsNull => parse_bool(raw)
             .map(FilterValue::Null)
-            .map_err(|reason| Error::Validation(ValidationErrors::field(col, reason))),
+            .map_err(|reason| field_err(col, reason)),
         Op::Eq | Op::Ne => {
             if raw.eq_ignore_ascii_case("null") {
                 return Ok(FilterValue::Bound(BoundValue::Null(kind)));
             }
             coerce_bound(kind, col, raw).map(FilterValue::Bound)
         }
+        // Unreachable today: `parse` only constructs Eq / Ne / IsNull from the
+        // closed `$eq` / `$ne` / `$null` mapping. Required by `#[non_exhaustive]`
+        // on `Op` so adding a phase-2.2 variant breaks the build here.
         _ => Err(field_err(col, "unsupported operator")),
     }
 }
