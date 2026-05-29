@@ -11,6 +11,6 @@ pub use dml::{
     count, delete, insert, render_where, select_by_id, select_list, update,
     DmlError, SqlAndBinds,
 };
-pub use filter::{Condition, Filter, FilterValue, Op};
+pub use filter::{op_allows_kind, Condition, Filter, FilterValue, Op};
 pub use ident::{quote_ident, table_name, IdentError};
 pub use sort::{Sort, SortDir};
