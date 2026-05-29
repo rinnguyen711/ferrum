@@ -88,7 +88,8 @@ pub fn select_by_id(ct_name: &str, id: Uuid) -> Result<SqlAndBinds, DmlError> {
     Ok((sql, vec![BoundValue::Str(id.to_string())]))
 }
 
-/// `SELECT * FROM ct_<name> [WHERE ...] ORDER BY <col> <dir> LIMIT $1 OFFSET $2`
+/// `SELECT * FROM ct_<name> [WHERE ...] ORDER BY <col> <dir> LIMIT $N OFFSET $N+1`
+/// where N is `binds.len() + 1` after the filter has supplied its own placeholders.
 pub fn select_list(
     ct_name: &str,
     filter: &Filter,
@@ -253,6 +254,16 @@ mod tests {
             binds,
             vec![BoundValue::Str("hi".into()), BoundValue::I64(25), BoundValue::I64(50)]
         );
+    }
+
+    #[test]
+    fn select_list_empty_all_keeps_v1_placeholders() {
+        // `Filter::All(vec![])` is equivalent to `Filter::None` at render_where;
+        // confirm the dml layer keeps `LIMIT $1 OFFSET $2`.
+        let s = Sort { column: "created_at".into(), dir: SortDir::Desc };
+        let (sql, binds) = select_list("post", &Filter::All(vec![]), &s, 25, 50).unwrap();
+        assert!(sql.ends_with("LIMIT $1 OFFSET $2"));
+        assert_eq!(binds, vec![BoundValue::I64(25), BoundValue::I64(50)]);
     }
 
     #[test]
