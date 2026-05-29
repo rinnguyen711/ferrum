@@ -12,7 +12,7 @@ pub enum Filter {
     All(Vec<Condition>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct Condition {
     /// Already validated as an identifier by upstream callers. The SQL emitter
@@ -36,7 +36,7 @@ pub enum Op {
     IsNull,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum FilterValue {
     /// Used by `$eq` / `$ne`. When the inner `BoundValue` is `Null(kind)` the
