@@ -1,7 +1,7 @@
 //! DML string + bind-plan builders. Always returns `(String, Vec<BoundValue>)`.
 //! HTTP layer translates `BoundValue` into sqlx binds.
 
-use crate::filter::Filter;
+use crate::filter::{Condition, Filter, FilterValue, Op};
 use crate::ident::{quote_ident, table_name, IdentError};
 use crate::sort::Sort;
 use rustapi_core::{BoundValue, ContentType, FieldKind};
@@ -14,6 +14,8 @@ pub enum DmlError {
     Ident(#[from] IdentError),
     #[error("unknown field `{0}` in payload")]
     UnknownField(String),
+    #[error("invalid filter: {0}")]
+    InvalidFilter(&'static str),
 }
 
 pub type SqlAndBinds = (String, Vec<BoundValue>);
@@ -224,5 +226,206 @@ mod tests {
         let (sql, binds) = count("post", &Filter::None).unwrap();
         assert_eq!(sql, "SELECT count(*) FROM \"ct_post\"");
         assert!(binds.is_empty());
+    }
+}
+
+/// Emit a `WHERE` fragment plus the binds it consumes, starting at the
+/// caller-supplied placeholder index (1-based). Returns an empty string and
+/// no binds when the filter is empty.
+pub fn render_where(filter: &Filter, start_placeholder: usize) -> Result<(String, Vec<BoundValue>), DmlError> {
+    let conds: &[Condition] = match filter {
+        Filter::None => return Ok((String::new(), vec![])),
+        Filter::All(c) if c.is_empty() => return Ok((String::new(), vec![])),
+        Filter::All(c) => c,
+    };
+
+    let mut parts = Vec::with_capacity(conds.len());
+    let mut binds = Vec::new();
+    let mut placeholder = start_placeholder;
+
+    for c in conds {
+        let col = quote_ident(&c.column)?;
+        let fragment = match (&c.op, &c.value) {
+            (Op::Eq, FilterValue::Bound(BoundValue::Null(_))) => format!("{col} IS NULL"),
+            (Op::Ne, FilterValue::Bound(BoundValue::Null(_))) => format!("{col} IS NOT NULL"),
+            (Op::Eq, FilterValue::Bound(v)) => {
+                let cast = pg_cast(kind_of(v));
+                binds.push(v.clone());
+                let p = placeholder;
+                placeholder += 1;
+                format!("{col} = ${p}::{cast}")
+            }
+            (Op::Ne, FilterValue::Bound(v)) => {
+                let cast = pg_cast(kind_of(v));
+                binds.push(v.clone());
+                let p = placeholder;
+                placeholder += 1;
+                format!("{col} <> ${p}::{cast}")
+            }
+            (Op::IsNull, FilterValue::Null(true)) => format!("{col} IS NULL"),
+            (Op::IsNull, FilterValue::Null(false)) => format!("{col} IS NOT NULL"),
+            (Op::IsNull, FilterValue::Bound(_)) => {
+                return Err(DmlError::InvalidFilter("IsNull requires Null(bool)"));
+            }
+            (Op::Eq | Op::Ne, FilterValue::Null(_)) => {
+                return Err(DmlError::InvalidFilter("Eq/Ne require Bound value"));
+            }
+        };
+        parts.push(fragment);
+    }
+
+    Ok((format!(" WHERE {}", parts.join(" AND ")), binds))
+}
+
+fn kind_of(v: &BoundValue) -> FieldKind {
+    match v {
+        BoundValue::Null(k) => *k,
+        BoundValue::Str(_) => FieldKind::Text,
+        BoundValue::I64(_) => FieldKind::Integer,
+        BoundValue::F64(_) => FieldKind::Float,
+        BoundValue::Bool(_) => FieldKind::Boolean,
+        BoundValue::DateTime(_) => FieldKind::Datetime,
+    }
+}
+
+#[cfg(test)]
+mod where_tests {
+    use super::*;
+    use crate::filter::{Condition, Filter, FilterValue, Op};
+
+    #[test]
+    fn none_emits_empty() {
+        let (sql, binds) = render_where(&Filter::None, 1).unwrap();
+        assert_eq!(sql, "");
+        assert!(binds.is_empty());
+    }
+
+    #[test]
+    fn empty_all_emits_empty() {
+        let (sql, binds) = render_where(&Filter::All(vec![]), 1).unwrap();
+        assert_eq!(sql, "");
+        assert!(binds.is_empty());
+    }
+
+    #[test]
+    fn single_eq_string() {
+        let f = Filter::All(vec![Condition::new(
+            "title",
+            Op::Eq,
+            FilterValue::Bound(BoundValue::Str("hi".into())),
+        )]);
+        let (sql, binds) = render_where(&f, 1).unwrap();
+        assert_eq!(sql, " WHERE \"title\" = $1::text");
+        assert_eq!(binds, vec![BoundValue::Str("hi".into())]);
+    }
+
+    #[test]
+    fn single_ne_integer() {
+        let f = Filter::All(vec![Condition::new(
+            "views",
+            Op::Ne,
+            FilterValue::Bound(BoundValue::I64(0)),
+        )]);
+        let (sql, binds) = render_where(&f, 1).unwrap();
+        assert_eq!(sql, " WHERE \"views\" <> $1::int8");
+        assert_eq!(binds, vec![BoundValue::I64(0)]);
+    }
+
+    #[test]
+    fn null_true() {
+        let f = Filter::All(vec![Condition::new("x", Op::IsNull, FilterValue::Null(true))]);
+        let (sql, binds) = render_where(&f, 1).unwrap();
+        assert_eq!(sql, " WHERE \"x\" IS NULL");
+        assert!(binds.is_empty());
+    }
+
+    #[test]
+    fn null_false() {
+        let f = Filter::All(vec![Condition::new("x", Op::IsNull, FilterValue::Null(false))]);
+        let (sql, binds) = render_where(&f, 1).unwrap();
+        assert_eq!(sql, " WHERE \"x\" IS NOT NULL");
+        assert!(binds.is_empty());
+    }
+
+    #[test]
+    fn eq_with_typed_null_rewrites_is_null() {
+        let f = Filter::All(vec![Condition::new(
+            "x",
+            Op::Eq,
+            FilterValue::Bound(BoundValue::Null(FieldKind::Integer)),
+        )]);
+        let (sql, binds) = render_where(&f, 1).unwrap();
+        assert_eq!(sql, " WHERE \"x\" IS NULL");
+        assert!(binds.is_empty());
+    }
+
+    #[test]
+    fn ne_with_typed_null_rewrites_is_not_null() {
+        let f = Filter::All(vec![Condition::new(
+            "x",
+            Op::Ne,
+            FilterValue::Bound(BoundValue::Null(FieldKind::Integer)),
+        )]);
+        let (sql, binds) = render_where(&f, 1).unwrap();
+        assert_eq!(sql, " WHERE \"x\" IS NOT NULL");
+        assert!(binds.is_empty());
+    }
+
+    #[test]
+    fn combined_and() {
+        let f = Filter::All(vec![
+            Condition::new("a", Op::Eq, FilterValue::Bound(BoundValue::I64(7))),
+            Condition::new("b", Op::Ne, FilterValue::Bound(BoundValue::Str("x".into()))),
+            Condition::new("c", Op::IsNull, FilterValue::Null(true)),
+        ]);
+        let (sql, binds) = render_where(&f, 1).unwrap();
+        assert_eq!(
+            sql,
+            " WHERE \"a\" = $1::int8 AND \"b\" <> $2::text AND \"c\" IS NULL"
+        );
+        assert_eq!(binds, vec![BoundValue::I64(7), BoundValue::Str("x".into())]);
+    }
+
+    #[test]
+    fn placeholder_offset_respected() {
+        let f = Filter::All(vec![Condition::new(
+            "a",
+            Op::Eq,
+            FilterValue::Bound(BoundValue::I64(1)),
+        )]);
+        let (sql, _binds) = render_where(&f, 5).unwrap();
+        assert_eq!(sql, " WHERE \"a\" = $5::int8");
+    }
+
+    #[test]
+    fn bad_identifier_rejected() {
+        let f = Filter::All(vec![Condition::new(
+            "Bad Name",
+            Op::IsNull,
+            FilterValue::Null(true),
+        )]);
+        assert!(matches!(render_where(&f, 1), Err(DmlError::Ident(_))));
+    }
+
+    #[test]
+    fn is_null_with_bound_value_rejected() {
+        let f = Filter::All(vec![Condition::new(
+            "a",
+            Op::IsNull,
+            FilterValue::Bound(BoundValue::I64(1)),
+        )]);
+        assert!(matches!(
+            render_where(&f, 1),
+            Err(DmlError::InvalidFilter(_))
+        ));
+    }
+
+    #[test]
+    fn eq_with_null_filter_value_rejected() {
+        let f = Filter::All(vec![Condition::new("a", Op::Eq, FilterValue::Null(true))]);
+        assert!(matches!(
+            render_where(&f, 1),
+            Err(DmlError::InvalidFilter(_))
+        ));
     }
 }
