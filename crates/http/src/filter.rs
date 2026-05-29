@@ -11,37 +11,69 @@ use url::form_urlencoded;
 /// Parse a raw query string into a `Filter`. Non-filter params are ignored.
 /// Returns `Filter::None` if no filter params are present.
 pub fn parse(raw_query: &str, ct: &ContentType) -> Result<Filter, Error> {
+    use std::collections::BTreeMap;
     let mut seen: HashSet<(String, Op)> = HashSet::new();
     let mut conds: Vec<Condition> = Vec::new();
+    let mut set_buckets: std::collections::HashMap<(String, Op), BTreeMap<usize, BoundValue>> =
+        std::collections::HashMap::new();
+    let mut set_kinds: std::collections::HashMap<(String, Op), FieldKind> =
+        std::collections::HashMap::new();
 
     for (k, v) in form_urlencoded::parse(raw_query.as_bytes()) {
         if !k.starts_with("filters[") {
             continue;
         }
-        let (col, op_str, _idx) = parse_key(&k)?;
-        let op = match op_str.as_str() {
-            "$eq" => Op::Eq,
-            "$ne" => Op::Ne,
-            "$null" => Op::IsNull,
-            other => {
-                return Err(Error::Validation(ValidationErrors::field(
-                    col,
-                    format!("unknown operator `{other}`"),
-                )));
-            }
-        };
-
+        let (col, op_str, idx) = parse_key(&k)?;
+        let op = map_op(&op_str, &col)?;
         let field = field_for(ct, &col)?;
-        if !seen.insert((col.clone(), op)) {
-            return Err(Error::Validation(ValidationErrors::field(
-                col,
-                "duplicate filter operator on column",
-            )));
+        let kind = field.kind();
+
+        if !rustapi_sql::op_allows_kind(op, kind) {
+            return Err(field_err(
+                &col,
+                format!("operator `{op_str}` invalid for kind `{kind:?}`"),
+            ));
         }
 
-        let kind = field.kind();
-        let value = coerce_value(field, op, &col, &v)?;
-        conds.push(Condition::new(col, kind, op, value));
+        let is_set_op = matches!(op, Op::In | Op::NotIn);
+        match (is_set_op, idx) {
+            (true, None) => {
+                return Err(field_err(&col, "set operator requires bracketed list indices"));
+            }
+            (false, Some(_)) => {
+                return Err(field_err(&col, "unexpected list index for operator"));
+            }
+            (true, Some(i)) => {
+                if v.eq_ignore_ascii_case("null") {
+                    return Err(field_err(&col, "set operator entries cannot be null"));
+                }
+                let bv = coerce_bound(kind, &col, &v)?;
+                let bucket = set_buckets.entry((col.clone(), op)).or_default();
+                if bucket.insert(i, bv).is_some() {
+                    return Err(field_err(&col, "duplicate set operator entry"));
+                }
+                set_kinds.insert((col.clone(), op), kind);
+                if bucket.len() > 100 {
+                    return Err(field_err(&col, "set operator limited to 100 items"));
+                }
+            }
+            (false, None) => {
+                if !seen.insert((col.clone(), op)) {
+                    return Err(field_err(&col, "duplicate filter operator on column"));
+                }
+                let value = coerce_value(field, op, &col, &v)?;
+                conds.push(Condition::new(col, kind, op, value));
+            }
+        }
+    }
+
+    for ((col, op), bucket) in set_buckets {
+        if bucket.is_empty() {
+            return Err(field_err(&col, "set operator requires non-empty list"));
+        }
+        let kind = set_kinds[&(col.clone(), op)];
+        let values: Vec<BoundValue> = bucket.into_values().collect();
+        conds.push(Condition::new(col, kind, op, FilterValue::List(values)));
     }
 
     if conds.is_empty() {
@@ -49,6 +81,25 @@ pub fn parse(raw_query: &str, ct: &ContentType) -> Result<Filter, Error> {
     } else {
         Ok(Filter::All(conds))
     }
+}
+
+fn map_op(op_str: &str, col: &str) -> Result<Op, Error> {
+    Ok(match op_str {
+        "$eq" => Op::Eq,
+        "$ne" => Op::Ne,
+        "$null" => Op::IsNull,
+        "$gt" => Op::Gt,
+        "$gte" => Op::Gte,
+        "$lt" => Op::Lt,
+        "$lte" => Op::Lte,
+        "$in" => Op::In,
+        "$nin" => Op::NotIn,
+        "$contains" => Op::Contains,
+        "$startsWith" => Op::StartsWith,
+        "$endsWith" => Op::EndsWith,
+        "$containsi" => Op::ContainsI,
+        other => return Err(field_err(col, format!("unknown operator `{other}`"))),
+    })
 }
 
 fn parse_key(k: &str) -> Result<(String, String, Option<usize>), Error> {
@@ -120,11 +171,24 @@ fn coerce_value(field: FieldOrSystem<'_>, op: Op, col: &str, raw: &str) -> Resul
             }
             coerce_bound(kind, col, raw).map(FilterValue::Bound)
         }
-        // Unreachable today: `parse` only constructs Eq / Ne / IsNull from the
-        // closed `$eq` / `$ne` / `$null` mapping. The wildcard exists because
-        // `Op` is `#[non_exhaustive]` (cross-crate) so the match must be open;
-        // a future variant added in the sql crate compiles silently here until
-        // both the `$op` mapping above AND this `match` get updated.
+        Op::Gt | Op::Gte | Op::Lt | Op::Lte => {
+            if raw.eq_ignore_ascii_case("null") {
+                return Err(field_err(col, "order operator cannot compare against null"));
+            }
+            coerce_bound(kind, col, raw).map(FilterValue::Bound)
+        }
+        Op::Contains | Op::StartsWith | Op::EndsWith | Op::ContainsI => {
+            let escaped = escape_like(raw);
+            let wrapped = wrap_like(op, escaped);
+            Ok(FilterValue::Bound(BoundValue::Str(wrapped)))
+        }
+        // Set ops are handled directly in `parse`, not here.
+        Op::In | Op::NotIn => {
+            Err(field_err(col, "internal: set op routed through coerce_value"))
+        }
+        // Unreachable today: every Op variant above is handled. The wildcard
+        // exists because `Op` is `#[non_exhaustive]` so a future variant
+        // compiles silently until both `map_op` and this match get updated.
         _ => Err(field_err(col, "unsupported operator")),
     }
 }
@@ -169,14 +233,12 @@ fn field_err(col: &str, reason: impl Into<String>) -> Error {
 
 /// Escape LIKE metacharacters in user input. Order matters: backslash first
 /// so we don't double-escape our own substitutions.
-#[allow(dead_code)] // wired into `parse` in the next task
 fn escape_like(raw: &str) -> String {
     raw.replace('\\', "\\\\")
         .replace('%', "\\%")
         .replace('_', "\\_")
 }
 
-#[allow(dead_code)] // wired into `parse` in the next task
 fn wrap_like(op: Op, escaped: String) -> String {
     match op {
         Op::Contains | Op::ContainsI => format!("%{escaped}%"),
@@ -363,5 +425,135 @@ mod tests {
         assert_eq!(wrap_like(Op::ContainsI, "foo".into()), "%foo%");
         assert_eq!(wrap_like(Op::StartsWith, "foo".into()), "foo%");
         assert_eq!(wrap_like(Op::EndsWith, "foo".into()), "%foo");
+    }
+
+    #[test]
+    fn gt_on_string_rejected() {
+        let err = parse("filters[title][$gt]=hi", &ct()).unwrap_err();
+        assert!(matches!(err, Error::Validation(_)));
+    }
+
+    #[test]
+    fn contains_on_integer_rejected() {
+        let err = parse("filters[views][$contains]=7", &ct()).unwrap_err();
+        assert!(matches!(err, Error::Validation(_)));
+    }
+
+    #[test]
+    fn gt_integer_parses() {
+        let f = parse("filters[views][$gt]=10", &ct()).unwrap();
+        let Filter::All(conds) = f else { panic!() };
+        assert_eq!(conds[0].op, Op::Gt);
+        match &conds[0].value {
+            FilterValue::Bound(BoundValue::I64(n)) => assert_eq!(*n, 10),
+            other => panic!("expected I64, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn in_two_values_collects_into_list() {
+        let f = parse("filters[views][$in][0]=1&filters[views][$in][1]=2", &ct()).unwrap();
+        let Filter::All(conds) = f else { panic!() };
+        assert_eq!(conds.len(), 1);
+        assert_eq!(conds[0].op, Op::In);
+        match &conds[0].value {
+            FilterValue::List(vs) => {
+                assert_eq!(vs.len(), 2);
+                assert!(matches!(vs[0], BoundValue::I64(1)));
+                assert!(matches!(vs[1], BoundValue::I64(2)));
+            }
+            other => panic!("expected List, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn in_missing_index_rejected() {
+        let err = parse("filters[views][$in]=1", &ct()).unwrap_err();
+        assert!(matches!(err, Error::Validation(_)));
+    }
+
+    #[test]
+    fn non_set_op_with_index_rejected() {
+        let err = parse("filters[views][$eq][0]=1", &ct()).unwrap_err();
+        assert!(matches!(err, Error::Validation(_)));
+    }
+
+    #[test]
+    fn in_duplicate_index_rejected() {
+        let err = parse(
+            "filters[views][$in][0]=1&filters[views][$in][0]=2",
+            &ct(),
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::Validation(_)));
+    }
+
+    #[test]
+    fn in_null_entry_rejected() {
+        let err = parse("filters[views][$in][0]=null", &ct()).unwrap_err();
+        assert!(matches!(err, Error::Validation(_)));
+    }
+
+    #[test]
+    fn in_over_cap_rejected() {
+        let mut q = String::new();
+        for i in 0..=100 {
+            if !q.is_empty() {
+                q.push('&');
+            }
+            q.push_str(&format!("filters[views][$in][{i}]={i}"));
+        }
+        let err = parse(&q, &ct()).unwrap_err();
+        assert!(matches!(err, Error::Validation(_)));
+    }
+
+    #[test]
+    fn contains_escapes_and_wraps() {
+        let f = parse("filters[title][$contains]=50%25", &ct()).unwrap();
+        // `%25` URL-decodes to `%`, which then escapes to `\%`, then wraps to `%50\%%`.
+        let Filter::All(conds) = f else { panic!() };
+        match &conds[0].value {
+            FilterValue::Bound(BoundValue::Str(s)) => assert_eq!(s, "%50\\%%"),
+            other => panic!("expected Str, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn starts_with_wraps_one_side() {
+        let f = parse("filters[title][$startsWith]=foo", &ct()).unwrap();
+        let Filter::All(conds) = f else { panic!() };
+        match &conds[0].value {
+            FilterValue::Bound(BoundValue::Str(s)) => assert_eq!(s, "foo%"),
+            other => panic!("expected Str, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ends_with_wraps_one_side() {
+        let f = parse("filters[title][$endsWith]=foo", &ct()).unwrap();
+        let Filter::All(conds) = f else { panic!() };
+        match &conds[0].value {
+            FilterValue::Bound(BoundValue::Str(s)) => assert_eq!(s, "%foo"),
+            other => panic!("expected Str, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn containsi_op_variant() {
+        let f = parse("filters[title][$containsi]=FOO", &ct()).unwrap();
+        let Filter::All(conds) = f else { panic!() };
+        assert_eq!(conds[0].op, Op::ContainsI);
+        match &conds[0].value {
+            FilterValue::Bound(BoundValue::Str(s)) => assert_eq!(s, "%FOO%"),
+            other => panic!("expected Str, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn gte_on_datetime_rfc3339() {
+        let f = parse("filters[created_at][$gte]=2026-01-01T00:00:00Z", &ct()).unwrap();
+        let Filter::All(conds) = f else { panic!() };
+        assert_eq!(conds[0].op, Op::Gte);
+        assert!(matches!(conds[0].value, FilterValue::Bound(BoundValue::DateTime(_))));
     }
 }
