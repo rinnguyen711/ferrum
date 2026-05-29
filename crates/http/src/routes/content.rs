@@ -30,6 +30,7 @@ async fn list(
     State(state): State<AppState>,
     Path(ct_name): Path<String>,
     Query(params): Query<ListParams>,
+    axum::extract::RawQuery(raw_query): axum::extract::RawQuery,
     axum::extract::Extension(principal): axum::extract::Extension<Principal>,
 ) -> Result<Json<Value>, ApiError> {
     ensure(&state, &principal, Action::ContentRead, &ct_name).await?;
@@ -37,9 +38,11 @@ async fn list(
     let opts = parse_list(&ct, params, state.config.page_size_max)?;
     let offset: i64 = ((opts.page - 1) as i64) * (opts.page_size as i64);
 
+    let filter = crate::filter::parse(raw_query.as_deref().unwrap_or(""), &ct)?;
+
     let (list_sql, list_binds) = rustapi_sql::select_list(
         &ct.name,
-        &rustapi_sql::Filter::None,
+        &filter,
         &opts.sort,
         opts.page_size as i64,
         offset,
@@ -54,9 +57,8 @@ async fn list(
         data.push(row_to_json(&ct, r)?);
     }
 
-    let (count_sql, count_binds) =
-        rustapi_sql::count(&ct.name, &rustapi_sql::Filter::None)
-            .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
+    let (count_sql, count_binds) = rustapi_sql::count(&ct.name, &filter)
+        .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
     let cq = bind_all_as(sqlx::query_as::<_, (i64,)>(&count_sql), &count_binds);
     let total: i64 = cq.fetch_one(&state.pool).await.map_err(db)?.0;
 
