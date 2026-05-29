@@ -138,6 +138,28 @@ async fn eq_null_rewrites_to_is_null() {
 }
 
 #[tokio::test]
+async fn eq_on_system_id_column() {
+    // Regression: $eq/$ne on the `id` system column (UUID) must not 500.
+    let app = TestApp::spawn().await;
+    make_type(&app).await;
+    seed(&app).await;
+
+    // Grab one row's UUID, then filter for it.
+    let body = list_body(&app, "filters[title][$eq]=c").await;
+    let id = body["data"][0]["id"].as_str().unwrap().to_string();
+
+    let resp = app
+        .admin(app.client.get(app.url(&format!("/api/post?filters[id][$eq]={id}"))))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["meta"]["total"], 1);
+    assert_eq!(body["data"][0]["title"], "c");
+}
+
+#[tokio::test]
 async fn unknown_field_rejected_422() {
     let app = TestApp::spawn().await;
     make_type(&app).await;

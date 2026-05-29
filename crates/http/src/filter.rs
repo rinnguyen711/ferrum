@@ -2,7 +2,7 @@
 //! ready for the SQL builder. v1 supports `$eq`, `$ne`, `$null` with implicit
 //! AND across params.
 
-use rustapi_core::{is_system_column, BoundValue, ContentType, Error, Field, FieldKind, ValidationErrors};
+use rustapi_core::{is_system_column, BoundValue, ContentType, Error, Field, FieldKind, ValidationErrors, SYSTEM_COLUMNS};
 use rustapi_sql::{Condition, Filter, FilterValue, Op};
 use std::collections::HashSet;
 use std::sync::OnceLock;
@@ -39,8 +39,9 @@ pub fn parse(raw_query: &str, ct: &ContentType) -> Result<Filter, Error> {
             )));
         }
 
+        let kind = field.kind();
         let value = coerce_value(field, op, &col, &v)?;
-        conds.push(Condition::new(col, op, value));
+        conds.push(Condition::new(col, kind, op, value));
     }
 
     if conds.is_empty() {
@@ -91,12 +92,14 @@ impl FieldOrSystem<'_> {
 }
 
 fn system_kind(col: &str) -> FieldKind {
-    // `id` is a UUID exposed as a string; match it as Text for coercion.
-    match col {
-        "id" => FieldKind::Text,
-        "created_at" | "updated_at" => FieldKind::Datetime,
-        _ => FieldKind::Text,
-    }
+    // Pull from the central SYSTEM_COLUMNS table so future additions don't
+    // need to be mirrored here. Falls back to Text for unknown columns,
+    // which is_system_column should never let through.
+    SYSTEM_COLUMNS
+        .iter()
+        .find(|c| c.name == col)
+        .map(|c| c.kind)
+        .unwrap_or(FieldKind::Text)
 }
 
 fn coerce_value(field: FieldOrSystem<'_>, op: Op, col: &str, raw: &str) -> Result<FilterValue, Error> {
@@ -112,8 +115,10 @@ fn coerce_value(field: FieldOrSystem<'_>, op: Op, col: &str, raw: &str) -> Resul
             coerce_bound(kind, col, raw).map(FilterValue::Bound)
         }
         // Unreachable today: `parse` only constructs Eq / Ne / IsNull from the
-        // closed `$eq` / `$ne` / `$null` mapping. Required by `#[non_exhaustive]`
-        // on `Op` so adding a phase-2.2 variant breaks the build here.
+        // closed `$eq` / `$ne` / `$null` mapping. The wildcard exists because
+        // `Op` is `#[non_exhaustive]` (cross-crate) so the match must be open;
+        // a future variant added in the sql crate compiles silently here until
+        // both the `$op` mapping above AND this `match` get updated.
         _ => Err(field_err(col, "unsupported operator")),
     }
 }
@@ -135,6 +140,10 @@ fn coerce_bound(kind: FieldKind, col: &str, raw: &str) -> Result<BoundValue, Err
         FieldKind::Datetime => chrono::DateTime::parse_from_rfc3339(raw)
             .map(|t| BoundValue::DateTime(t.with_timezone(&chrono::Utc)))
             .map_err(|_| field_err(col, "expected RFC3339 datetime"))?,
+        FieldKind::Uuid => {
+            uuid::Uuid::parse_str(raw).map_err(|_| field_err(col, "expected UUID"))?;
+            BoundValue::Str(raw.to_string())
+        }
         _ => return Err(field_err(col, "unsupported kind for filter")),
     };
     Ok(v)

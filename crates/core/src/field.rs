@@ -14,6 +14,10 @@ pub enum FieldKind {
     Float,
     Boolean,
     Datetime,
+    /// Postgres UUID. Currently used internally for the `id` system column
+    /// so filters emit `::uuid` casts; not yet exposed as a user-creatable
+    /// field kind.
+    Uuid,
 }
 
 #[derive(Debug, Clone, PartialEq)]
