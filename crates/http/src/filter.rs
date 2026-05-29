@@ -18,7 +18,7 @@ pub fn parse(raw_query: &str, ct: &ContentType) -> Result<Filter, Error> {
         if !k.starts_with("filters[") {
             continue;
         }
-        let (col, op_str) = parse_key(&k)?;
+        let (col, op_str, _idx) = parse_key(&k)?;
         let op = match op_str.as_str() {
             "$eq" => Op::Eq,
             "$ne" => Op::Ne,
@@ -51,17 +51,23 @@ pub fn parse(raw_query: &str, ct: &ContentType) -> Result<Filter, Error> {
     }
 }
 
-fn parse_key(k: &str) -> Result<(String, String), Error> {
+fn parse_key(k: &str) -> Result<(String, String, Option<usize>), Error> {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
     let re = RE.get_or_init(|| {
-        regex::Regex::new(r"^filters\[(?P<col>[^\[\]]+)\]\[(?P<op>\$[a-z]+)\]$").unwrap()
+        regex::Regex::new(
+            r"^filters\[(?P<col>[^\[\]]+)\]\[(?P<op>\$[a-zA-Z]+)\](?:\[(?P<idx>\d+)\])?$",
+        )
+        .unwrap()
     });
     let caps = re.captures(k).ok_or_else(|| {
         Error::Validation(ValidationErrors::single(format!(
             "malformed filter param `{k}`"
         )))
     })?;
-    Ok((caps["col"].to_string(), caps["op"].to_string()))
+    let idx = caps
+        .name("idx")
+        .map(|m| m.as_str().parse::<usize>().expect("regex \\d+ already validated"));
+    Ok((caps["col"].to_string(), caps["op"].to_string(), idx))
 }
 
 fn field_for<'a>(ct: &'a ContentType, col: &str) -> Result<FieldOrSystem<'a>, Error> {
@@ -159,6 +165,26 @@ fn parse_bool(raw: &str) -> Result<bool, String> {
 
 fn field_err(col: &str, reason: impl Into<String>) -> Error {
     Error::Validation(ValidationErrors::field(col, reason))
+}
+
+/// Escape LIKE metacharacters in user input. Order matters: backslash first
+/// so we don't double-escape our own substitutions.
+#[allow(dead_code)] // wired into `parse` in the next task
+fn escape_like(raw: &str) -> String {
+    raw.replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
+#[allow(dead_code)] // wired into `parse` in the next task
+fn wrap_like(op: Op, escaped: String) -> String {
+    match op {
+        Op::Contains | Op::ContainsI => format!("%{escaped}%"),
+        Op::StartsWith => format!("{escaped}%"),
+        Op::EndsWith => format!("%{escaped}"),
+        // Unreachable: caller filters by op group.
+        _ => escaped,
+    }
 }
 
 #[cfg(test)]
@@ -319,5 +345,23 @@ mod tests {
         let f = parse("filters[id][$null]=false", &ct()).unwrap();
         let Filter::All(conds) = f else { panic!() };
         assert_eq!(conds[0].column, "id");
+    }
+
+    #[test]
+    fn escape_like_handles_metacharacters() {
+        assert_eq!(escape_like("foo"), "foo");
+        assert_eq!(escape_like("50%"), "50\\%");
+        assert_eq!(escape_like("a_b"), "a\\_b");
+        assert_eq!(escape_like("a\\b"), "a\\\\b");
+        // Backslash-first ordering: input \% becomes \\\% not \\\\%.
+        assert_eq!(escape_like("\\%"), "\\\\\\%");
+    }
+
+    #[test]
+    fn wrap_like_per_op() {
+        assert_eq!(wrap_like(Op::Contains, "foo".into()), "%foo%");
+        assert_eq!(wrap_like(Op::ContainsI, "foo".into()), "%foo%");
+        assert_eq!(wrap_like(Op::StartsWith, "foo".into()), "foo%");
+        assert_eq!(wrap_like(Op::EndsWith, "foo".into()), "%foo");
     }
 }
