@@ -356,7 +356,26 @@ pub fn render_where(filter: &Filter, start_placeholder: usize) -> Result<(String
             (Op::Gt | Op::Gte | Op::Lt | Op::Lte, _) => {
                 return Err(DmlError::InvalidFilter("order op requires Bound value"));
             }
-            // Phase 2.2 set + string ops: arms added in later tasks.
+            (Op::In | Op::NotIn, FilterValue::List(vs)) if vs.is_empty() => {
+                return Err(DmlError::InvalidFilter("set op requires non-empty List"));
+            }
+            (Op::In | Op::NotIn, FilterValue::List(vs)) => {
+                let cast = pg_cast(c.kind);
+                let mut placeholders = Vec::with_capacity(vs.len());
+                for v in vs {
+                    binds.push(v.clone());
+                    let p = placeholder;
+                    placeholder += 1;
+                    placeholders.push(format!("${p}::{cast}"));
+                }
+                let list = placeholders.join(", ");
+                let op_str = if matches!(c.op, Op::In) { "IN" } else { "NOT IN" };
+                format!("{col} {op_str} ({list})")
+            }
+            (Op::In | Op::NotIn, _) => {
+                return Err(DmlError::InvalidFilter("set op requires List value"));
+            }
+            // Phase 2.2 string ops: arm added in next task.
             _ => {
                 return Err(DmlError::InvalidFilter(
                     "operator not yet implemented in render_where",
@@ -628,5 +647,93 @@ mod where_tests {
             render_where(&f, 1),
             Err(DmlError::InvalidFilter(_))
         ));
+    }
+
+    #[test]
+    fn in_list_emits_parens() {
+        let f = Filter::All(vec![Condition::new(
+            "views",
+            FieldKind::Integer,
+            Op::In,
+            FilterValue::List(vec![BoundValue::I64(1), BoundValue::I64(2), BoundValue::I64(3)]),
+        )]);
+        let (sql, binds) = render_where(&f, 1).unwrap();
+        assert_eq!(
+            sql,
+            " WHERE \"views\" IN ($1::int8, $2::int8, $3::int8)"
+        );
+        assert_eq!(
+            binds,
+            vec![BoundValue::I64(1), BoundValue::I64(2), BoundValue::I64(3)]
+        );
+    }
+
+    #[test]
+    fn not_in_string() {
+        let f = Filter::All(vec![Condition::new(
+            "category",
+            FieldKind::String,
+            Op::NotIn,
+            FilterValue::List(vec![
+                BoundValue::Str("a".into()),
+                BoundValue::Str("b".into()),
+            ]),
+        )]);
+        let (sql, _binds) = render_where(&f, 1).unwrap();
+        assert_eq!(
+            sql,
+            " WHERE \"category\" NOT IN ($1::text, $2::text)"
+        );
+    }
+
+    #[test]
+    fn empty_in_list_rejected() {
+        let f = Filter::All(vec![Condition::new(
+            "views",
+            FieldKind::Integer,
+            Op::In,
+            FilterValue::List(vec![]),
+        )]);
+        assert!(matches!(
+            render_where(&f, 1),
+            Err(DmlError::InvalidFilter(_))
+        ));
+    }
+
+    #[test]
+    fn in_with_non_list_rejected() {
+        let f = Filter::All(vec![Condition::new(
+            "views",
+            FieldKind::Integer,
+            Op::In,
+            FilterValue::Bound(BoundValue::I64(1)),
+        )]);
+        assert!(matches!(
+            render_where(&f, 1),
+            Err(DmlError::InvalidFilter(_))
+        ));
+    }
+
+    #[test]
+    fn in_placeholders_continue_after_other_binds() {
+        let f = Filter::All(vec![
+            Condition::new(
+                "title",
+                FieldKind::String,
+                Op::Eq,
+                FilterValue::Bound(BoundValue::Str("x".into())),
+            ),
+            Condition::new(
+                "views",
+                FieldKind::Integer,
+                Op::In,
+                FilterValue::List(vec![BoundValue::I64(1), BoundValue::I64(2)]),
+            ),
+        ]);
+        let (sql, _binds) = render_where(&f, 1).unwrap();
+        assert_eq!(
+            sql,
+            " WHERE \"title\" = $1::text AND \"views\" IN ($2::int8, $3::int8)"
+        );
     }
 }
