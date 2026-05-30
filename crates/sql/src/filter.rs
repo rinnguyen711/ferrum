@@ -1,6 +1,6 @@
 //! Filter expressions. Phase 2.1 shipped `$eq` / `$ne` / `$null` combined with
-//! implicit AND. Phase 2.2 adds order / set / string operators. Combinators
-//! (`$or` / `$not`) land in phase 2.3.
+//! implicit AND. Phase 2.2 added order / set / string operators. Phase 2.3 adds
+//! recursive combinators (`$or`, `$and`, `$not`) — `Filter` is now a tree.
 
 use rustapi_core::{BoundValue, FieldKind};
 
@@ -9,8 +9,16 @@ use rustapi_core::{BoundValue, FieldKind};
 pub enum Filter {
     #[default]
     None,
-    /// Implicit AND across conditions. An empty vec behaves like `None`.
-    All(Vec<Condition>),
+    /// Implicit AND across children. Empty vec is treated as `None` by the
+    /// emitter. Single-child vecs are elided (no redundant parens).
+    All(Vec<Filter>),
+    /// Logical OR across children. Empty vec is rejected by the parser; the
+    /// emitter has a defensive guard.
+    Any(Vec<Filter>),
+    /// Logical NOT. Unary by construction (parser enforces).
+    Not(Box<Filter>),
+    /// Terminal leaf — a single column condition.
+    Leaf(Condition),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -178,5 +186,51 @@ mod tests {
             assert!(op_allows_kind(Op::Ne, kind));
             assert!(op_allows_kind(Op::IsNull, kind));
         }
+    }
+
+    // Phase 2.3 — recursive variants.
+
+    #[test]
+    fn leaf_variant_holds_condition() {
+        let c = Condition::new("title", FieldKind::String, Op::Eq, FilterValue::Null(true));
+        let f = Filter::Leaf(c.clone());
+        let Filter::Leaf(inner) = f else { panic!("expected Leaf") };
+        assert_eq!(inner.column, c.column);
+    }
+
+    #[test]
+    fn any_variant_holds_vec() {
+        let f = Filter::Any(vec![
+            Filter::Leaf(Condition::new("a", FieldKind::Integer, Op::Eq, FilterValue::Null(true))),
+            Filter::Leaf(Condition::new("b", FieldKind::Integer, Op::Eq, FilterValue::Null(true))),
+        ]);
+        let Filter::Any(xs) = f else { panic!("expected Any") };
+        assert_eq!(xs.len(), 2);
+    }
+
+    #[test]
+    fn not_variant_holds_box() {
+        let f = Filter::Not(Box::new(Filter::Leaf(Condition::new(
+            "a",
+            FieldKind::Integer,
+            Op::Eq,
+            FilterValue::Null(true),
+        ))));
+        let Filter::Not(inner) = f else { panic!("expected Not") };
+        assert!(matches!(*inner, Filter::Leaf(_)));
+    }
+
+    #[test]
+    fn all_variant_holds_vec_of_filter() {
+        let f = Filter::All(vec![
+            Filter::Leaf(Condition::new("a", FieldKind::Integer, Op::Eq, FilterValue::Null(true))),
+            Filter::Any(vec![
+                Filter::Leaf(Condition::new("b", FieldKind::Integer, Op::Eq, FilterValue::Null(true))),
+            ]),
+        ]);
+        let Filter::All(xs) = f else { panic!("expected All") };
+        assert_eq!(xs.len(), 2);
+        assert!(matches!(xs[0], Filter::Leaf(_)));
+        assert!(matches!(xs[1], Filter::Any(_)));
     }
 }
