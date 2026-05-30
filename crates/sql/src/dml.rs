@@ -298,7 +298,14 @@ mod tests {
 
 /// Emit a `WHERE` fragment plus the binds it consumes, starting at the
 /// caller-supplied placeholder index (1-based). Returns an empty string and
-/// no binds when the filter is empty.
+/// no binds when the filter is empty (`Filter::None` or top-level
+/// `Filter::All(vec![])`).
+///
+/// Walks the `Filter` tree recursively via `render_node`. Top-level
+/// single-child groups elide their parens so phase 2.1/2.2 single-condition
+/// SQL output stays byte-identical. Multi-child groups wrap each child in
+/// `(...)` and join with ` AND ` (for `All`) or ` OR ` (for `Any`); `Not`
+/// always wraps its child in `NOT (...)`.
 ///
 /// Callers that interleave their own placeholders with the WHERE binds must
 /// pass `start_placeholder = own_binds.len() + 1` and then number their own
@@ -321,6 +328,9 @@ pub fn render_where(filter: &Filter, start_placeholder: usize) -> Result<(String
     Ok((buf, binds))
 }
 
+/// Dispatch a single `Filter` node: appends one fragment to `buf` without
+/// any outer parens. Caller (top-level `render_where` or `render_joined`)
+/// owns the surrounding `WHERE ` or `(...)` framing.
 fn render_node(
     node: &Filter,
     buf: &mut String,
@@ -330,6 +340,9 @@ fn render_node(
     match node {
         Filter::None => Err(DmlError::InvalidFilter("Filter::None inside group")),
         Filter::Leaf(c) => render_leaf(c, buf, binds, placeholder),
+        // Top-level empty `All` is short-circuited in `render_where` for
+        // phase 2.1/2.2 back-compat. Reaching these arms inside the tree
+        // means the parser produced an empty group — a bug.
         Filter::All(xs) if xs.is_empty() => {
             Err(DmlError::InvalidFilter("empty $and group reached emitter"))
         }
@@ -349,6 +362,8 @@ fn render_node(
     }
 }
 
+/// Render a group's children: wraps each child in `(...)` and interleaves
+/// `sep` between them. Caller has already verified `xs.len() >= 2`.
 fn render_joined(
     xs: &[Filter],
     sep: &str,
@@ -367,6 +382,10 @@ fn render_joined(
     Ok(())
 }
 
+/// Emit one `Condition` as a SQL fragment. Pushes the per-leaf bind values
+/// (if any) onto `binds` and advances `placeholder` by the number of binds
+/// emitted. The fragment itself is appended to `buf` without surrounding
+/// parens — group framing happens in `render_joined`.
 fn render_leaf(
     c: &Condition,
     buf: &mut String,
