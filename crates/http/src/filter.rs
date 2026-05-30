@@ -4,12 +4,9 @@
 
 use rustapi_core::{is_system_column, BoundValue, ContentType, Error, Field, FieldKind, ValidationErrors, SYSTEM_COLUMNS};
 use rustapi_sql::{Condition, Filter, FilterValue, Op};
-use std::collections::HashSet;
-use std::sync::OnceLock;
 use url::form_urlencoded;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)]
 pub(crate) enum Segment {
     /// `$or`, `$and`, `$not`
     Combinator(String),
@@ -24,7 +21,6 @@ pub(crate) enum Segment {
 
 /// Split a `filters[...]...` key into ordered `Segment`s. Performs no
 /// semantic validation — that's the tree builder's job.
-#[allow(dead_code)]
 pub(crate) fn tokenize_key(k: &str) -> Result<Vec<Segment>, Error> {
     let rest = k.strip_prefix("filters").ok_or_else(|| {
         Error::Validation(ValidationErrors::single(format!(
@@ -64,7 +60,6 @@ pub(crate) fn tokenize_key(k: &str) -> Result<Vec<Segment>, Error> {
     Ok(segments)
 }
 
-#[allow(dead_code)]
 fn classify_segment(raw: &str) -> Segment {
     match raw {
         "$or" | "$and" | "$not" => Segment::Combinator(raw.to_string()),
@@ -79,76 +74,549 @@ fn classify_segment(raw: &str) -> Segment {
 /// Parse a raw query string into a `Filter`. Non-filter params are ignored.
 /// Returns `Filter::None` if no filter params are present.
 pub fn parse(raw_query: &str, ct: &ContentType) -> Result<Filter, Error> {
-    use std::collections::BTreeMap;
-    let mut seen: HashSet<(String, Op)> = HashSet::new();
-    let mut conds: Vec<Condition> = Vec::new();
-    let mut set_buckets: std::collections::HashMap<(String, Op), BTreeMap<usize, BoundValue>> =
-        std::collections::HashMap::new();
-    let mut set_kinds: std::collections::HashMap<(String, Op), FieldKind> =
-        std::collections::HashMap::new();
+    let mut root = TreeNode::group_all();
+    let mut set_buckets: SetBuckets = std::collections::HashMap::new();
 
     for (k, v) in form_urlencoded::parse(raw_query.as_bytes()) {
-        if !k.starts_with("filters[") {
+        if !k.starts_with("filters[") && k != "filters" {
             continue;
         }
-        let (col, op_str, idx) = parse_key(&k)?;
-        let op = map_op(&op_str, &col)?;
-        let field = field_for(ct, &col)?;
-        let kind = field.kind();
-
-        if !rustapi_sql::op_allows_kind(op, kind) {
-            return Err(field_err(
-                &col,
-                format!("operator `{op_str}` invalid for kind `{kind:?}`"),
-            ));
-        }
-
-        let is_set_op = matches!(op, Op::In | Op::NotIn);
-        match (is_set_op, idx) {
-            (true, None) => {
-                return Err(field_err(&col, "set operator requires bracketed list indices"));
-            }
-            (false, Some(_)) => {
-                return Err(field_err(&col, "unexpected list index for operator"));
-            }
-            (true, Some(i)) => {
-                if v.eq_ignore_ascii_case("null") {
-                    return Err(field_err(&col, "set operator entries cannot be null"));
-                }
-                let bv = coerce_bound(kind, &col, &v)?;
-                let bucket = set_buckets.entry((col.clone(), op)).or_default();
-                if bucket.insert(i, bv).is_some() {
-                    return Err(field_err(&col, "duplicate set operator entry"));
-                }
-                set_kinds.insert((col.clone(), op), kind);
-                if bucket.len() > 100 {
-                    return Err(field_err(&col, "set operator limited to 100 items"));
-                }
-            }
-            (false, None) => {
-                if !seen.insert((col.clone(), op)) {
-                    return Err(field_err(&col, "duplicate filter operator on column"));
-                }
-                let value = coerce_value(field, op, &col, &v)?;
-                conds.push(Condition::new(col, kind, op, value));
-            }
-        }
+        let segs = tokenize_key(&k)?;
+        insert_segments(&mut root, &segs, &v, ct, &mut set_buckets)?;
     }
 
-    for ((col, op), bucket) in set_buckets {
-        if bucket.is_empty() {
-            return Err(field_err(&col, "set operator requires non-empty list"));
-        }
-        let kind = set_kinds[&(col.clone(), op)];
-        let values: Vec<BoundValue> = bucket.into_values().collect();
-        conds.push(Condition::new(col, kind, op, FilterValue::List(values)));
-    }
+    flush_set_buckets(&mut root, set_buckets, ct)?;
+    finalize(root)
+}
 
-    if conds.is_empty() {
-        Ok(Filter::None)
+type SetBuckets = std::collections::HashMap<SetKey, SetBucket>;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum PathStep {
+    /// Step into parent_map[slot_idx] (a GroupAll or GroupAny), then into its
+    /// inner map at `child_idx`.
+    Group { slot_idx: usize, child_idx: usize },
+    /// Step into parent_map[slot_idx] (a Not), then into the singleton
+    /// holder's index 0.
+    Not { slot_idx: usize },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct SetKey {
+    /// Steps from root to the leaf's parent.
+    path: Vec<PathStep>,
+    column: String,
+    op: Op,
+}
+
+struct SetBucket {
+    kind: FieldKind,
+    /// BTreeMap so we walk in index order and detect gaps cheaply.
+    values: std::collections::BTreeMap<usize, BoundValue>,
+}
+
+/// Mutable in-progress tree. Leaves are produced directly; group ordering
+/// is preserved via BTreeMap on indices.
+#[derive(Debug)]
+enum TreeNode {
+    Leaf(Condition),
+    GroupAll(std::collections::BTreeMap<usize, TreeNode>),
+    GroupAny(std::collections::BTreeMap<usize, TreeNode>),
+    Not(Box<Option<TreeNode>>),
+}
+
+impl TreeNode {
+    fn group_all() -> Self {
+        TreeNode::GroupAll(std::collections::BTreeMap::new())
+    }
+    fn group_any() -> Self {
+        TreeNode::GroupAny(std::collections::BTreeMap::new())
+    }
+    fn not_empty() -> Self {
+        TreeNode::Not(Box::new(None))
+    }
+}
+
+fn insert_segments(
+    root: &mut TreeNode,
+    segs: &[Segment],
+    raw_val: &str,
+    ct: &ContentType,
+    set_buckets: &mut SetBuckets,
+) -> Result<(), Error> {
+    insert_into(root, segs, &mut Vec::new(), raw_val, ct, set_buckets)
+}
+
+/// Walk `segs` into `parent`. Combinators at the head of `segs` reuse an
+/// existing matching-tag sibling under `parent` so two query params for the
+/// same group stack into the same node; otherwise a fresh trailing slot is
+/// allocated. Leaves claim a fresh trailing slot and reject duplicate
+/// `(column, op)` pairs among sibling leaves at the same level.
+fn insert_into(
+    parent: &mut TreeNode,
+    segs: &[Segment],
+    path: &mut Vec<PathStep>,
+    raw_val: &str,
+    ct: &ContentType,
+    set_buckets: &mut SetBuckets,
+) -> Result<(), Error> {
+    match segs.first() {
+        Some(Segment::Combinator(tag)) if tag == "$not" => {
+            let inner_segs = &segs[1..];
+            if inner_segs.is_empty() {
+                return Err(generic_err("$not requires a child"));
+            }
+            if matches!(inner_segs.first(), Some(Segment::Index(_))) {
+                return Err(generic_err("$not must be unary"));
+            }
+            let parent_map = parent_group_map_mut(parent)?;
+            let fallback = parent_map.len();
+            let slot_idx = find_existing_combinator(parent_map, "$not").unwrap_or(fallback);
+            let entry = parent_map
+                .entry(slot_idx)
+                .or_insert_with(TreeNode::not_empty);
+            let TreeNode::Not(slot) = entry else {
+                return Err(generic_err("$not collides with non-$not child at same index"));
+            };
+            if slot.is_none() {
+                **slot = Some(TreeNode::group_all());
+            }
+            let holder = slot
+                .as_mut()
+                .as_mut()
+                .expect("just initialized");
+            path.push(PathStep::Not { slot_idx });
+            insert_into(holder, inner_segs, path, raw_val, ct, set_buckets)?;
+            path.pop();
+            Ok(())
+        }
+        Some(Segment::Combinator(tag)) => {
+            let group_tag = tag.clone();
+            let idx_seg = segs.get(1);
+            let Some(Segment::Index(child_idx)) = idx_seg else {
+                return Err(generic_err(&format!(
+                    "{group_tag} group requires bracketed index next"
+                )));
+            };
+            let parent_map = parent_group_map_mut(parent)?;
+            let fallback = parent_map.len();
+            let slot_idx =
+                find_existing_combinator(parent_map, &group_tag).unwrap_or(fallback);
+            let group_entry = parent_map
+                .entry(slot_idx)
+                .or_insert_with(|| if group_tag == "$or" {
+                    TreeNode::group_any()
+                } else {
+                    TreeNode::group_all()
+                });
+            ensure_matches_combinator(group_entry, &group_tag)?;
+            path.push(PathStep::Group { slot_idx, child_idx: *child_idx });
+            let remainder = &segs[2..];
+            let res = insert_at_group_index(
+                group_entry, *child_idx, remainder, path, raw_val, ct, set_buckets,
+            );
+            path.pop();
+            res
+        }
+        Some(Segment::Name(col)) => {
+            let op_seg = segs.get(1).ok_or_else(|| field_err(col, "missing operator"))?;
+            let Segment::Op(op_str) = op_seg else {
+                return Err(field_err(col, "expected operator after column"));
+            };
+            let op = map_op(op_str, col)?;
+            let field = field_for(ct, col)?;
+            let kind = field.kind();
+            if !rustapi_sql::op_allows_kind(op, kind) {
+                return Err(field_err(
+                    col,
+                    format!("operator `{op_str}` invalid for kind `{kind:?}`"),
+                ));
+            }
+            let extra = segs.get(2);
+            let is_set_op = matches!(op, Op::In | Op::NotIn);
+            match (is_set_op, extra) {
+                (true, Some(Segment::Index(i))) => {
+                    if raw_val.eq_ignore_ascii_case("null") {
+                        return Err(field_err(col, "set operator entries cannot be null"));
+                    }
+                    let bv = coerce_bound(kind, col, raw_val)?;
+                    let key = SetKey {
+                        path: path.clone(),
+                        column: col.clone(),
+                        op,
+                    };
+                    let bucket = set_buckets
+                        .entry(key)
+                        .or_insert_with(|| SetBucket {
+                            kind,
+                            values: std::collections::BTreeMap::new(),
+                        });
+                    if bucket.values.insert(*i, bv).is_some() {
+                        return Err(field_err(col, "duplicate set operator entry"));
+                    }
+                    if bucket.values.len() > 100 {
+                        return Err(field_err(col, "set operator limited to 100 items"));
+                    }
+                    Ok(())
+                }
+                (true, _) => Err(field_err(col, "set operator requires bracketed list indices")),
+                (false, Some(_)) => Err(field_err(col, "unexpected list index for operator")),
+                (false, None) => {
+                    let parent_map = parent_group_map_mut(parent)?;
+                    if has_sibling_leaf(parent_map, col, op) {
+                        return Err(field_err(col, "duplicate filter operator on column"));
+                    }
+                    let value = coerce_value(field, op, col, raw_val)?;
+                    let next_idx = parent_map.len();
+                    parent_map.insert(
+                        next_idx,
+                        TreeNode::Leaf(Condition::new(col, kind, op, value)),
+                    );
+                    Ok(())
+                }
+            }
+        }
+        Some(Segment::Op(_) | Segment::Index(_)) | None => {
+            Err(generic_err("malformed filter key shape"))
+        }
+    }
+}
+
+/// Place `segs` at the given `child_idx` inside an already-resolved group
+/// `parent`. If `segs` is a leaf (`Name`/`Op`/maybe `Index`), the leaf
+/// occupies that slot directly; if it's a nested combinator, the slot is
+/// (re)used as that sub-combinator's node.
+fn insert_at_group_index(
+    parent: &mut TreeNode,
+    child_idx: usize,
+    segs: &[Segment],
+    path: &mut Vec<PathStep>,
+    raw_val: &str,
+    ct: &ContentType,
+    set_buckets: &mut SetBuckets,
+) -> Result<(), Error> {
+    match segs.first() {
+        Some(Segment::Name(col)) => {
+            let op_seg = segs.get(1).ok_or_else(|| field_err(col, "missing operator"))?;
+            let Segment::Op(op_str) = op_seg else {
+                return Err(field_err(col, "expected operator after column"));
+            };
+            let op = map_op(op_str, col)?;
+            let field = field_for(ct, col)?;
+            let kind = field.kind();
+            if !rustapi_sql::op_allows_kind(op, kind) {
+                return Err(field_err(
+                    col,
+                    format!("operator `{op_str}` invalid for kind `{kind:?}`"),
+                ));
+            }
+            let extra = segs.get(2);
+            let is_set_op = matches!(op, Op::In | Op::NotIn);
+            match (is_set_op, extra) {
+                (true, Some(Segment::Index(i))) => {
+                    if raw_val.eq_ignore_ascii_case("null") {
+                        return Err(field_err(col, "set operator entries cannot be null"));
+                    }
+                    let bv = coerce_bound(kind, col, raw_val)?;
+                    let key = SetKey {
+                        path: path.clone(),
+                        column: col.clone(),
+                        op,
+                    };
+                    let bucket = set_buckets
+                        .entry(key)
+                        .or_insert_with(|| SetBucket {
+                            kind,
+                            values: std::collections::BTreeMap::new(),
+                        });
+                    if bucket.values.insert(*i, bv).is_some() {
+                        return Err(field_err(col, "duplicate set operator entry"));
+                    }
+                    if bucket.values.len() > 100 {
+                        return Err(field_err(col, "set operator limited to 100 items"));
+                    }
+                    Ok(())
+                }
+                (true, _) => Err(field_err(col, "set operator requires bracketed list indices")),
+                (false, Some(_)) => Err(field_err(col, "unexpected list index for operator")),
+                (false, None) => {
+                    let parent_map = parent_group_map_mut(parent)?;
+                    if parent_map.contains_key(&child_idx) {
+                        return Err(generic_err("duplicate filter at same path"));
+                    }
+                    let value = coerce_value(field, op, col, raw_val)?;
+                    parent_map.insert(
+                        child_idx,
+                        TreeNode::Leaf(Condition::new(col, kind, op, value)),
+                    );
+                    Ok(())
+                }
+            }
+        }
+        Some(Segment::Combinator(tag)) if tag == "$not" => {
+            let inner_segs = &segs[1..];
+            if inner_segs.is_empty() {
+                return Err(generic_err("$not requires a child"));
+            }
+            if matches!(inner_segs.first(), Some(Segment::Index(_))) {
+                return Err(generic_err("$not must be unary"));
+            }
+            let parent_map = parent_group_map_mut(parent)?;
+            let entry = parent_map
+                .entry(child_idx)
+                .or_insert_with(TreeNode::not_empty);
+            let TreeNode::Not(slot) = entry else {
+                return Err(generic_err("$not collides with non-$not child at same index"));
+            };
+            if slot.is_none() {
+                **slot = Some(TreeNode::group_all());
+            }
+            let holder = slot.as_mut().as_mut().expect("just initialized");
+            path.push(PathStep::Not { slot_idx: child_idx });
+            insert_into(holder, inner_segs, path, raw_val, ct, set_buckets)?;
+            path.pop();
+            Ok(())
+        }
+        Some(Segment::Combinator(tag)) => {
+            let group_tag = tag.clone();
+            let idx_seg = segs.get(1);
+            let Some(Segment::Index(grand_idx)) = idx_seg else {
+                return Err(generic_err(&format!(
+                    "{group_tag} group requires bracketed index next"
+                )));
+            };
+            let parent_map = parent_group_map_mut(parent)?;
+            let entry = parent_map.entry(child_idx).or_insert_with(|| {
+                if group_tag == "$or" {
+                    TreeNode::group_any()
+                } else {
+                    TreeNode::group_all()
+                }
+            });
+            ensure_matches_combinator(entry, &group_tag)?;
+            path.push(PathStep::Group { slot_idx: child_idx, child_idx: *grand_idx });
+            let remainder = &segs[2..];
+            let res = insert_at_group_index(
+                entry, *grand_idx, remainder, path, raw_val, ct, set_buckets,
+            );
+            path.pop();
+            res
+        }
+        Some(Segment::Op(_) | Segment::Index(_)) | None => {
+            Err(generic_err("malformed filter key shape"))
+        }
+    }
+}
+
+fn find_existing_combinator(
+    map: &std::collections::BTreeMap<usize, TreeNode>,
+    tag: &str,
+) -> Option<usize> {
+    for (idx, node) in map {
+        let is_match = matches!(
+            (tag, node),
+            ("$or", TreeNode::GroupAny(_))
+                | ("$and", TreeNode::GroupAll(_))
+                | ("$not", TreeNode::Not(_))
+        );
+        if is_match {
+            return Some(*idx);
+        }
+    }
+    None
+}
+
+fn has_sibling_leaf(
+    map: &std::collections::BTreeMap<usize, TreeNode>,
+    col: &str,
+    op: Op,
+) -> bool {
+    map.values()
+        .any(|n| matches!(n, TreeNode::Leaf(c) if c.column == col && c.op == op))
+}
+
+fn parent_group_map_mut(
+    parent: &mut TreeNode,
+) -> Result<&mut std::collections::BTreeMap<usize, TreeNode>, Error> {
+    match parent {
+        TreeNode::GroupAll(m) | TreeNode::GroupAny(m) => Ok(m),
+        _ => Err(generic_err("internal: cannot insert into non-group parent")),
+    }
+}
+
+fn ensure_matches_combinator(node: &TreeNode, tag: &str) -> Result<(), Error> {
+    let ok = matches!(
+        (tag, node),
+        ("$or", TreeNode::GroupAny(_)) | ("$and", TreeNode::GroupAll(_))
+    );
+    if ok {
+        Ok(())
     } else {
-        Ok(Filter::All(conds.into_iter().map(Filter::Leaf).collect()))
+        Err(generic_err(&format!(
+            "combinator `{tag}` collides with existing node at the same path"
+        )))
     }
+}
+
+fn flush_set_buckets(
+    root: &mut TreeNode,
+    set_buckets: SetBuckets,
+    _ct: &ContentType,
+) -> Result<(), Error> {
+    for (key, bucket) in set_buckets {
+        if bucket.values.is_empty() {
+            return Err(field_err(&key.column, "set operator requires non-empty list"));
+        }
+        for (expected, actual) in bucket.values.keys().enumerate() {
+            if expected != *actual {
+                return Err(field_err(&key.column, "gap in set operator indices"));
+            }
+        }
+        let values: Vec<BoundValue> = bucket.values.into_values().collect();
+        let cond = Condition::new(
+            key.column.clone(),
+            bucket.kind,
+            key.op,
+            FilterValue::List(values),
+        );
+        insert_at_path(root, &key.path, cond)?;
+    }
+    Ok(())
+}
+
+fn insert_at_path(
+    root: &mut TreeNode,
+    path: &[PathStep],
+    cond: Condition,
+) -> Result<(), Error> {
+    // Top-level (no combinator wrapping): allocate a fresh trailing slot at root.
+    if path.is_empty() {
+        let map = parent_group_map_mut(root)?;
+        if has_sibling_leaf(map, &cond.column, cond.op) {
+            return Err(field_err(&cond.column, "duplicate filter operator on column"));
+        }
+        let next = map.len();
+        map.insert(next, TreeNode::Leaf(cond));
+        return Ok(());
+    }
+
+    // Walk to the leaf's immediate parent group, recording the final
+    // child_idx so we can write the leaf directly into that slot.
+    let mut node: &mut TreeNode = root;
+    let last = path.len() - 1;
+    let mut final_child_idx: Option<usize> = None;
+
+    for (i, step) in path.iter().enumerate() {
+        let is_last = i == last;
+        match step {
+            PathStep::Group { slot_idx, child_idx } => {
+                let map = parent_group_map_mut(node)?;
+                node = map.get_mut(slot_idx).ok_or_else(|| {
+                    generic_err("internal: set-bucket path missing during flush")
+                })?;
+                if is_last {
+                    final_child_idx = Some(*child_idx);
+                } else {
+                    let inner_map = parent_group_map_mut(node)?;
+                    node = inner_map.get_mut(child_idx).ok_or_else(|| {
+                        generic_err("internal: set-bucket path missing during flush")
+                    })?;
+                }
+            }
+            PathStep::Not { slot_idx } => {
+                let map = parent_group_map_mut(node)?;
+                node = map.get_mut(slot_idx).ok_or_else(|| {
+                    generic_err("internal: set-bucket path missing during flush")
+                })?;
+                let TreeNode::Not(slot) = node else {
+                    return Err(generic_err("internal: expected Not at $not path step"));
+                };
+                node = slot.as_mut().as_mut().ok_or_else(|| {
+                    generic_err("internal: $not slot empty during flush")
+                })?;
+                if is_last {
+                    final_child_idx = Some(0);
+                } else {
+                    let inner_map = parent_group_map_mut(node)?;
+                    node = inner_map.get_mut(&0).ok_or_else(|| {
+                        generic_err("internal: $not holder empty during flush")
+                    })?;
+                }
+            }
+        }
+    }
+
+    let map = parent_group_map_mut(node)?;
+    let slot = final_child_idx.expect("path was non-empty");
+    if map.contains_key(&slot) {
+        return Err(generic_err("duplicate filter at same path"));
+    }
+    map.insert(slot, TreeNode::Leaf(cond));
+    Ok(())
+}
+
+fn finalize(root: TreeNode) -> Result<Filter, Error> {
+    let TreeNode::GroupAll(map) = root else {
+        return Err(generic_err("internal: root is not All"));
+    };
+    if map.is_empty() {
+        return Ok(Filter::None);
+    }
+    for (expected, actual) in map.keys().enumerate() {
+        if expected != *actual {
+            return Err(generic_err("gap in top-level filter ordering"));
+        }
+    }
+    let children: Vec<Filter> = map.into_values().map(node_to_filter).collect::<Result<_, _>>()?;
+    Ok(Filter::All(children))
+}
+
+fn node_to_filter(node: TreeNode) -> Result<Filter, Error> {
+    match node {
+        TreeNode::Leaf(c) => Ok(Filter::Leaf(c)),
+        TreeNode::GroupAll(map) => {
+            if map.is_empty() {
+                return Err(generic_err("empty $and group"));
+            }
+            for (expected, actual) in map.keys().enumerate() {
+                if expected != *actual {
+                    return Err(generic_err("gap in $and group indices"));
+                }
+            }
+            let xs: Vec<Filter> = map.into_values().map(node_to_filter).collect::<Result<_, _>>()?;
+            Ok(Filter::All(xs))
+        }
+        TreeNode::GroupAny(map) => {
+            if map.is_empty() {
+                return Err(generic_err("empty $or group"));
+            }
+            for (expected, actual) in map.keys().enumerate() {
+                if expected != *actual {
+                    return Err(generic_err("gap in $or group indices"));
+                }
+            }
+            let xs: Vec<Filter> = map.into_values().map(node_to_filter).collect::<Result<_, _>>()?;
+            Ok(Filter::Any(xs))
+        }
+        TreeNode::Not(slot) => {
+            let inner = slot.ok_or_else(|| generic_err("$not requires a child"))?;
+            let unwrapped = match inner {
+                TreeNode::GroupAll(mut m) if m.len() == 1 => {
+                    let key = *m.keys().next().expect("len==1 just checked");
+                    m.remove(&key).expect("key just observed")
+                }
+                TreeNode::GroupAll(_) => {
+                    return Err(generic_err("$not holder must have exactly one child"));
+                }
+                other => other,
+            };
+            Ok(Filter::Not(Box::new(node_to_filter(unwrapped)?)))
+        }
+    }
+}
+
+fn generic_err(msg: &str) -> Error {
+    Error::Validation(ValidationErrors::single(msg.to_string()))
 }
 
 fn map_op(op_str: &str, col: &str) -> Result<Op, Error> {
@@ -168,25 +636,6 @@ fn map_op(op_str: &str, col: &str) -> Result<Op, Error> {
         "$containsi" => Op::ContainsI,
         other => return Err(field_err(col, format!("unknown operator `{other}`"))),
     })
-}
-
-fn parse_key(k: &str) -> Result<(String, String, Option<usize>), Error> {
-    static RE: OnceLock<regex::Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| {
-        regex::Regex::new(
-            r"^filters\[(?P<col>[^\[\]]+)\]\[(?P<op>\$[a-zA-Z]+)\](?:\[(?P<idx>\d+)\])?$",
-        )
-        .unwrap()
-    });
-    let caps = re.captures(k).ok_or_else(|| {
-        Error::Validation(ValidationErrors::single(format!(
-            "malformed filter param `{k}`"
-        )))
-    })?;
-    let idx = caps
-        .name("idx")
-        .map(|m| m.as_str().parse::<usize>().expect("regex \\d+ already validated"));
-    Ok((caps["col"].to_string(), caps["op"].to_string(), idx))
 }
 
 fn field_for<'a>(ct: &'a ContentType, col: &str) -> Result<FieldOrSystem<'a>, Error> {
@@ -701,5 +1150,136 @@ mod tests {
         let conds = leaves(f);
         assert_eq!(conds[0].op, Op::Gte);
         assert!(matches!(conds[0].value, FilterValue::Bound(BoundValue::DateTime(_))));
+    }
+
+    #[test]
+    fn or_two_leaves() {
+        let f = parse(
+            "filters[$or][0][title][$eq]=foo&filters[$or][1][title][$eq]=bar",
+            &ct(),
+        )
+        .unwrap();
+        let Filter::All(xs) = f else { panic!("expected All, got {f:?}") };
+        assert_eq!(xs.len(), 1);
+        let Filter::Any(ys) = &xs[0] else { panic!("expected Any, got {:?}", xs[0]) };
+        assert_eq!(ys.len(), 2);
+        for child in ys {
+            assert!(matches!(child, Filter::Leaf(_)));
+        }
+    }
+
+    #[test]
+    fn and_two_leaves() {
+        let f = parse(
+            "filters[$and][0][title][$eq]=foo&filters[$and][1][views][$gt]=1",
+            &ct(),
+        )
+        .unwrap();
+        let Filter::All(xs) = f else { panic!() };
+        assert_eq!(xs.len(), 1);
+        let Filter::All(inner) = &xs[0] else { panic!() };
+        assert_eq!(inner.len(), 2);
+    }
+
+    #[test]
+    fn not_unary_leaf() {
+        let f = parse("filters[$not][title][$eq]=foo", &ct()).unwrap();
+        let Filter::All(xs) = f else { panic!() };
+        let Filter::Not(inner) = &xs[0] else { panic!() };
+        assert!(matches!(**inner, Filter::Leaf(_)));
+    }
+
+    #[test]
+    fn not_wraps_or() {
+        let f = parse(
+            "filters[$not][$or][0][title][$eq]=foo&filters[$not][$or][1][title][$eq]=bar",
+            &ct(),
+        )
+        .unwrap();
+        let Filter::All(xs) = f else { panic!() };
+        let Filter::Not(inner) = &xs[0] else { panic!() };
+        let Filter::Any(ys) = inner.as_ref() else { panic!() };
+        assert_eq!(ys.len(), 2);
+    }
+
+    #[test]
+    fn mixed_top_level_and_or() {
+        let f = parse(
+            "filters[published][$eq]=true\
+             &filters[$or][0][title][$eq]=foo\
+             &filters[$or][1][title][$eq]=bar",
+            &ct(),
+        )
+        .unwrap();
+        let Filter::All(xs) = f else { panic!() };
+        assert_eq!(xs.len(), 2);
+        assert!(matches!(xs[0], Filter::Leaf(_)));
+        assert!(matches!(xs[1], Filter::Any(_)));
+    }
+
+    #[test]
+    fn nested_and_inside_or() {
+        let f = parse(
+            "filters[$or][0][$and][0][title][$eq]=foo\
+             &filters[$or][0][$and][1][views][$gt]=5\
+             &filters[$or][1][title][$eq]=bar",
+            &ct(),
+        )
+        .unwrap();
+        let Filter::All(xs) = f else { panic!() };
+        let Filter::Any(ys) = &xs[0] else { panic!() };
+        assert_eq!(ys.len(), 2);
+        let Filter::All(zs) = &ys[0] else { panic!() };
+        assert_eq!(zs.len(), 2);
+        assert!(matches!(ys[1], Filter::Leaf(_)));
+    }
+
+    #[test]
+    fn not_with_index_rejected() {
+        let err = parse("filters[$not][0][title][$eq]=foo", &ct()).unwrap_err();
+        assert!(matches!(err, Error::Validation(_)));
+    }
+
+    #[test]
+    fn or_gap_in_indices_rejected() {
+        let err = parse(
+            "filters[$or][0][title][$eq]=foo&filters[$or][2][title][$eq]=bar",
+            &ct(),
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::Validation(_)));
+    }
+
+    #[test]
+    fn or_duplicate_index_rejected() {
+        let err = parse(
+            "filters[$or][0][title][$eq]=foo&filters[$or][0][title][$eq]=bar",
+            &ct(),
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::Validation(_)));
+    }
+
+    #[test]
+    fn empty_or_rejected() {
+        let err = parse("filters[$or]=foo", &ct()).unwrap_err();
+        assert!(matches!(err, Error::Validation(_)));
+    }
+
+    #[test]
+    fn in_inside_or() {
+        let f = parse(
+            "filters[$or][0][views][$in][0]=1&filters[$or][0][views][$in][1]=2\
+             &filters[$or][1][title][$eq]=foo",
+            &ct(),
+        )
+        .unwrap();
+        let Filter::All(xs) = f else { panic!() };
+        let Filter::Any(ys) = &xs[0] else { panic!() };
+        assert_eq!(ys.len(), 2);
+        let Filter::Leaf(c) = &ys[0] else { panic!() };
+        assert_eq!(c.op, Op::In);
+        let FilterValue::List(vs) = &c.value else { panic!() };
+        assert_eq!(vs.len(), 2);
     }
 }
