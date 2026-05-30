@@ -8,6 +8,74 @@ use std::collections::HashSet;
 use std::sync::OnceLock;
 use url::form_urlencoded;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
+pub(crate) enum Segment {
+    /// `$or`, `$and`, `$not`
+    Combinator(String),
+    /// `$eq`, `$ne`, `$null`, `$gt`, `$gte`, `$lt`, `$lte`, `$in`, `$nin`,
+    /// `$contains`, `$startsWith`, `$endsWith`, `$containsi`
+    Op(String),
+    /// Group child index (`$or[0]`, `$and[2]`) or set-value index (`$in[3]`).
+    Index(usize),
+    /// Column name.
+    Name(String),
+}
+
+/// Split a `filters[...]...` key into ordered `Segment`s. Performs no
+/// semantic validation — that's the tree builder's job.
+#[allow(dead_code)]
+pub(crate) fn tokenize_key(k: &str) -> Result<Vec<Segment>, Error> {
+    let rest = k.strip_prefix("filters").ok_or_else(|| {
+        Error::Validation(ValidationErrors::single(format!(
+            "malformed filter param `{k}` (missing `filters` prefix)"
+        )))
+    })?;
+
+    let mut segments = Vec::new();
+    let mut cur = rest;
+    while !cur.is_empty() {
+        let inner = cur
+            .strip_prefix('[')
+            .and_then(|s| {
+                let close = s.find(']')?;
+                Some((&s[..close], &s[close + 1..]))
+            })
+            .ok_or_else(|| {
+                Error::Validation(ValidationErrors::single(format!(
+                    "malformed filter param `{k}` (unbalanced brackets)"
+                )))
+            })?;
+        let (raw, tail) = inner;
+        if raw.is_empty() {
+            return Err(Error::Validation(ValidationErrors::single(format!(
+                "malformed filter param `{k}` (empty bracket)"
+            ))));
+        }
+        let seg = classify_segment(raw);
+        segments.push(seg);
+        cur = tail;
+    }
+    if segments.is_empty() {
+        return Err(Error::Validation(ValidationErrors::single(format!(
+            "malformed filter param `{k}` (no segments)"
+        ))));
+    }
+    Ok(segments)
+}
+
+#[allow(dead_code)]
+fn classify_segment(raw: &str) -> Segment {
+    match raw {
+        "$or" | "$and" | "$not" => Segment::Combinator(raw.to_string()),
+        s if s.starts_with('$') => Segment::Op(s.to_string()),
+        s => match s.parse::<usize>() {
+            Ok(n) => Segment::Index(n),
+            Err(_) => Segment::Name(s.to_string()),
+        },
+    }
+}
+
 /// Parse a raw query string into a `Filter`. Non-filter params are ignored.
 /// Returns `Filter::None` if no filter params are present.
 pub fn parse(raw_query: &str, ct: &ContentType) -> Result<Filter, Error> {
@@ -246,6 +314,74 @@ fn wrap_like(op: Op, escaped: String) -> String {
         Op::EndsWith => format!("%{escaped}"),
         // Unreachable: caller filters by op group.
         _ => escaped,
+    }
+}
+
+#[cfg(test)]
+mod tokenize_tests {
+    use super::*;
+
+    #[test]
+    fn flat_leaf() {
+        let segs = tokenize_key("filters[title][$eq]").unwrap();
+        assert_eq!(segs, vec![
+            Segment::Name("title".into()),
+            Segment::Op("$eq".into()),
+        ]);
+    }
+
+    #[test]
+    fn flat_leaf_with_in_index() {
+        let segs = tokenize_key("filters[views][$in][0]").unwrap();
+        assert_eq!(segs, vec![
+            Segment::Name("views".into()),
+            Segment::Op("$in".into()),
+            Segment::Index(0),
+        ]);
+    }
+
+    #[test]
+    fn or_group_index_then_leaf() {
+        let segs = tokenize_key("filters[$or][0][title][$eq]").unwrap();
+        assert_eq!(segs, vec![
+            Segment::Combinator("$or".into()),
+            Segment::Index(0),
+            Segment::Name("title".into()),
+            Segment::Op("$eq".into()),
+        ]);
+    }
+
+    #[test]
+    fn not_wraps_leaf() {
+        let segs = tokenize_key("filters[$not][title][$eq]").unwrap();
+        assert_eq!(segs, vec![
+            Segment::Combinator("$not".into()),
+            Segment::Name("title".into()),
+            Segment::Op("$eq".into()),
+        ]);
+    }
+
+    #[test]
+    fn nested_or_in_or() {
+        let segs = tokenize_key("filters[$or][0][$or][1][title][$eq]").unwrap();
+        assert_eq!(segs, vec![
+            Segment::Combinator("$or".into()),
+            Segment::Index(0),
+            Segment::Combinator("$or".into()),
+            Segment::Index(1),
+            Segment::Name("title".into()),
+            Segment::Op("$eq".into()),
+        ]);
+    }
+
+    #[test]
+    fn missing_filters_prefix_rejected() {
+        assert!(tokenize_key("title[$eq]").is_err());
+    }
+
+    #[test]
+    fn unbalanced_brackets_rejected() {
+        assert!(tokenize_key("filters[title][$eq").is_err());
     }
 }
 
