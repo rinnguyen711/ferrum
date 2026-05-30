@@ -79,7 +79,7 @@ pub fn parse(raw_query: &str, ct: &ContentType) -> Result<Filter, Error> {
     if conds.is_empty() {
         Ok(Filter::None)
     } else {
-        Ok(Filter::All(conds))
+        Ok(Filter::All(conds.into_iter().map(Filter::Leaf).collect()))
     }
 }
 
@@ -296,6 +296,16 @@ mod tests {
         }
     }
 
+    fn leaves(f: Filter) -> Vec<Condition> {
+        let Filter::All(xs) = f else { panic!("expected All") };
+        xs.into_iter()
+            .map(|x| match x {
+                Filter::Leaf(c) => c,
+                other => panic!("expected Leaf, got {other:?}"),
+            })
+            .collect()
+    }
+
     #[test]
     fn empty_returns_none() {
         let f = parse("", &ct()).unwrap();
@@ -311,7 +321,7 @@ mod tests {
     #[test]
     fn single_eq_string() {
         let f = parse("filters[title][$eq]=hi", &ct()).unwrap();
-        let Filter::All(conds) = f else { panic!("expected All") };
+        let conds = leaves(f);
         assert_eq!(conds.len(), 1);
         assert_eq!(conds[0].column, "title");
         assert_eq!(conds[0].op, Op::Eq);
@@ -320,7 +330,7 @@ mod tests {
     #[test]
     fn integer_coerces() {
         let f = parse("filters[views][$ne]=7", &ct()).unwrap();
-        let Filter::All(conds) = f else { panic!() };
+        let conds = leaves(f);
         match &conds[0].value {
             FilterValue::Bound(BoundValue::I64(n)) => assert_eq!(*n, 7),
             other => panic!("expected I64, got {other:?}"),
@@ -354,11 +364,11 @@ mod tests {
     #[test]
     fn null_true_and_false() {
         let f = parse("filters[views][$null]=true", &ct()).unwrap();
-        let Filter::All(conds) = f else { panic!() };
+        let conds = leaves(f);
         assert!(matches!(conds[0].value, FilterValue::Null(true)));
 
         let f = parse("filters[views][$null]=false", &ct()).unwrap();
-        let Filter::All(conds) = f else { panic!() };
+        let conds = leaves(f);
         assert!(matches!(conds[0].value, FilterValue::Null(false)));
     }
 
@@ -371,7 +381,7 @@ mod tests {
     #[test]
     fn eq_null_rewrites_to_typed_null() {
         let f = parse("filters[views][$eq]=null", &ct()).unwrap();
-        let Filter::All(conds) = f else { panic!() };
+        let conds = leaves(f);
         match &conds[0].value {
             FilterValue::Bound(BoundValue::Null(k)) => assert_eq!(*k, FieldKind::Integer),
             other => panic!("expected typed Null, got {other:?}"),
@@ -391,21 +401,21 @@ mod tests {
     #[test]
     fn same_col_different_ops_allowed() {
         let f = parse("filters[views][$eq]=1&filters[views][$ne]=5", &ct()).unwrap();
-        let Filter::All(conds) = f else { panic!() };
+        let conds = leaves(f);
         assert_eq!(conds.len(), 2);
     }
 
     #[test]
     fn boolean_case_insensitive() {
         let f = parse("filters[published][$eq]=True", &ct()).unwrap();
-        let Filter::All(conds) = f else { panic!() };
+        let conds = leaves(f);
         assert!(matches!(conds[0].value, FilterValue::Bound(BoundValue::Bool(true))));
     }
 
     #[test]
     fn system_column_filterable() {
         let f = parse("filters[id][$null]=false", &ct()).unwrap();
-        let Filter::All(conds) = f else { panic!() };
+        let conds = leaves(f);
         assert_eq!(conds[0].column, "id");
     }
 
@@ -442,7 +452,7 @@ mod tests {
     #[test]
     fn gt_integer_parses() {
         let f = parse("filters[views][$gt]=10", &ct()).unwrap();
-        let Filter::All(conds) = f else { panic!() };
+        let conds = leaves(f);
         assert_eq!(conds[0].op, Op::Gt);
         match &conds[0].value {
             FilterValue::Bound(BoundValue::I64(n)) => assert_eq!(*n, 10),
@@ -453,7 +463,7 @@ mod tests {
     #[test]
     fn in_two_values_collects_into_list() {
         let f = parse("filters[views][$in][0]=1&filters[views][$in][1]=2", &ct()).unwrap();
-        let Filter::All(conds) = f else { panic!() };
+        let conds = leaves(f);
         assert_eq!(conds.len(), 1);
         assert_eq!(conds[0].op, Op::In);
         match &conds[0].value {
@@ -511,7 +521,7 @@ mod tests {
     fn contains_escapes_and_wraps() {
         let f = parse("filters[title][$contains]=50%25", &ct()).unwrap();
         // `%25` URL-decodes to `%`, which then escapes to `\%`, then wraps to `%50\%%`.
-        let Filter::All(conds) = f else { panic!() };
+        let conds = leaves(f);
         match &conds[0].value {
             FilterValue::Bound(BoundValue::Str(s)) => assert_eq!(s, "%50\\%%"),
             other => panic!("expected Str, got {other:?}"),
@@ -521,7 +531,7 @@ mod tests {
     #[test]
     fn starts_with_wraps_one_side() {
         let f = parse("filters[title][$startsWith]=foo", &ct()).unwrap();
-        let Filter::All(conds) = f else { panic!() };
+        let conds = leaves(f);
         match &conds[0].value {
             FilterValue::Bound(BoundValue::Str(s)) => assert_eq!(s, "foo%"),
             other => panic!("expected Str, got {other:?}"),
@@ -531,7 +541,7 @@ mod tests {
     #[test]
     fn ends_with_wraps_one_side() {
         let f = parse("filters[title][$endsWith]=foo", &ct()).unwrap();
-        let Filter::All(conds) = f else { panic!() };
+        let conds = leaves(f);
         match &conds[0].value {
             FilterValue::Bound(BoundValue::Str(s)) => assert_eq!(s, "%foo"),
             other => panic!("expected Str, got {other:?}"),
@@ -541,7 +551,7 @@ mod tests {
     #[test]
     fn containsi_op_variant() {
         let f = parse("filters[title][$containsi]=FOO", &ct()).unwrap();
-        let Filter::All(conds) = f else { panic!() };
+        let conds = leaves(f);
         assert_eq!(conds[0].op, Op::ContainsI);
         match &conds[0].value {
             FilterValue::Bound(BoundValue::Str(s)) => assert_eq!(s, "%FOO%"),
@@ -552,7 +562,7 @@ mod tests {
     #[test]
     fn gte_on_datetime_rfc3339() {
         let f = parse("filters[created_at][$gte]=2026-01-01T00:00:00Z", &ct()).unwrap();
-        let Filter::All(conds) = f else { panic!() };
+        let conds = leaves(f);
         assert_eq!(conds[0].op, Op::Gte);
         assert!(matches!(conds[0].value, FilterValue::Bound(BoundValue::DateTime(_))));
     }
