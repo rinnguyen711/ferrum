@@ -74,15 +74,28 @@ fn classify_segment(raw: &str) -> Segment {
 /// Parse a raw query string into a `Filter`. Non-filter params are ignored.
 /// Returns `Filter::None` if no filter params are present.
 pub fn parse(raw_query: &str, ct: &ContentType) -> Result<Filter, Error> {
+    const MAX_DEPTH: usize = 8;
+    const MAX_LEAVES: usize = 100;
+
     let mut root = TreeNode::group_all();
     let mut set_buckets: SetBuckets = std::collections::HashMap::new();
+    let mut leaf_count: usize = 0;
 
     for (k, v) in form_urlencoded::parse(raw_query.as_bytes()) {
         if !k.starts_with("filters[") && k != "filters" {
             continue;
         }
         let segs = tokenize_key(&k)?;
-        insert_segments(&mut root, &segs, &v, ct, &mut set_buckets)?;
+        insert_segments(
+            &mut root,
+            &segs,
+            &v,
+            ct,
+            &mut set_buckets,
+            &mut leaf_count,
+            MAX_DEPTH,
+            MAX_LEAVES,
+        )?;
     }
 
     flush_set_buckets(&mut root, set_buckets, ct)?;
@@ -137,14 +150,29 @@ impl TreeNode {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn insert_segments(
     root: &mut TreeNode,
     segs: &[Segment],
     raw_val: &str,
     ct: &ContentType,
     set_buckets: &mut SetBuckets,
+    leaf_count: &mut usize,
+    max_depth: usize,
+    max_leaves: usize,
 ) -> Result<(), Error> {
-    insert_into(root, segs, &mut Vec::new(), raw_val, ct, set_buckets)
+    insert_into(
+        root,
+        segs,
+        &mut Vec::new(),
+        raw_val,
+        ct,
+        set_buckets,
+        0,
+        leaf_count,
+        max_depth,
+        max_leaves,
+    )
 }
 
 /// Walk `segs` into `parent`. Combinators at the head of `segs` reuse an
@@ -152,6 +180,7 @@ fn insert_segments(
 /// same group stack into the same node; otherwise a fresh trailing slot is
 /// allocated. Leaves claim a fresh trailing slot and reject duplicate
 /// `(column, op)` pairs among sibling leaves at the same level.
+#[allow(clippy::too_many_arguments)]
 fn insert_into(
     parent: &mut TreeNode,
     segs: &[Segment],
@@ -159,7 +188,14 @@ fn insert_into(
     raw_val: &str,
     ct: &ContentType,
     set_buckets: &mut SetBuckets,
+    depth: usize,
+    leaf_count: &mut usize,
+    max_depth: usize,
+    max_leaves: usize,
 ) -> Result<(), Error> {
+    if depth > max_depth {
+        return Err(generic_err("filter nesting depth exceeds 8"));
+    }
     match segs.first() {
         Some(Segment::Combinator(tag)) if tag == "$not" => {
             let inner_segs = &segs[1..];
@@ -186,9 +222,20 @@ fn insert_into(
                 .as_mut()
                 .expect("just initialized");
             path.push(PathStep::Not { slot_idx });
-            insert_into(holder, inner_segs, path, raw_val, ct, set_buckets)?;
+            let res = insert_into(
+                holder,
+                inner_segs,
+                path,
+                raw_val,
+                ct,
+                set_buckets,
+                depth + 1,
+                leaf_count,
+                max_depth,
+                max_leaves,
+            );
             path.pop();
-            Ok(())
+            res
         }
         Some(Segment::Combinator(tag)) => {
             let group_tag = tag.clone();
@@ -213,7 +260,17 @@ fn insert_into(
             path.push(PathStep::Group { slot_idx, child_idx: *child_idx });
             let remainder = &segs[2..];
             let res = insert_at_group_index(
-                group_entry, *child_idx, remainder, path, raw_val, ct, set_buckets,
+                group_entry,
+                *child_idx,
+                remainder,
+                path,
+                raw_val,
+                ct,
+                set_buckets,
+                depth + 1,
+                leaf_count,
+                max_depth,
+                max_leaves,
             );
             path.pop();
             res
@@ -245,6 +302,7 @@ fn insert_into(
                         column: col.clone(),
                         op,
                     };
+                    let is_new_bucket = !set_buckets.contains_key(&key);
                     let bucket = set_buckets
                         .entry(key)
                         .or_insert_with(|| SetBucket {
@@ -256,6 +314,12 @@ fn insert_into(
                     }
                     if bucket.values.len() > 100 {
                         return Err(field_err(col, "set operator limited to 100 items"));
+                    }
+                    if is_new_bucket {
+                        *leaf_count += 1;
+                        if *leaf_count > max_leaves {
+                            return Err(generic_err("filter leaf count exceeds 100"));
+                        }
                     }
                     Ok(())
                 }
@@ -272,6 +336,10 @@ fn insert_into(
                         next_idx,
                         TreeNode::Leaf(Condition::new(col, kind, op, value)),
                     );
+                    *leaf_count += 1;
+                    if *leaf_count > max_leaves {
+                        return Err(generic_err("filter leaf count exceeds 100"));
+                    }
                     Ok(())
                 }
             }
@@ -286,6 +354,7 @@ fn insert_into(
 /// `parent`. If `segs` is a leaf (`Name`/`Op`/maybe `Index`), the leaf
 /// occupies that slot directly; if it's a nested combinator, the slot is
 /// (re)used as that sub-combinator's node.
+#[allow(clippy::too_many_arguments)]
 fn insert_at_group_index(
     parent: &mut TreeNode,
     child_idx: usize,
@@ -294,7 +363,14 @@ fn insert_at_group_index(
     raw_val: &str,
     ct: &ContentType,
     set_buckets: &mut SetBuckets,
+    depth: usize,
+    leaf_count: &mut usize,
+    max_depth: usize,
+    max_leaves: usize,
 ) -> Result<(), Error> {
+    if depth > max_depth {
+        return Err(generic_err("filter nesting depth exceeds 8"));
+    }
     match segs.first() {
         Some(Segment::Name(col)) => {
             let op_seg = segs.get(1).ok_or_else(|| field_err(col, "missing operator"))?;
@@ -323,6 +399,7 @@ fn insert_at_group_index(
                         column: col.clone(),
                         op,
                     };
+                    let is_new_bucket = !set_buckets.contains_key(&key);
                     let bucket = set_buckets
                         .entry(key)
                         .or_insert_with(|| SetBucket {
@@ -334,6 +411,12 @@ fn insert_at_group_index(
                     }
                     if bucket.values.len() > 100 {
                         return Err(field_err(col, "set operator limited to 100 items"));
+                    }
+                    if is_new_bucket {
+                        *leaf_count += 1;
+                        if *leaf_count > max_leaves {
+                            return Err(generic_err("filter leaf count exceeds 100"));
+                        }
                     }
                     Ok(())
                 }
@@ -349,6 +432,10 @@ fn insert_at_group_index(
                         child_idx,
                         TreeNode::Leaf(Condition::new(col, kind, op, value)),
                     );
+                    *leaf_count += 1;
+                    if *leaf_count > max_leaves {
+                        return Err(generic_err("filter leaf count exceeds 100"));
+                    }
                     Ok(())
                 }
             }
@@ -373,9 +460,20 @@ fn insert_at_group_index(
             }
             let holder = slot.as_mut().as_mut().expect("just initialized");
             path.push(PathStep::Not { slot_idx: child_idx });
-            insert_into(holder, inner_segs, path, raw_val, ct, set_buckets)?;
+            let res = insert_into(
+                holder,
+                inner_segs,
+                path,
+                raw_val,
+                ct,
+                set_buckets,
+                depth + 1,
+                leaf_count,
+                max_depth,
+                max_leaves,
+            );
             path.pop();
-            Ok(())
+            res
         }
         Some(Segment::Combinator(tag)) => {
             let group_tag = tag.clone();
@@ -397,7 +495,17 @@ fn insert_at_group_index(
             path.push(PathStep::Group { slot_idx: child_idx, child_idx: *grand_idx });
             let remainder = &segs[2..];
             let res = insert_at_group_index(
-                entry, *grand_idx, remainder, path, raw_val, ct, set_buckets,
+                entry,
+                *grand_idx,
+                remainder,
+                path,
+                raw_val,
+                ct,
+                set_buckets,
+                depth + 1,
+                leaf_count,
+                max_depth,
+                max_leaves,
             );
             path.pop();
             res
@@ -1281,5 +1389,50 @@ mod tests {
         assert_eq!(c.op, Op::In);
         let FilterValue::List(vs) = &c.value else { panic!() };
         assert_eq!(vs.len(), 2);
+    }
+
+    #[test]
+    fn depth_8_allowed() {
+        // 8 combinator levels deep: $or > $or > ... > $or (×8) > leaf.
+        let mut q = String::new();
+        for _ in 0..8 {
+            q.push_str("[$or][0]");
+        }
+        let key = format!("filters{q}[title][$eq]");
+        let url = format!("{key}=foo");
+        let _ = parse(&url, &ct()).unwrap();
+    }
+
+    #[test]
+    fn depth_9_rejected() {
+        let mut q = String::new();
+        for _ in 0..9 {
+            q.push_str("[$or][0]");
+        }
+        let key = format!("filters{q}[title][$eq]");
+        let url = format!("{key}=foo");
+        let err = parse(&url, &ct()).unwrap_err();
+        assert!(matches!(err, Error::Validation(_)));
+    }
+
+    #[test]
+    fn leaf_count_100_allowed() {
+        let mut parts = Vec::new();
+        for i in 0..100 {
+            parts.push(format!("filters[$or][{i}][title][$eq]=v{i}"));
+        }
+        let url = parts.join("&");
+        let _ = parse(&url, &ct()).unwrap();
+    }
+
+    #[test]
+    fn leaf_count_101_rejected() {
+        let mut parts = Vec::new();
+        for i in 0..101 {
+            parts.push(format!("filters[$or][{i}][title][$eq]=v{i}"));
+        }
+        let url = parts.join("&");
+        let err = parse(&url, &ct()).unwrap_err();
+        assert!(matches!(err, Error::Validation(_)));
     }
 }
