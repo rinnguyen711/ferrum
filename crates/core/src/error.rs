@@ -15,6 +15,10 @@ pub enum Error {
     Conflict(String),
     #[error("unsupported: {0}")]
     Unsupported(String),
+    /// Postgres 23503 FK violation when a referencing row blocks a delete.
+    /// Phase 2.4 relations.
+    #[error("relation fk violation")]
+    RelationFkViolation { constraint: Option<String> },
     #[error(transparent)]
     Internal(#[from] anyhow::Error),
 }
@@ -26,6 +30,11 @@ pub struct ValidationErrors {
     pub message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub db: Option<DbInfo>,
+    /// Phase 2.4: list of relation-target ids that didn't resolve. Only set
+    /// by `ValidationErrors::relation_target_missing`. Surfaced under
+    /// `details.missing_ids` in the HTTP response.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub missing_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -48,6 +57,7 @@ impl ValidationErrors {
             fields: vec![],
             message: Some(msg.into()),
             db: None,
+            missing_ids: vec![],
         }
     }
 
@@ -59,6 +69,7 @@ impl ValidationErrors {
             }],
             message: None,
             db: None,
+            missing_ids: vec![],
         }
     }
 
@@ -70,6 +81,26 @@ impl ValidationErrors {
                 code: code.into(),
                 message: message.into(),
             }),
+            missing_ids: vec![],
+        }
+    }
+
+    /// Phase 2.4: a relation write referenced ids that don't exist in the
+    /// target table. Caller supplies the relation field name and the missing
+    /// ids; the response body carries them under `details.field` and
+    /// `details.missing_ids`.
+    pub fn relation_target_missing(
+        field: impl Into<String>,
+        missing_ids: Vec<String>,
+    ) -> Self {
+        Self {
+            fields: vec![FieldValidation {
+                field: field.into(),
+                reason: format!("relation target missing: {} id(s)", missing_ids.len()),
+            }],
+            message: Some("relation target missing".into()),
+            db: None,
+            missing_ids,
         }
     }
 }

@@ -34,6 +34,12 @@ impl IntoResponse for ApiError {
                         serde_json::to_value(db).unwrap_or(serde_json::Value::Null),
                     );
                 }
+                if !v.missing_ids.is_empty() {
+                    detail_obj.insert(
+                        "missing_ids".into(),
+                        serde_json::to_value(&v.missing_ids).unwrap_or(serde_json::Value::Null),
+                    );
+                }
                 let details = if detail_obj.is_empty() {
                     None
                 } else {
@@ -43,6 +49,10 @@ impl IntoResponse for ApiError {
             }
             Error::Conflict(msg) => (StatusCode::CONFLICT, "conflict", msg, None),
             Error::Unsupported(msg) => (StatusCode::BAD_REQUEST, "unsupported", msg, None),
+            Error::RelationFkViolation { constraint } => {
+                let details = constraint.map(|c| json!({ "constraint": c }));
+                (StatusCode::CONFLICT, "relation_fk_violation", "relation FK violation".into(), details)
+            }
             Error::Internal(e) => {
                 tracing::error!(error = ?e, "internal error");
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal", "internal error".into(), None)
@@ -88,6 +98,40 @@ mod tests {
         let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(body["error"]["code"], "validation_failed");
         assert_eq!(body["error"]["details"]["fields"][0]["field"], "title");
+    }
+
+    #[tokio::test]
+    async fn relation_fk_violation_is_409() {
+        let resp = ApiError(Error::RelationFkViolation {
+            constraint: Some("ct_post_author_id_fkey".into()),
+        })
+        .into_response();
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["error"]["code"], "relation_fk_violation");
+        assert_eq!(
+            body["error"]["details"]["constraint"],
+            "ct_post_author_id_fkey"
+        );
+    }
+
+    #[tokio::test]
+    async fn validation_includes_missing_ids() {
+        let v = rustapi_core::ValidationErrors::relation_target_missing(
+            "author",
+            vec!["00000000-0000-0000-0000-000000000001".into()],
+        );
+        let resp = ApiError(Error::Validation(v)).into_response();
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["error"]["code"], "validation_failed");
+        assert_eq!(
+            body["error"]["details"]["missing_ids"][0],
+            "00000000-0000-0000-0000-000000000001"
+        );
+        assert_eq!(body["error"]["details"]["fields"][0]["field"], "author");
     }
 
     #[tokio::test]

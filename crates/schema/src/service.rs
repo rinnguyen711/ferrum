@@ -169,8 +169,20 @@ fn map_db_err(e: sqlx::Error) -> Error {
         if let Some(code) = db.code() {
             // 23505 = unique_violation; 23514 = check_violation;
             // 23503 = fk_violation; 23502 = not_null_violation
-            if code.as_ref() == "23505" {
-                return Error::Conflict(db.message().to_string());
+            match code.as_ref() {
+                "23505" => return Error::Conflict(db.message().to_string()),
+                "23503" => {
+                    // Phase 2.4: FK violations from this layer come from DELETE
+                    // of a row referenced by relation FKs (children block the
+                    // delete via ON DELETE RESTRICT). Write paths (entry
+                    // handler) pre-check target existence and re-map any
+                    // residual 23503 with field context — they bypass this
+                    // mapper for the missing-target case.
+                    return Error::RelationFkViolation {
+                        constraint: db.constraint().map(|s| s.to_string()),
+                    };
+                }
+                _ => {}
             }
         }
         // Per spec §5.6, surface other DB errors (DDL failures, constraint
