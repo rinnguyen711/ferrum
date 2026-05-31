@@ -10,7 +10,7 @@
 use rustapi_core::{ContentType, Error, FieldKind, ValidationErrors};
 use rustapi_schema::SchemaRegistry;
 use serde_json::{Map, Value};
-use sqlx::PgPool;
+use sqlx::{PgPool, Row};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
@@ -140,6 +140,126 @@ pub async fn apply_forward(
         if let Some(u) = take {
             if let Some(obj) = by_id.get(&u).cloned() {
                 r.insert(field_name.to_string(), obj);
+            }
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct InverseGroup {
+    pub children: Vec<Value>,
+    pub truncated: bool,
+}
+
+/// Bucket the SELECT'd children rows under their parent FK uuid and enforce
+/// the per-parent cap. `parents` seeds the map so parents with zero matches
+/// still get an empty group. Iteration order over `fetched` matters for
+/// truncation: the first `cap` rows per parent stay, the rest set the flag.
+pub fn group_inverse_children(
+    parents: &[Uuid],
+    fetched: Vec<(Uuid, Map<String, Value>)>,
+    cap: usize,
+) -> HashMap<Uuid, InverseGroup> {
+    let mut out: HashMap<Uuid, InverseGroup> = HashMap::new();
+    for p in parents {
+        out.insert(
+            *p,
+            InverseGroup {
+                children: Vec::new(),
+                truncated: false,
+            },
+        );
+    }
+    for (p, row) in fetched {
+        let g = out.entry(p).or_insert(InverseGroup {
+            children: Vec::new(),
+            truncated: false,
+        });
+        if g.children.len() < cap {
+            g.children.push(Value::Object(row));
+        } else {
+            g.truncated = true;
+        }
+    }
+    out
+}
+
+/// Hydrate an inverse relation in-place. Issues one batched SELECT against
+/// `source` rows whose FK column matches any parent id; over-fetches by one
+/// per parent (LIMIT `(cap+1) * N`) so the truncation flag is correct
+/// whenever a parent crosses the cap. Parents with no children still
+/// receive an empty array under `field_name` so the response shape is
+/// stable.
+pub async fn apply_inverse(
+    pool: &PgPool,
+    registry: &SchemaRegistry,
+    rows: &mut [Map<String, Value>],
+    field_name: &str,
+    source_table: &str,
+    fk_col: &str,
+) -> Result<(), Error> {
+    let source_ct = registry.get(source_table).await.ok_or_else(|| {
+        Error::Internal(anyhow::anyhow!(
+            "populate source vanished: {source_table}"
+        ))
+    })?;
+    let mut parent_ids: Vec<Uuid> = Vec::with_capacity(rows.len());
+    for r in rows.iter() {
+        if let Some(Value::String(s)) = r.get("id") {
+            if let Ok(u) = Uuid::parse_str(s) {
+                parent_ids.push(u);
+            }
+        }
+    }
+    if parent_ids.is_empty() {
+        for r in rows.iter_mut() {
+            r.insert(field_name.into(), Value::Array(Vec::new()));
+        }
+        return Ok(());
+    }
+    let table = rustapi_sql::table_name(source_table)
+        .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
+    let fk_quoted = rustapi_sql::quote_ident(fk_col)
+        .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
+    // Over-fetch by one per parent to detect truncation without a separate
+    // COUNT roundtrip. Order by FK then id so per-parent slices stay stable.
+    let limit = (INVERSE_LIMIT_PER_PARENT + 1) * parent_ids.len();
+    let sql = format!(
+        "SELECT * FROM {table} WHERE {fk_quoted} = ANY($1) \
+         ORDER BY {fk_quoted}, id LIMIT {limit}"
+    );
+    let fetched_rows = sqlx::query(&sql)
+        .bind(&parent_ids)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| Error::Internal(anyhow::anyhow!(e)))?;
+    let mut buckets: Vec<(Uuid, Map<String, Value>)> = Vec::with_capacity(fetched_rows.len());
+    for row in &fetched_rows {
+        let parent: Uuid = row
+            .try_get(fk_col)
+            .map_err(|e| Error::Internal(anyhow::anyhow!(e)))?;
+        let map = match crate::entry::row_to_json(&source_ct, row)? {
+            Value::Object(m) => m,
+            _ => unreachable!("row_to_json returns an object"),
+        };
+        buckets.push((parent, map));
+    }
+    let grouped = group_inverse_children(&parent_ids, buckets, INVERSE_LIMIT_PER_PARENT);
+    for r in rows.iter_mut() {
+        let pid = r
+            .get("id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| Uuid::parse_str(s).ok());
+        match pid.and_then(|p| grouped.get(&p)) {
+            Some(g) => {
+                r.insert(field_name.into(), Value::Array(g.children.clone()));
+                if g.truncated {
+                    r.insert(format!("{field_name}_truncated"), Value::Bool(true));
+                }
+            }
+            None => {
+                r.insert(field_name.into(), Value::Array(Vec::new()));
             }
         }
     }
@@ -289,5 +409,56 @@ mod tests {
         // parse loop hits the forward arm + returns just one entry.
         let out = parse_populate(&post, &reg, "author").await.unwrap();
         assert_eq!(out.len(), 1);
+    }
+
+    fn child_row() -> Map<String, Value> {
+        let mut m = Map::new();
+        m.insert("id".into(), Value::String(Uuid::new_v4().to_string()));
+        m
+    }
+
+    #[test]
+    fn inverse_grouping_caps_at_25_and_sets_flag() {
+        let parents: Vec<Uuid> = vec![Uuid::new_v4(), Uuid::new_v4()];
+        let mut children: Vec<(Uuid, Map<String, Value>)> = Vec::new();
+        for _ in 0..26 {
+            children.push((parents[0], child_row()));
+        }
+        for _ in 0..3 {
+            children.push((parents[1], child_row()));
+        }
+        let grouped = group_inverse_children(&parents, children, INVERSE_LIMIT_PER_PARENT);
+        let p0 = grouped.get(&parents[0]).unwrap();
+        assert_eq!(p0.children.len(), 25);
+        assert!(p0.truncated);
+        let p1 = grouped.get(&parents[1]).unwrap();
+        assert_eq!(p1.children.len(), 3);
+        assert!(!p1.truncated);
+    }
+
+    #[test]
+    fn inverse_grouping_seeds_empty_parents() {
+        // Parents with zero children must still appear in the map so the
+        // handler can write `[]` rather than skipping the JSON key.
+        let parents: Vec<Uuid> = vec![Uuid::new_v4(), Uuid::new_v4()];
+        let grouped = group_inverse_children(&parents, vec![], INVERSE_LIMIT_PER_PARENT);
+        assert_eq!(grouped.len(), 2);
+        for p in &parents {
+            let g = grouped.get(p).unwrap();
+            assert!(g.children.is_empty());
+            assert!(!g.truncated);
+        }
+    }
+
+    #[test]
+    fn inverse_grouping_exact_cap_no_flag() {
+        // 25 children → exactly at cap → no truncation.
+        let parents = vec![Uuid::new_v4()];
+        let children: Vec<(Uuid, Map<String, Value>)> =
+            (0..25).map(|_| (parents[0], child_row())).collect();
+        let grouped = group_inverse_children(&parents, children, INVERSE_LIMIT_PER_PARENT);
+        let g = grouped.get(&parents[0]).unwrap();
+        assert_eq!(g.children.len(), 25);
+        assert!(!g.truncated);
     }
 }
