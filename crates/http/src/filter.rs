@@ -344,9 +344,10 @@ fn insert_into(
                 }
             }
         }
-        Some(Segment::Op(_) | Segment::Index(_)) | None => {
-            Err(generic_err("malformed filter key shape"))
-        }
+        Some(Segment::Op(s)) => Err(generic_err(&format!(
+            "unexpected operator `{s}` at this position (expected combinator or column)"
+        ))),
+        Some(Segment::Index(_)) | None => Err(generic_err("malformed filter key shape")),
     }
 }
 
@@ -510,9 +511,10 @@ fn insert_at_group_index(
             path.pop();
             res
         }
-        Some(Segment::Op(_) | Segment::Index(_)) | None => {
-            Err(generic_err("malformed filter key shape"))
-        }
+        Some(Segment::Op(s)) => Err(generic_err(&format!(
+            "unexpected operator `{s}` at this position (expected combinator or column)"
+        ))),
+        Some(Segment::Index(_)) | None => Err(generic_err("malformed filter key shape")),
     }
 }
 
@@ -1434,5 +1436,48 @@ mod tests {
         let url = parts.join("&");
         let err = parse(&url, &ct()).unwrap_err();
         assert!(matches!(err, Error::Validation(_)));
+    }
+
+    #[test]
+    fn unknown_combinator_rejected() {
+        let err = parse("filters[$xor][0][title][$eq]=foo", &ct()).unwrap_err();
+        assert!(matches!(err, Error::Validation(_)));
+    }
+
+    #[test]
+    fn not_empty_after_strip_rejected() {
+        // `filters[$not][$not]` with no leaf below should reject.
+        let err = parse("filters[$not][$not]", &ct()).unwrap_err();
+        assert!(matches!(err, Error::Validation(_)));
+    }
+
+    #[test]
+    fn or_then_not_then_leaf() {
+        let f = parse(
+            "filters[$or][0][$not][title][$eq]=foo&filters[$or][1][views][$gt]=1",
+            &ct(),
+        )
+        .unwrap();
+        let Filter::All(xs) = f else { panic!() };
+        let Filter::Any(ys) = &xs[0] else { panic!() };
+        assert_eq!(ys.len(), 2);
+        let Filter::Not(inner) = &ys[0] else { panic!() };
+        assert!(matches!(**inner, Filter::Leaf(_)));
+    }
+
+    #[test]
+    fn explicit_top_level_and_not_flattened() {
+        let f = parse(
+            "filters[published][$eq]=true\
+             &filters[$and][0][title][$eq]=foo\
+             &filters[$and][1][views][$gt]=0",
+            &ct(),
+        )
+        .unwrap();
+        let Filter::All(xs) = f else { panic!() };
+        assert_eq!(xs.len(), 2);
+        assert!(matches!(xs[0], Filter::Leaf(_)));
+        let Filter::All(inner) = &xs[1] else { panic!("expected nested All") };
+        assert_eq!(inner.len(), 2);
     }
 }
