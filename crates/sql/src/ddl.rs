@@ -19,7 +19,7 @@ pub fn create_table(ct: &ContentType) -> Result<String, DdlError> {
         r#""updated_at" TIMESTAMPTZ NOT NULL DEFAULT now()"#.into(),
     ];
     for f in &ct.fields {
-        cols.push(column_def(f)?);
+        cols.push(column_def(&ct.name, f)?);
     }
     let body = cols.join(", ");
     Ok(format!("CREATE TABLE {table} ({body})"))
@@ -28,7 +28,7 @@ pub fn create_table(ct: &ContentType) -> Result<String, DdlError> {
 /// `ALTER TABLE ct_<name> ADD COLUMN ...`
 pub fn add_column(ct_name: &str, field: &Field) -> Result<String, DdlError> {
     let table = table_name(ct_name)?;
-    let def = column_def(field)?;
+    let def = column_def(ct_name, field)?;
     Ok(format!("ALTER TABLE {table} ADD COLUMN {def}"))
 }
 
@@ -45,9 +45,80 @@ pub fn drop_table(ct_name: &str) -> Result<String, DdlError> {
     Ok(format!("DROP TABLE {table}"))
 }
 
-fn column_def(f: &Field) -> Result<String, DdlError> {
+/// Emits paired DROP + ADD CONSTRAINT statements to update an enum
+/// field's CHECK constraint to a new (extended) values list. The
+/// physical table is `ct_<ct_name>`; the constraint name is
+/// `<ct_name>_<col>_enum_chk`.
+pub fn alter_enum_values(
+    ct_name: &str,
+    col: &str,
+    all_values: &[String],
+) -> Result<String, DdlError> {
+    let table = table_name(ct_name)?;
+    let col_q = quote_ident(col)?;
+    let constraint_q = quote_ident(&format!("{ct_name}_{col}_enum_chk"))?;
+    let values_lit = all_values
+        .iter()
+        .map(|v| format!("'{}'", v.replace('\'', "''")))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Ok(format!(
+        "ALTER TABLE {table} DROP CONSTRAINT {constraint_q}; \
+         ALTER TABLE {table} ADD CONSTRAINT {constraint_q} \
+         CHECK ({col_q} IS NULL OR {col_q} IN ({values_lit}))"
+    ))
+}
+
+fn column_def(ct_name: &str, f: &Field) -> Result<String, DdlError> {
     if f.kind == FieldKind::Relation {
         return relation_column_def(f);
+    }
+    if f.kind == FieldKind::Enum {
+        let meta = f.enum_meta().ok_or_else(|| {
+            IdentError("enum field missing/invalid kind_meta".into())
+        })?;
+        let col = quote_ident(&f.name)?;
+        let default_clause = if !f.default.is_null() {
+            format!(" DEFAULT {}", render_default(f))
+        } else {
+            String::new()
+        };
+        let not_null = if f.required { " NOT NULL" } else { "" };
+        let unique = if f.unique { " UNIQUE" } else { "" };
+        let values_lit = meta
+            .values
+            .iter()
+            .map(|v| format!("'{}'", v.replace('\'', "''")))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let constraint_name = quote_ident(&format!("{ct_name}_{}_enum_chk", f.name))?;
+        return Ok(format!(
+            "{col} text{default_clause}{not_null}{unique} CONSTRAINT {constraint_name} CHECK ({col} IS NULL OR {col} IN ({values_lit}))"
+        ));
+    }
+    if f.kind == FieldKind::Json {
+        let col = quote_ident(&f.name)?;
+        let default_clause = if !f.default.is_null() {
+            format!(" DEFAULT {}", render_default(f))
+        } else {
+            String::new()
+        };
+        let not_null = if f.required { " NOT NULL" } else { "" };
+        return Ok(format!("{col} jsonb{default_clause}{not_null}"));
+    }
+    if matches!(
+        f.kind,
+        FieldKind::Email | FieldKind::Url | FieldKind::Slug
+    ) {
+        let col = quote_ident(&f.name)?;
+        let default_clause = if !f.default.is_null() {
+            format!(" DEFAULT {}", render_default(f))
+        } else {
+            String::new()
+        };
+        let not_null = if f.required { " NOT NULL" } else { "" };
+        let unique = if f.unique { " UNIQUE" } else { "" };
+        return Ok(format!("{col} text{default_clause}{not_null}{unique}"));
     }
     let col = quote_ident(&f.name)?;
     let ty = sql_type(f);
@@ -97,7 +168,15 @@ fn render_default(f: &Field) -> String {
     // Safe because Field::validate (called before this) has confirmed
     // default coerces to the field's kind.
     match (&f.kind, &f.default) {
-        (FieldKind::String | FieldKind::Text, serde_json::Value::String(s)) => {
+        (
+            FieldKind::String
+            | FieldKind::Text
+            | FieldKind::Email
+            | FieldKind::Url
+            | FieldKind::Slug
+            | FieldKind::Enum,
+            serde_json::Value::String(s),
+        ) => {
             let escaped = s.replace('\'', "''");
             format!("'{escaped}'")
         }
@@ -107,6 +186,10 @@ fn render_default(f: &Field) -> String {
         }
         (FieldKind::Integer, v) | (FieldKind::Float, v) => v.to_string(),
         (FieldKind::Boolean, serde_json::Value::Bool(b)) => if *b { "TRUE" } else { "FALSE" }.into(),
+        (FieldKind::Json, v) if !v.is_null() => {
+            let s = v.to_string().replace('\'', "''");
+            format!("'{s}'::jsonb")
+        }
         _ => "NULL".into(),
     }
 }
@@ -228,6 +311,104 @@ mod tests {
             sql,
             "ALTER TABLE \"ct_post\" ADD COLUMN \"author_id\" uuid REFERENCES \"ct_user\"(\"id\") ON DELETE RESTRICT"
         );
+    }
+
+    #[test]
+    fn create_table_emits_enum_check() {
+        let f = Field {
+            name: "status".into(),
+            kind: FieldKind::Enum,
+            required: false,
+            unique: false,
+            default: json!(null),
+            max_length: None,
+            kind_meta: json!({"values": ["draft", "published"]}),
+        };
+        let sql = create_table(&ct(vec![f])).unwrap();
+        assert!(sql.contains("\"status\" text"));
+        assert!(sql.contains("CONSTRAINT \"post_status_enum_chk\""));
+        assert!(sql.contains("CHECK (\"status\" IS NULL OR \"status\" IN ('draft', 'published'))"));
+    }
+
+    #[test]
+    fn create_table_emits_enum_check_with_default() {
+        let f = Field {
+            name: "status".into(),
+            kind: FieldKind::Enum,
+            required: false,
+            unique: false,
+            default: json!("draft"),
+            max_length: None,
+            kind_meta: json!({"values": ["draft", "published"]}),
+        };
+        let sql = create_table(&ct(vec![f])).unwrap();
+        assert!(sql.contains("DEFAULT 'draft'"));
+    }
+
+    #[test]
+    fn create_table_emits_json_jsonb() {
+        let f = Field {
+            name: "meta".into(),
+            kind: FieldKind::Json,
+            required: false,
+            unique: false,
+            default: json!(null),
+            max_length: None,
+            kind_meta: json!({}),
+        };
+        let sql = create_table(&ct(vec![f])).unwrap();
+        assert!(sql.contains("\"meta\" jsonb"));
+    }
+
+    #[test]
+    fn create_table_emits_text_for_email_url_slug() {
+        for (kind, name) in [
+            (FieldKind::Email, "e"),
+            (FieldKind::Url, "u"),
+            (FieldKind::Slug, "s"),
+        ] {
+            let f = Field {
+                name: name.into(),
+                kind,
+                required: false,
+                unique: false,
+                default: json!(null),
+                max_length: None,
+                kind_meta: json!({}),
+            };
+            let sql = create_table(&ct(vec![f])).unwrap();
+            assert!(sql.contains(&format!("\"{name}\" text")), "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn alter_enum_values_emits_drop_and_add() {
+        let sql = alter_enum_values("post", "status", &[
+            "draft".to_string(),
+            "published".to_string(),
+            "archived".to_string(),
+        ])
+        .unwrap();
+        assert!(sql.contains("DROP CONSTRAINT \"post_status_enum_chk\""));
+        assert!(sql.contains("ADD CONSTRAINT \"post_status_enum_chk\""));
+        assert!(sql.contains("'draft', 'published', 'archived'"));
+    }
+
+    #[test]
+    fn add_column_emits_enum_constraint() {
+        let f = Field {
+            name: "status".into(),
+            kind: FieldKind::Enum,
+            required: false,
+            unique: false,
+            default: json!(null),
+            max_length: None,
+            kind_meta: json!({"values": ["a", "b"]}),
+        };
+        let sql = add_column("post", &f).unwrap();
+        assert!(sql.contains("ALTER TABLE"));
+        assert!(sql.contains("ADD COLUMN \"status\" text"));
+        assert!(sql.contains("CONSTRAINT \"post_status_enum_chk\""));
     }
 
     #[test]
