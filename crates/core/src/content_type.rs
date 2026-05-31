@@ -39,6 +39,8 @@ pub enum ContentTypeError {
         #[source]
         source: FieldError,
     },
+    #[error("field name `{0}` collides with physical column of another field")]
+    ColumnCollision(String),
 }
 
 impl NewContentType {
@@ -61,6 +63,13 @@ impl NewContentType {
                 name: f.name.clone(),
                 source: e,
             })?;
+        }
+        let mut cols: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for f in &self.fields {
+            let col = f.physical_column();
+            if !cols.insert(col.clone()) {
+                return Err(ContentTypeError::ColumnCollision(col));
+            }
         }
         Ok(())
     }
@@ -137,6 +146,75 @@ mod tests {
         let err = nct("post", vec![bad]).validate().unwrap_err();
         assert!(matches!(err, ContentTypeError::BadField { .. }));
     }
+
+    #[test]
+    fn reject_relation_id_collides_with_primitive_field() {
+        // Relation field `author` produces column `author_id`; primitive field
+        // named `author_id` would collide.
+        let relation = Field {
+            name: "author".into(),
+            kind: FieldKind::Relation,
+            required: false,
+            unique: false,
+            default: json!(null),
+            max_length: None,
+            kind_meta: json!({"target":"user","cardinality":"many_to_one"}),
+        };
+        let dup = Field {
+            name: "author_id".into(),
+            kind: FieldKind::String,
+            required: false,
+            unique: false,
+            default: json!(null),
+            max_length: None,
+            kind_meta: json!({}),
+        };
+        let err = nct("post", vec![relation, dup]).validate().unwrap_err();
+        assert_eq!(err, ContentTypeError::ColumnCollision("author_id".into()));
+    }
+
+    #[test]
+    fn reject_two_relations_with_same_physical_column() {
+        // Two relations whose physical columns collide is impossible without
+        // identical names (caught by DuplicateField), but include this as a
+        // sanity check anyway: relation `author` + relation `author` would
+        // hit DuplicateField, not ColumnCollision. We confirm ColumnCollision
+        // fires only when names differ but columns match.
+        let r1 = Field {
+            name: "x".into(),
+            kind: FieldKind::Relation,
+            required: false,
+            unique: false,
+            default: json!(null),
+            max_length: None,
+            kind_meta: json!({"target":"user","cardinality":"many_to_one"}),
+        };
+        let dup_name = Field {
+            name: "x_id".into(),
+            kind: FieldKind::String,
+            required: false,
+            unique: false,
+            default: json!(null),
+            max_length: None,
+            kind_meta: json!({}),
+        };
+        let err = nct("post", vec![r1, dup_name]).validate().unwrap_err();
+        assert_eq!(err, ContentTypeError::ColumnCollision("x_id".into()));
+    }
+
+    #[test]
+    fn relation_field_without_collision_validates() {
+        let relation = Field {
+            name: "author".into(),
+            kind: FieldKind::Relation,
+            required: false,
+            unique: false,
+            default: json!(null),
+            max_length: None,
+            kind_meta: json!({"target":"user","cardinality":"many_to_one"}),
+        };
+        assert!(nct("post", vec![field("title"), relation]).validate().is_ok());
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -167,6 +245,8 @@ pub enum PatchError {
     DuplicateAddField(String),
     #[error("patch is a no-op")]
     NoOp,
+    #[error("field name `{0}` collides with physical column of another field")]
+    ColumnCollision(String),
 }
 
 impl PatchContentType {
@@ -204,6 +284,24 @@ impl PatchContentType {
             }
             if !existing_names.contains(name.as_str()) {
                 return Err(PatchError::UnknownDropField(name.clone()));
+            }
+        }
+        // Post-mutation field set = (existing − drops) + adds. The drop-then-readd
+        // case is already rejected above by DuplicateAddField, so no overlap risk.
+        let mut cols: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for f in existing.fields.iter().filter(|f| !drop_set.contains(f.name.as_str())) {
+            let col = f.physical_column();
+            if !cols.insert(col.clone()) {
+                // This would only fire if an EXISTING type already had a collision —
+                // shouldn't happen since the type was previously validated. Treat
+                // as a defensive error.
+                return Err(PatchError::ColumnCollision(col));
+            }
+        }
+        for f in &self.add_fields {
+            let col = f.physical_column();
+            if !cols.insert(col.clone()) {
+                return Err(PatchError::ColumnCollision(col));
             }
         }
         Ok(())
@@ -301,5 +399,69 @@ mod patch_tests {
             p.validate(&existing()).unwrap_err(),
             PatchError::DuplicateAddField(_)
         ));
+    }
+
+    #[test]
+    fn patch_add_rejects_relation_colliding_with_existing_primitive() {
+        // Existing fixture has `title`. Add a primitive `author_id` first,
+        // then attempt to also add a relation `author` (whose physical column
+        // is `author_id`). The post-mutation field set would contain both
+        // `author_id` (primitive) and `author` (relation → column author_id).
+        let mut existing_with_author_id = existing();
+        existing_with_author_id.fields.push(Field {
+            name: "author_id".into(),
+            kind: FieldKind::String,
+            required: false,
+            unique: false,
+            default: json!(null),
+            max_length: None,
+            kind_meta: json!({}),
+        });
+        let p = PatchContentType {
+            display_name: None,
+            add_fields: vec![Field {
+                name: "author".into(),
+                kind: FieldKind::Relation,
+                required: false,
+                unique: false,
+                default: json!(null),
+                max_length: None,
+                kind_meta: json!({"target":"user","cardinality":"many_to_one"}),
+            }],
+            drop_fields: vec![],
+        };
+        let err = p.validate(&existing_with_author_id).unwrap_err();
+        assert_eq!(err, PatchError::ColumnCollision("author_id".into()));
+    }
+
+    #[test]
+    fn patch_drop_then_add_clears_collision() {
+        // Existing has `title` and a primitive `author_id`. Drop `author_id`,
+        // add relation `author`. Post-mutation set has only `author` whose
+        // column is `author_id`. No collision.
+        let mut existing_with_author_id = existing();
+        existing_with_author_id.fields.push(Field {
+            name: "author_id".into(),
+            kind: FieldKind::String,
+            required: false,
+            unique: false,
+            default: json!(null),
+            max_length: None,
+            kind_meta: json!({}),
+        });
+        let p = PatchContentType {
+            display_name: None,
+            add_fields: vec![Field {
+                name: "author".into(),
+                kind: FieldKind::Relation,
+                required: false,
+                unique: false,
+                default: json!(null),
+                max_length: None,
+                kind_meta: json!({"target":"user","cardinality":"many_to_one"}),
+            }],
+            drop_fields: vec!["author_id".into()],
+        };
+        assert!(p.validate(&existing_with_author_id).is_ok());
     }
 }
