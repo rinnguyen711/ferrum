@@ -19,6 +19,18 @@ pub enum Error {
     /// Phase 2.4 relations.
     #[error("relation fk violation")]
     RelationFkViolation { constraint: Option<String> },
+    #[error("enum value `{value}` not allowed for field `{field}`")]
+    EnumValueNotAllowed {
+        field: String,
+        value: String,
+        allowed: Vec<String>,
+    },
+    #[error("invalid email")]
+    BadEmail,
+    #[error("invalid URL")]
+    BadUrl,
+    #[error("invalid slug")]
+    BadSlug,
     #[error(transparent)]
     Internal(#[from] anyhow::Error),
 }
