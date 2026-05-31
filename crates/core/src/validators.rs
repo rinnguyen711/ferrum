@@ -65,7 +65,7 @@ mod tests {
 
     #[test]
     fn slug_too_long() {
-        let s: String = std::iter::repeat('a').take(SLUG_MAX_LEN + 1).collect();
+        let s: String = "a".repeat(SLUG_MAX_LEN + 1);
         assert!(!is_valid_slug(&s));
     }
 
