@@ -23,15 +23,16 @@ pub type SqlAndBinds = (String, Vec<BoundValue>);
 /// `INSERT INTO ct_<name> (cols...) VALUES ($1, $2, ...) RETURNING *`
 pub fn insert(ct: &ContentType, values: &BTreeMap<String, BoundValue>) -> Result<SqlAndBinds, DmlError> {
     let table = table_name(&ct.name)?;
-    let allowed: std::collections::HashSet<&str> = ct.fields.iter().map(|f| f.name.as_str()).collect();
+    let by_name: std::collections::HashMap<&str, &rustapi_core::Field> =
+        ct.fields.iter().map(|f| (f.name.as_str(), f)).collect();
     let mut cols = vec![];
     let mut placeholders = vec![];
     let mut binds = vec![];
     for (i, (name, val)) in values.iter().enumerate() {
-        if !allowed.contains(name.as_str()) {
+        let Some(f) = by_name.get(name.as_str()) else {
             return Err(DmlError::UnknownField(name.clone()));
-        }
-        cols.push(quote_ident(name)?);
+        };
+        cols.push(quote_ident(&f.physical_column())?);
         placeholders.push(format!("${}", i + 1));
         binds.push(val.clone());
     }
@@ -52,14 +53,15 @@ pub fn update(
     values: &BTreeMap<String, BoundValue>,
 ) -> Result<SqlAndBinds, DmlError> {
     let table = table_name(&ct.name)?;
-    let allowed: std::collections::HashSet<&str> = ct.fields.iter().map(|f| f.name.as_str()).collect();
+    let by_name: std::collections::HashMap<&str, &rustapi_core::Field> =
+        ct.fields.iter().map(|f| (f.name.as_str(), f)).collect();
     let mut sets = vec![];
     let mut binds: Vec<BoundValue> = vec![];
     for (i, (name, val)) in values.iter().enumerate() {
-        if !allowed.contains(name.as_str()) {
+        let Some(f) = by_name.get(name.as_str()) else {
             return Err(DmlError::UnknownField(name.clone()));
-        }
-        let col = quote_ident(name)?;
+        };
+        let col = quote_ident(&f.physical_column())?;
         let placeholder = i + 1;
         sets.push(format!("{col} = ${placeholder}"));
         binds.push(val.clone());
@@ -240,6 +242,57 @@ mod tests {
             "SELECT * FROM \"ct_post\" ORDER BY \"created_at\" DESC LIMIT $1 OFFSET $2"
         );
         assert_eq!(binds, vec![BoundValue::I64(25), BoundValue::I64(50)]);
+    }
+
+    fn relation_field(name: &str, target: &str) -> Field {
+        Field {
+            name: name.into(),
+            kind: FieldKind::Relation,
+            required: false,
+            unique: false,
+            default: json!(null),
+            max_length: None,
+            kind_meta: json!({"target": target, "cardinality": "many_to_one"}),
+        }
+    }
+
+    #[test]
+    fn insert_relation_uses_physical_column() {
+        let c = ct(vec![relation_field("author", "user")]);
+        let mut vals = BTreeMap::new();
+        let id = Uuid::new_v4();
+        vals.insert("author".into(), BoundValue::Uuid(id));
+        let (sql, binds) = insert(&c, &vals).unwrap();
+        assert_eq!(
+            sql,
+            "INSERT INTO \"ct_post\" (\"author_id\") VALUES ($1) RETURNING *"
+        );
+        assert_eq!(binds, vec![BoundValue::Uuid(id)]);
+    }
+
+    #[test]
+    fn update_relation_uses_physical_column() {
+        let c = ct(vec![relation_field("author", "user")]);
+        let mut vals = BTreeMap::new();
+        let target_id = Uuid::new_v4();
+        vals.insert("author".into(), BoundValue::Uuid(target_id));
+        let row_id = Uuid::new_v4();
+        let (sql, binds) = update(&c, row_id, &vals).unwrap();
+        assert!(sql.starts_with("UPDATE \"ct_post\" SET \"author_id\" = $1"));
+        assert_eq!(binds[0], BoundValue::Uuid(target_id));
+    }
+
+    #[test]
+    fn insert_relation_null_writes_typed_null() {
+        let c = ct(vec![relation_field("author", "user")]);
+        let mut vals = BTreeMap::new();
+        vals.insert("author".into(), BoundValue::Null(FieldKind::Uuid));
+        let (sql, binds) = insert(&c, &vals).unwrap();
+        assert_eq!(
+            sql,
+            "INSERT INTO \"ct_post\" (\"author_id\") VALUES ($1) RETURNING *"
+        );
+        assert_eq!(binds, vec![BoundValue::Null(FieldKind::Uuid)]);
     }
 
     #[test]
