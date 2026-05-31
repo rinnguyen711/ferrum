@@ -2,18 +2,26 @@
 
 use crate::entry::{body_to_binds, row_to_json, RelationCheck};
 use crate::error::ApiError;
+use crate::populate::{self, PopulateField};
 use crate::query::{parse_list, ListParams};
 use crate::state::AppState;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Json, Router};
-use rustapi_core::{Action, Error, Event, Principal, ValidationErrors};
+use rustapi_core::{Action, ContentType, Error, Event, Principal, ValidationErrors};
 use rustapi_schema::bind::{bind_all, bind_all_as};
+use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use sqlx::Row;
 use std::collections::HashMap;
 use uuid::Uuid;
+
+#[derive(Debug, Deserialize, Default)]
+struct GetParams {
+    #[serde(default)]
+    populate: Option<String>,
+}
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -37,6 +45,7 @@ async fn list(
 ) -> Result<Json<Value>, ApiError> {
     ensure(&state, &principal, Action::ContentRead, &ct_name).await?;
     let ct = state.schemas.registry().get(&ct_name).await.ok_or(ApiError(Error::NotFound))?;
+    let populate_param = params.populate.clone();
     let opts = parse_list(&ct, params, state.config.page_size_max)?;
     let offset: i64 = ((opts.page - 1) as i64) * (opts.page_size as i64);
 
@@ -54,10 +63,19 @@ async fn list(
     let q = bind_all(sqlx::query(&list_sql), &list_binds);
     let rows = q.fetch_all(&state.pool).await.map_err(db)?;
 
-    let mut data = Vec::with_capacity(rows.len());
+    let mut maps: Vec<Map<String, Value>> = Vec::with_capacity(rows.len());
     for r in &rows {
-        data.push(row_to_json(&ct, r)?);
+        match row_to_json(&ct, r)? {
+            Value::Object(m) => maps.push(m),
+            _ => unreachable!("row_to_json returns an object"),
+        }
     }
+
+    if let Some(raw) = populate_param.as_deref() {
+        apply_populate(&state, &ct, raw, &mut maps).await?;
+    }
+
+    let data: Vec<Value> = maps.into_iter().map(Value::Object).collect();
 
     let (count_sql, count_binds) = rustapi_sql::count(&ct.name, &filter)
         .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
@@ -101,6 +119,7 @@ async fn create(
 async fn get_one(
     State(state): State<AppState>,
     Path((ct_name, id)): Path<(String, Uuid)>,
+    Query(params): Query<GetParams>,
     axum::extract::Extension(principal): axum::extract::Extension<Principal>,
 ) -> Result<Json<Value>, ApiError> {
     ensure(&state, &principal, Action::ContentRead, &ct_name).await?;
@@ -110,7 +129,18 @@ async fn get_one(
     let q = bind_all(sqlx::query(&sql), &binds);
     let row = q.fetch_optional(&state.pool).await.map_err(db)?;
     let row = row.ok_or(ApiError(Error::NotFound))?;
-    Ok(Json(row_to_json(&ct, &row)?))
+    let mut map = match row_to_json(&ct, &row)? {
+        Value::Object(m) => m,
+        _ => unreachable!("row_to_json returns an object"),
+    };
+    if let Some(raw) = params.populate.as_deref() {
+        // Reuse the list pipeline with a 1-row slice so forward/inverse
+        // batched SELECTs apply identically to single-GET.
+        let mut one = vec![std::mem::take(&mut map)];
+        apply_populate(&state, &ct, raw, &mut one).await?;
+        map = one.pop().unwrap_or_default();
+    }
+    Ok(Json(Value::Object(map)))
 }
 
 async fn update(
@@ -184,6 +214,43 @@ fn db(e: sqlx::Error) -> ApiError {
         )));
     }
     ApiError(Error::Internal(anyhow::anyhow!(e)))
+}
+
+/// Parse `?populate=` and apply each forward/inverse pass in payload order.
+/// Both passes mutate `rows` in place; failure short-circuits and propagates
+/// (parsing returns 4xx, hydration internal errors return 500 via the
+/// `Internal` arm).
+async fn apply_populate(
+    state: &AppState,
+    ct: &ContentType,
+    raw: &str,
+    rows: &mut [Map<String, Value>],
+) -> Result<(), ApiError> {
+    let registry = state.schemas.registry();
+    let fields = populate::parse_populate(ct, registry, raw).await?;
+    for f in fields {
+        match f {
+            PopulateField::Forward { field_name, target } => {
+                populate::apply_forward(&state.pool, registry, rows, &field_name, &target).await?;
+            }
+            PopulateField::Inverse {
+                field_name,
+                source,
+                fk_col,
+            } => {
+                populate::apply_inverse(
+                    &state.pool,
+                    registry,
+                    rows,
+                    &field_name,
+                    &source,
+                    &fk_col,
+                )
+                .await?;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Per relation target, batch-`SELECT id FROM "<target>" WHERE id = ANY($1)`,
