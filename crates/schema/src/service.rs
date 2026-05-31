@@ -2,7 +2,7 @@
 
 use crate::registry::SchemaRegistry;
 use chrono::Utc;
-use rustapi_core::{ContentType, Error, NewContentType, PatchContentType};
+use rustapi_core::{ContentType, Error, Field, NewContentType, PatchContentType, ValidationErrors};
 use sqlx::{PgPool, Postgres, Transaction};
 use tracing::instrument;
 use uuid::Uuid;
@@ -25,6 +25,7 @@ impl SchemaService {
     #[instrument(skip(self, payload), fields(name = %payload.name))]
     pub async fn create(&self, payload: NewContentType) -> Result<ContentType, Error> {
         payload.validate().map_err(Error::from)?;
+        validate_relation_cross_refs(&self.registry, &payload.name, &payload.fields, false).await?;
 
         if self.registry.get(&payload.name).await.is_some() {
             return Err(Error::Conflict(format!(
@@ -87,6 +88,7 @@ impl SchemaService {
             .await
             .ok_or(Error::NotFound)?;
         payload.validate(&existing).map_err(Error::from)?;
+        validate_relation_cross_refs(&self.registry, name, &payload.add_fields, true).await?;
 
         let mut new_fields = existing.fields.clone();
         new_fields.retain(|f| !payload.drop_fields.contains(&f.name));
@@ -160,6 +162,69 @@ impl SchemaService {
     }
 }
 
+/// Cross-content-type validation for relation fields. `Field::validate()` only
+/// covers local shape; this pass checks rules that need the whole registry:
+///
+/// * relation target must exist (self-reference allowed when `target == candidate_name`)
+/// * `inverse` name must not collide with an existing field on the target type
+/// * `inverse` name must not collide with another source's inverse on the same target
+/// * PATCH-added relation fields cannot be `required: true` (no backfill in v1)
+pub async fn validate_relation_cross_refs(
+    registry: &SchemaRegistry,
+    candidate_name: &str,
+    candidate_fields: &[Field],
+    is_patch_add: bool,
+) -> Result<(), Error> {
+    for f in candidate_fields {
+        let Some(meta) = f.relation_meta() else { continue };
+
+        if is_patch_add && f.required {
+            return Err(Error::Validation(ValidationErrors::field(
+                &f.name,
+                "relation field cannot be added as required (no backfill in v1)",
+            )));
+        }
+
+        if meta.target != candidate_name && registry.get(&meta.target).await.is_none() {
+            return Err(Error::Validation(ValidationErrors::field(
+                &f.name,
+                format!("unknown target content type `{}`", meta.target),
+            )));
+        }
+
+        if let Some(inv) = &meta.inverse {
+            let target_ct = if meta.target == candidate_name {
+                None
+            } else {
+                registry.get(&meta.target).await
+            };
+            if let Some(target_ct) = target_ct {
+                if target_ct.fields.iter().any(|x| x.name == *inv) {
+                    return Err(Error::Validation(ValidationErrors::field(
+                        &f.name,
+                        format!(
+                            "inverse `{}` collides with existing field on target `{}`",
+                            inv, meta.target
+                        ),
+                    )));
+                }
+            }
+            if let Some((src, _)) = registry.inverse_lookup(&meta.target, inv).await {
+                if src != candidate_name {
+                    return Err(Error::Validation(ValidationErrors::field(
+                        &f.name,
+                        format!(
+                            "inverse `{}` already registered by source `{}` on target `{}`",
+                            inv, src, meta.target
+                        ),
+                    )));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn internal(e: sqlx::Error) -> Error {
     Error::Internal(anyhow::anyhow!(e))
 }
@@ -191,4 +256,180 @@ fn map_db_err(e: sqlx::Error) -> Error {
         return Error::Validation(rustapi_core::ValidationErrors::db(code, db.message()));
     }
     internal(e)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use rustapi_core::{ContentType, Field, FieldKind};
+    use serde_json::json;
+
+    fn user_ct() -> ContentType {
+        ContentType {
+            id: Uuid::new_v4(),
+            name: "user".into(),
+            display_name: "User".into(),
+            fields: vec![Field {
+                name: "name".into(),
+                kind: FieldKind::String,
+                required: false,
+                unique: false,
+                default: json!(null),
+                max_length: None,
+                kind_meta: json!({}),
+            }],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn relation_field(name: &str, target: &str, inverse: Option<&str>) -> Field {
+        let mut meta = serde_json::Map::new();
+        meta.insert("target".into(), json!(target));
+        meta.insert("cardinality".into(), json!("many_to_one"));
+        if let Some(inv) = inverse {
+            meta.insert("inverse".into(), json!(inv));
+        }
+        Field {
+            name: name.into(),
+            kind: FieldKind::Relation,
+            required: false,
+            unique: false,
+            default: json!(null),
+            max_length: None,
+            kind_meta: serde_json::Value::Object(meta),
+        }
+    }
+
+    fn assert_validation_msg(err: &Error, needle: &str) {
+        match err {
+            Error::Validation(v) => {
+                let combined = format!(
+                    "{:?} {:?}",
+                    v.message,
+                    v.fields.iter().map(|f| &f.reason).collect::<Vec<_>>()
+                );
+                assert!(
+                    combined.contains(needle),
+                    "expected `{needle}` in validation error, got {combined}"
+                );
+            }
+            other => panic!("expected Error::Validation, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn create_rejects_unknown_target() {
+        let reg = SchemaRegistry::new();
+        let fields = vec![relation_field("author", "user", None)];
+        let err = validate_relation_cross_refs(&reg, "post", &fields, false)
+            .await
+            .unwrap_err();
+        assert_validation_msg(&err, "unknown target");
+    }
+
+    #[tokio::test]
+    async fn create_allows_self_reference_target() {
+        let reg = SchemaRegistry::new();
+        let fields = vec![relation_field("parent", "node", None)];
+        validate_relation_cross_refs(&reg, "node", &fields, false)
+            .await
+            .expect("self-reference allowed even when registry empty");
+    }
+
+    #[tokio::test]
+    async fn create_rejects_inverse_collision_with_existing_field() {
+        let reg = SchemaRegistry::new();
+        let mut user = user_ct();
+        user.fields.push(Field {
+            name: "posts".into(),
+            kind: FieldKind::String,
+            required: false,
+            unique: false,
+            default: json!(null),
+            max_length: None,
+            kind_meta: json!({}),
+        });
+        reg.insert(user).await;
+
+        let fields = vec![relation_field("author", "user", Some("posts"))];
+        let err = validate_relation_cross_refs(&reg, "post", &fields, false)
+            .await
+            .unwrap_err();
+        assert_validation_msg(&err, "collides with existing field");
+    }
+
+    #[tokio::test]
+    async fn create_rejects_inverse_collision_with_other_inverse() {
+        let reg = SchemaRegistry::new();
+        reg.insert(user_ct()).await;
+        reg.insert(ContentType {
+            id: Uuid::new_v4(),
+            name: "post".into(),
+            display_name: "Post".into(),
+            fields: vec![relation_field("author", "user", Some("posts"))],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        })
+        .await;
+
+        let fields = vec![relation_field("writer", "user", Some("posts"))];
+        let err = validate_relation_cross_refs(&reg, "comment", &fields, false)
+            .await
+            .unwrap_err();
+        assert_validation_msg(&err, "already registered by source");
+    }
+
+    #[tokio::test]
+    async fn create_accepts_valid_relation_with_inverse() {
+        let reg = SchemaRegistry::new();
+        reg.insert(user_ct()).await;
+        let fields = vec![relation_field("author", "user", Some("posts"))];
+        validate_relation_cross_refs(&reg, "post", &fields, false)
+            .await
+            .expect("inverse name should be free on target");
+    }
+
+    #[tokio::test]
+    async fn patch_add_rejects_required_relation() {
+        let reg = SchemaRegistry::new();
+        reg.insert(user_ct()).await;
+        let mut f = relation_field("author", "user", None);
+        f.required = true;
+        let err = validate_relation_cross_refs(&reg, "post", &[f], true)
+            .await
+            .unwrap_err();
+        assert_validation_msg(&err, "cannot be added as required");
+    }
+
+    #[tokio::test]
+    async fn patch_add_required_check_skipped_on_create() {
+        let reg = SchemaRegistry::new();
+        reg.insert(user_ct()).await;
+        let mut f = relation_field("author", "user", None);
+        f.required = true;
+        // On create (is_patch_add=false) required is allowed because the table
+        // is built fresh from scratch — Task 5 emits NOT NULL accordingly.
+        validate_relation_cross_refs(&reg, "post", &[f], false)
+            .await
+            .expect("required relation allowed on create");
+    }
+
+    #[tokio::test]
+    async fn primitive_fields_ignored() {
+        let reg = SchemaRegistry::new();
+        let f = Field {
+            name: "title".into(),
+            kind: FieldKind::String,
+            required: false,
+            unique: false,
+            default: json!(null),
+            max_length: None,
+            kind_meta: json!({}),
+        };
+        validate_relation_cross_refs(&reg, "post", &[f], false)
+            .await
+            .expect("primitive fields bypass cross-CT relation validation");
+    }
 }
