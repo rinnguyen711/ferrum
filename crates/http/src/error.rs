@@ -53,6 +53,30 @@ impl IntoResponse for ApiError {
                 let details = constraint.map(|c| json!({ "constraint": c }));
                 (StatusCode::CONFLICT, "relation_fk_violation", "relation FK violation".into(), details)
             }
+            Error::EnumValueNotAllowed { field, value, allowed } => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "enum_value_not_allowed",
+                format!("value `{value}` not allowed for `{field}`"),
+                Some(json!({"field": field, "value": value, "allowed": allowed})),
+            ),
+            Error::BadEmail => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "bad_email",
+                "invalid email".into(),
+                None,
+            ),
+            Error::BadUrl => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "bad_url",
+                "invalid URL".into(),
+                None,
+            ),
+            Error::BadSlug => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "bad_slug",
+                "invalid slug".into(),
+                None,
+            ),
             Error::Internal(e) => {
                 tracing::error!(error = ?e, "internal error");
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal", "internal error".into(), None)
@@ -146,5 +170,43 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("null value"));
+    }
+
+    #[tokio::test]
+    async fn enum_value_not_allowed_is_422() {
+        let resp = ApiError(Error::EnumValueNotAllowed {
+            field: "status".into(),
+            value: "bad".into(),
+            allowed: vec!["draft".into(), "published".into()],
+        })
+        .into_response();
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["error"]["code"], "enum_value_not_allowed");
+        assert_eq!(body["error"]["details"]["field"], "status");
+        assert_eq!(body["error"]["details"]["value"], "bad");
+        assert_eq!(body["error"]["details"]["allowed"][0], "draft");
+    }
+
+    #[tokio::test]
+    async fn bad_email_is_422() {
+        let resp = ApiError(Error::BadEmail).into_response();
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["error"]["code"], "bad_email");
+    }
+
+    #[tokio::test]
+    async fn bad_url_is_422() {
+        let resp = ApiError(Error::BadUrl).into_response();
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[tokio::test]
+    async fn bad_slug_is_422() {
+        let resp = ApiError(Error::BadSlug).into_response();
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
     }
 }

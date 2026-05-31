@@ -62,8 +62,26 @@ pub fn body_to_binds(
                         }
                     }
                 }
-                let bv = BoundValue::from_json(f.kind, v)
-                    .map_err(|e| Error::Validation(ValidationErrors::field(&f.name, e.to_string())))?;
+                let bv = BoundValue::from_json(f.kind, v).map_err(|e| match e {
+                    rustapi_core::CoerceError::BadEmail => Error::BadEmail,
+                    rustapi_core::CoerceError::BadUrl => Error::BadUrl,
+                    rustapi_core::CoerceError::BadSlug => Error::BadSlug,
+                    other => Error::Validation(ValidationErrors::field(&f.name, other.to_string())),
+                })?;
+                if f.kind == FieldKind::Enum {
+                    if let BoundValue::Str(s) = &bv {
+                        let meta = f.enum_meta().ok_or_else(|| {
+                            Error::Validation(ValidationErrors::field(&f.name, "missing enum kind_meta"))
+                        })?;
+                        if !meta.values.iter().any(|v| v == s) {
+                            return Err(Error::EnumValueNotAllowed {
+                                field: f.name.clone(),
+                                value: s.clone(),
+                                allowed: meta.values.clone(),
+                            });
+                        }
+                    }
+                }
                 out.insert(f.name.clone(), bv);
             }
             None => {
