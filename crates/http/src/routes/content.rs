@@ -203,8 +203,14 @@ async fn delete_one(
 fn db(e: sqlx::Error) -> ApiError {
     if let sqlx::Error::Database(d) = &e {
         if let Some(code) = d.code() {
-            if code.as_ref() == "23505" {
-                return ApiError(Error::Conflict(d.message().to_string()));
+            match code.as_ref() {
+                "23505" => return ApiError(Error::Conflict(d.message().to_string())),
+                "23503" => {
+                    return ApiError(Error::RelationFkViolation {
+                        constraint: d.constraint().map(|s| s.to_string()),
+                    });
+                }
+                _ => {}
             }
         }
         let code = d.code().map(|c| c.into_owned()).unwrap_or_default();

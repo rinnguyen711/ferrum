@@ -568,17 +568,6 @@ async fn filter_relation_gt_returns_400_relation_op_unsupported() {
 
 #[tokio::test]
 async fn delete_user_with_referencing_post_returns_409() {
-    // CONCERN: plan says "DELETE user with referencing post → 409
-    // (RelationFkViolation)". Actual behavior is 422 with
-    // `details.db.code = "23503"`. The /api/<type>/:id DELETE handler
-    // (`routes/content.rs::delete_one`) maps DB errors through the local
-    // `db()` helper, which only special-cases 23505 (unique violation) and
-    // funnels every other PG code (including 23503 FK violation) into
-    // `Error::Validation::db` → 422. The schema-service `map_db_err` does
-    // re-map 23503 to `RelationFkViolation` (→ 409), but the entry-delete
-    // path bypasses it. Asserting the observed behavior (422 with the
-    // raw PG code surfaced under `details.db`) and flagging this as a real
-    // discrepancy between the plan/spec and the implementation.
     let app = TestApp::spawn().await;
     setup_user_post(&app).await;
     let uid = create_user(&app, "alice").await;
@@ -589,10 +578,7 @@ async fn delete_user_with_referencing_post_returns_409() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 422, "{}", resp.text().await.unwrap());
-    let body: Value = resp.json().await.unwrap();
-    assert_eq!(body["error"]["code"], "validation_failed");
-    assert_eq!(body["error"]["details"]["db"]["code"], "23503");
+    assert_eq!(resp.status(), 409, "{}", resp.text().await.unwrap());
 }
 
 #[tokio::test]
