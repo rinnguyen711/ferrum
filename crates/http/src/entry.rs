@@ -187,6 +187,19 @@ fn decode_field(row: &PgRow, f: &Field) -> Result<Value, Error> {
             let v: Option<Uuid> = row.try_get(col.as_str()).map_err(decode)?;
             Ok(v.map(|u| Value::String(u.to_string())).unwrap_or(Value::Null))
         }
+        FieldKind::Enum | FieldKind::Email | FieldKind::Url | FieldKind::Slug => {
+            let v: Option<String> = row.try_get(f.name.as_str()).map_err(decode)?;
+            Ok(v.map(Value::String).unwrap_or(Value::Null))
+        }
+        FieldKind::Json => {
+            let v: Option<sqlx::types::Json<Value>> =
+                row.try_get(f.name.as_str()).map_err(decode)?;
+            Ok(v.map(|j| j.0).unwrap_or(Value::Null))
+        }
+        FieldKind::Uuid => {
+            let v: Option<Uuid> = row.try_get(f.name.as_str()).map_err(decode)?;
+            Ok(v.map(|u| Value::String(u.to_string())).unwrap_or(Value::Null))
+        }
         _ => Ok(Value::Null),
     }
 }

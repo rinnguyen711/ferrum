@@ -135,11 +135,6 @@ async fn create_article_with_slug(app: &TestApp) {
 
 #[tokio::test]
 async fn post_enum_valid_value_returns_201() {
-    // CONCERN: `decode_field` in crates/http/src/entry.rs falls through to
-    // `Ok(Value::Null)` for enum/json/email/url/slug kinds. Column is stored
-    // correctly (filter tests below confirm) but the create/read response
-    // surfaces null. Asserting actual behavior so the suite stays green;
-    // the gap is reported as a phase 2.5 follow-up.
     let app = TestApp::spawn().await;
     create_post_with_enum(&app).await;
 
@@ -152,7 +147,7 @@ async fn post_enum_valid_value_returns_201() {
     assert_eq!(resp.status(), 201, "{}", resp.text().await.unwrap());
     let body: Value = resp.json().await.unwrap();
     assert!(body["id"].is_string(), "row created, id present: {body}");
-    assert!(body["status"].is_null(), "decode_field gap: status null");
+    assert_eq!(body["status"], "draft");
 }
 
 #[tokio::test]
@@ -380,9 +375,6 @@ async fn patch_add_required_enum_field_returns_422() {
 
 #[tokio::test]
 async fn post_json_accepts_nested_object() {
-    // Same decode_field CONCERN as `post_enum_valid_value_returns_201`: JSON
-    // value persists at the SQL layer (filter $null tests below confirm) but
-    // `decode_field` returns null for FieldKind::Json. Asserting actual.
     let app = TestApp::spawn().await;
     create_doc_with_json(&app).await;
 
@@ -404,7 +396,7 @@ async fn post_json_accepts_nested_object() {
         .unwrap();
     assert_eq!(resp.status(), 200);
     let body: Value = resp.json().await.unwrap();
-    assert!(body["meta"].is_null(), "decode_field gap: meta null");
+    assert_eq!(body["meta"], json!({"a": [1, 2, {"b": true}]}));
 }
 
 #[tokio::test]
@@ -488,7 +480,6 @@ async fn filter_json_eq_returns_validation_error() {
 
 #[tokio::test]
 async fn post_email_valid_returns_201() {
-    // Same decode_field CONCERN as `post_enum_valid_value_returns_201`.
     let app = TestApp::spawn().await;
     create_user_with_email(&app).await;
 
@@ -500,7 +491,7 @@ async fn post_email_valid_returns_201() {
         .unwrap();
     assert_eq!(resp.status(), 201, "{}", resp.text().await.unwrap());
     let body: Value = resp.json().await.unwrap();
-    assert!(body["email"].is_null(), "decode_field gap: email null");
+    assert_eq!(body["email"], "a@b.co");
 }
 
 #[tokio::test]
@@ -541,11 +532,9 @@ async fn filter_email_contains_raw_substring() {
         .unwrap();
     assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
     let body: Value = resp.json().await.unwrap();
-    // Filter applies at SQL level so total is correct, but row body is null
-    // for the email column (see decode_field CONCERN). Match name through the
-    // sibling `name` (string kind) which decodes correctly.
     assert_eq!(body["meta"]["total"], 1);
     assert_eq!(body["data"][0]["name"], "a");
+    assert_eq!(body["data"][0]["email"], "alice@x.com");
 }
 
 // ---------------------------------------------------------------------------
@@ -554,7 +543,6 @@ async fn filter_email_contains_raw_substring() {
 
 #[tokio::test]
 async fn post_url_valid_https_returns_201() {
-    // Same decode_field CONCERN as `post_enum_valid_value_returns_201`.
     let app = TestApp::spawn().await;
     create_link_with_url(&app).await;
 
@@ -566,7 +554,7 @@ async fn post_url_valid_https_returns_201() {
         .unwrap();
     assert_eq!(resp.status(), 201, "{}", resp.text().await.unwrap());
     let body: Value = resp.json().await.unwrap();
-    assert!(body["target"].is_null(), "decode_field gap: target null");
+    assert_eq!(body["target"], "https://example.com/x");
 }
 
 #[tokio::test]
@@ -591,7 +579,6 @@ async fn post_url_ftp_returns_422() {
 
 #[tokio::test]
 async fn post_slug_valid_returns_201() {
-    // Same decode_field CONCERN as `post_enum_valid_value_returns_201`.
     let app = TestApp::spawn().await;
     create_article_with_slug(&app).await;
 
@@ -603,7 +590,7 @@ async fn post_slug_valid_returns_201() {
         .unwrap();
     assert_eq!(resp.status(), 201, "{}", resp.text().await.unwrap());
     let body: Value = resp.json().await.unwrap();
-    assert!(body["slug"].is_null(), "decode_field gap: slug null");
+    assert_eq!(body["slug"], "hello-world");
 }
 
 #[tokio::test]
@@ -699,15 +686,10 @@ async fn mixed_entry_with_all_new_kinds_round_trips() {
         .unwrap();
     assert_eq!(resp.status(), 200);
     let body: Value = resp.json().await.unwrap();
-    // String kind decodes correctly.
     assert_eq!(body["title"], "hi");
-    // CONCERN: decode_field returns Value::Null for enum/json/email/url/slug.
-    // The columns ARE persisted (see filter-level tests above), but the row
-    // payload null-shadows them on read. Asserting actual behavior across the
-    // whole mixed entry so the gap is visible in one place.
-    assert!(body["status"].is_null(), "decode_field gap: status");
-    assert!(body["meta"].is_null(), "decode_field gap: meta");
-    assert!(body["owner_email"].is_null(), "decode_field gap: owner_email");
-    assert!(body["homepage"].is_null(), "decode_field gap: homepage");
-    assert!(body["slug"].is_null(), "decode_field gap: slug");
+    assert_eq!(body["status"], "published");
+    assert_eq!(body["meta"], json!({"k": [1, 2, 3], "nested": {"flag": true}}));
+    assert_eq!(body["owner_email"], "owner@example.com");
+    assert_eq!(body["homepage"], "https://example.com/home");
+    assert_eq!(body["slug"], "mixed-entry");
 }
