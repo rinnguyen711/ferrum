@@ -20,6 +20,16 @@ pub enum FieldKind {
     /// Phase 2.4: declares a foreign-key reference to another content type.
     /// Configuration lives in `Field.kind_meta`; see `RelationMeta`.
     Relation,
+    /// Phase 2.5: closed set of strings. Values declared in `Field.kind_meta`.
+    Enum,
+    /// Phase 2.5: arbitrary JSON stored as jsonb. No schema validation.
+    Json,
+    /// Phase 2.5: text validated against an email regex at write time.
+    Email,
+    /// Phase 2.5: text parsed as an http/https URL at write time.
+    Url,
+    /// Phase 2.5: text validated against a kebab slug regex at write time.
+    Slug,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -33,6 +43,7 @@ pub enum BoundValue {
     Bool(bool),
     DateTime(DateTime<Utc>),
     Uuid(uuid::Uuid),
+    Json(serde_json::Value),
 }
 
 impl BoundValue {
@@ -59,6 +70,29 @@ impl BoundValue {
                 .map(BoundValue::Uuid)
                 .map_err(|_| CoerceError::BadUuid),
             (FieldKind::Relation, _) => Err(CoerceError::TypeMismatch),
+            (FieldKind::Json, v) => Ok(BoundValue::Json(v.clone())),
+            (FieldKind::Email, V::String(s)) => {
+                if crate::validators::is_valid_email(s) {
+                    Ok(BoundValue::Str(s.clone()))
+                } else {
+                    Err(CoerceError::BadEmail)
+                }
+            }
+            (FieldKind::Url, V::String(s)) => {
+                if crate::validators::is_valid_http_url(s) {
+                    Ok(BoundValue::Str(s.clone()))
+                } else {
+                    Err(CoerceError::BadUrl)
+                }
+            }
+            (FieldKind::Slug, V::String(s)) => {
+                if crate::validators::is_valid_slug(s) {
+                    Ok(BoundValue::Str(s.clone()))
+                } else {
+                    Err(CoerceError::BadSlug)
+                }
+            }
+            (FieldKind::Enum, V::String(s)) => Ok(BoundValue::Str(s.clone())),
             _ => Err(CoerceError::TypeMismatch),
         }
     }
@@ -74,6 +108,12 @@ pub enum CoerceError {
     BadDatetime,
     #[error("invalid UUID")]
     BadUuid,
+    #[error("invalid email")]
+    BadEmail,
+    #[error("invalid URL (must be http or https)")]
+    BadUrl,
+    #[error("invalid slug (use lowercase letters, digits, single dashes; <=200 chars)")]
+    BadSlug,
 }
 
 #[cfg(test)]
@@ -176,6 +216,85 @@ mod tests {
     fn coerce_uuid_rejects_non_string() {
         assert_eq!(
             BoundValue::from_json(FieldKind::Uuid, &serde_json::json!(123)).unwrap_err(),
+            CoerceError::TypeMismatch
+        );
+    }
+
+    #[test]
+    fn coerce_json_accepts_any_value() {
+        let v = BoundValue::from_json(FieldKind::Json, &serde_json::json!({"k": [1, 2]})).unwrap();
+        match v {
+            BoundValue::Json(serde_json::Value::Object(_)) => {}
+            other => panic!("expected Json(Object), got {other:?}"),
+        }
+        let v = BoundValue::from_json(FieldKind::Json, &serde_json::json!([1, 2, 3])).unwrap();
+        assert!(matches!(v, BoundValue::Json(serde_json::Value::Array(_))));
+        let v = BoundValue::from_json(FieldKind::Json, &serde_json::json!(42)).unwrap();
+        assert!(matches!(v, BoundValue::Json(_)));
+    }
+
+    #[test]
+    fn coerce_email_ok() {
+        let v = BoundValue::from_json(FieldKind::Email, &serde_json::json!("a@b.co")).unwrap();
+        assert!(matches!(v, BoundValue::Str(s) if s == "a@b.co"));
+    }
+
+    #[test]
+    fn coerce_email_bad() {
+        assert_eq!(
+            BoundValue::from_json(FieldKind::Email, &serde_json::json!("nope")).unwrap_err(),
+            CoerceError::BadEmail
+        );
+    }
+
+    #[test]
+    fn coerce_email_rejects_non_string() {
+        assert_eq!(
+            BoundValue::from_json(FieldKind::Email, &serde_json::json!(123)).unwrap_err(),
+            CoerceError::TypeMismatch
+        );
+    }
+
+    #[test]
+    fn coerce_url_ok() {
+        let v = BoundValue::from_json(FieldKind::Url, &serde_json::json!("https://x.io/p")).unwrap();
+        assert!(matches!(v, BoundValue::Str(_)));
+    }
+
+    #[test]
+    fn coerce_url_bad() {
+        assert_eq!(
+            BoundValue::from_json(FieldKind::Url, &serde_json::json!("ftp://x.io")).unwrap_err(),
+            CoerceError::BadUrl
+        );
+    }
+
+    #[test]
+    fn coerce_slug_ok() {
+        let v = BoundValue::from_json(FieldKind::Slug, &serde_json::json!("hello-world")).unwrap();
+        assert!(matches!(v, BoundValue::Str(s) if s == "hello-world"));
+    }
+
+    #[test]
+    fn coerce_slug_bad() {
+        assert_eq!(
+            BoundValue::from_json(FieldKind::Slug, &serde_json::json!("Bad Slug!")).unwrap_err(),
+            CoerceError::BadSlug
+        );
+    }
+
+    #[test]
+    fn coerce_enum_returns_str() {
+        // Enum coercion does not check membership (no kind_meta access).
+        // Service layer validates after coerce. Just confirm it produces Str.
+        let v = BoundValue::from_json(FieldKind::Enum, &serde_json::json!("draft")).unwrap();
+        assert!(matches!(v, BoundValue::Str(s) if s == "draft"));
+    }
+
+    #[test]
+    fn coerce_enum_rejects_non_string() {
+        assert_eq!(
+            BoundValue::from_json(FieldKind::Enum, &serde_json::json!(42)).unwrap_err(),
             CoerceError::TypeMismatch
         );
     }

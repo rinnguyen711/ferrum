@@ -35,6 +35,7 @@ fn bind_one<'q>(
         BoundValue::Bool(b) => q.bind(*b),
         BoundValue::DateTime(t) => q.bind(*t),
         BoundValue::Uuid(u) => q.bind(*u),
+        BoundValue::Json(j) => q.bind(sqlx::types::Json(j)),
     }
 }
 
@@ -50,6 +51,7 @@ fn bind_one_as<'q>(
         BoundValue::Bool(b) => q.bind(*b),
         BoundValue::DateTime(t) => q.bind(*t),
         BoundValue::Uuid(u) => q.bind(*u),
+        BoundValue::Json(j) => q.bind(sqlx::types::Json(j)),
     }
 }
 
