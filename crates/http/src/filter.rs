@@ -283,10 +283,16 @@ fn insert_into(
             let op = map_op(op_str, col)?;
             let field = field_for(ct, col)?;
             let kind = field.kind();
+            let physical_col = field.column(col);
+            let is_relation = field.is_relation();
             if !rustapi_sql::op_allows_kind(op, kind) {
                 return Err(field_err(
                     col,
-                    format!("operator `{op_str}` invalid for kind `{kind:?}`"),
+                    if is_relation {
+                        format!("operator `{op_str}` not supported on relation field")
+                    } else {
+                        format!("operator `{op_str}` invalid for kind `{kind:?}`")
+                    },
                 ));
             }
             let extra = segs.get(2);
@@ -299,7 +305,7 @@ fn insert_into(
                     let bv = coerce_bound(kind, col, raw_val)?;
                     let key = SetKey {
                         path: path.clone(),
-                        column: col.clone(),
+                        column: physical_col.clone(),
                         op,
                     };
                     let is_new_bucket = !set_buckets.contains_key(&key);
@@ -327,14 +333,14 @@ fn insert_into(
                 (false, Some(_)) => Err(field_err(col, "unexpected list index for operator")),
                 (false, None) => {
                     let parent_map = parent_group_map_mut(parent)?;
-                    if has_sibling_leaf(parent_map, col, op) {
+                    if has_sibling_leaf(parent_map, &physical_col, op) {
                         return Err(field_err(col, "duplicate filter operator on column"));
                     }
                     let value = coerce_value(field, op, col, raw_val)?;
                     let next_idx = parent_map.len();
                     parent_map.insert(
                         next_idx,
-                        TreeNode::Leaf(Condition::new(col, kind, op, value)),
+                        TreeNode::Leaf(Condition::new(&physical_col, kind, op, value)),
                     );
                     *leaf_count += 1;
                     if *leaf_count > max_leaves {
@@ -381,10 +387,16 @@ fn insert_at_group_index(
             let op = map_op(op_str, col)?;
             let field = field_for(ct, col)?;
             let kind = field.kind();
+            let physical_col = field.column(col);
+            let is_relation = field.is_relation();
             if !rustapi_sql::op_allows_kind(op, kind) {
                 return Err(field_err(
                     col,
-                    format!("operator `{op_str}` invalid for kind `{kind:?}`"),
+                    if is_relation {
+                        format!("operator `{op_str}` not supported on relation field")
+                    } else {
+                        format!("operator `{op_str}` invalid for kind `{kind:?}`")
+                    },
                 ));
             }
             let extra = segs.get(2);
@@ -397,7 +409,7 @@ fn insert_at_group_index(
                     let bv = coerce_bound(kind, col, raw_val)?;
                     let key = SetKey {
                         path: path.clone(),
-                        column: col.clone(),
+                        column: physical_col.clone(),
                         op,
                     };
                     let is_new_bucket = !set_buckets.contains_key(&key);
@@ -431,7 +443,7 @@ fn insert_at_group_index(
                     let value = coerce_value(field, op, col, raw_val)?;
                     parent_map.insert(
                         child_idx,
-                        TreeNode::Leaf(Condition::new(col, kind, op, value)),
+                        TreeNode::Leaf(Condition::new(&physical_col, kind, op, value)),
                     );
                     *leaf_count += 1;
                     if *leaf_count > max_leaves {
@@ -767,11 +779,30 @@ enum FieldOrSystem<'a> {
 }
 
 impl FieldOrSystem<'_> {
+    /// Filterable kind for coercion + the `op_allows_kind` whitelist.
+    /// Relation fields downgrade to `Uuid` so the existing UUID coercion path
+    /// applies and the eq/ne/null/in/nin whitelist falls out automatically.
     fn kind(&self) -> FieldKind {
         match self {
+            FieldOrSystem::User(f) if f.kind == FieldKind::Relation => FieldKind::Uuid,
             FieldOrSystem::User(f) => f.kind,
             FieldOrSystem::System(k) => *k,
         }
+    }
+
+    /// Physical SQL column name. Relation fields target `<name>_id`; system
+    /// + primitive fields use the declared name.
+    fn column(&self, declared: &str) -> String {
+        match self {
+            FieldOrSystem::User(f) if f.kind == FieldKind::Relation => f.physical_column(),
+            _ => declared.to_string(),
+        }
+    }
+
+    /// True for user-declared relation fields. Used to translate the generic
+    /// "operator invalid for kind" error into RelationOpUnsupported phrasing.
+    fn is_relation(&self) -> bool {
+        matches!(self, FieldOrSystem::User(f) if f.kind == FieldKind::Relation)
     }
 }
 
@@ -837,10 +868,9 @@ fn coerce_bound(kind: FieldKind, col: &str, raw: &str) -> Result<BoundValue, Err
         FieldKind::Datetime => chrono::DateTime::parse_from_rfc3339(raw)
             .map(|t| BoundValue::DateTime(t.with_timezone(&chrono::Utc)))
             .map_err(|_| field_err(col, "expected RFC3339 datetime"))?,
-        FieldKind::Uuid => {
-            uuid::Uuid::parse_str(raw).map_err(|_| field_err(col, "expected UUID"))?;
-            BoundValue::Str(raw.to_string())
-        }
+        FieldKind::Uuid => uuid::Uuid::parse_str(raw)
+            .map(BoundValue::Uuid)
+            .map_err(|_| field_err(col, "expected UUID"))?,
         _ => return Err(field_err(col, "unsupported kind for filter")),
     };
     Ok(v)
@@ -1479,5 +1509,99 @@ mod tests {
         assert!(matches!(xs[0], Filter::Leaf(_)));
         let Filter::All(inner) = &xs[1] else { panic!("expected nested All") };
         assert_eq!(inner.len(), 2);
+    }
+
+    fn ct_with_relation() -> ContentType {
+        let mut c = ct();
+        c.fields.push(Field {
+            name: "author".into(),
+            kind: FieldKind::Relation,
+            required: false,
+            unique: false,
+            default: json!(null),
+            max_length: None,
+            kind_meta: json!({"target":"user","cardinality":"many_to_one"}),
+        });
+        c
+    }
+
+    #[test]
+    fn relation_eq_uses_physical_column_and_uuid_kind() {
+        let id = "550e8400-e29b-41d4-a716-446655440000";
+        let f = parse(
+            &format!("filters[author][$eq]={id}"),
+            &ct_with_relation(),
+        )
+        .unwrap();
+        let conds = leaves(f);
+        assert_eq!(conds.len(), 1);
+        assert_eq!(conds[0].column, "author_id");
+        assert_eq!(conds[0].kind, FieldKind::Uuid);
+        match &conds[0].value {
+            FilterValue::Bound(BoundValue::Uuid(u)) => assert_eq!(u.to_string(), id),
+            other => panic!("expected Bound(Uuid), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn relation_null_is_null_check() {
+        let f = parse("filters[author][$null]=true", &ct_with_relation()).unwrap();
+        let conds = leaves(f);
+        assert_eq!(conds[0].column, "author_id");
+        assert_eq!(conds[0].kind, FieldKind::Uuid);
+        assert_eq!(conds[0].op, Op::IsNull);
+    }
+
+    #[test]
+    fn relation_in_list_uses_physical_column() {
+        let id1 = "550e8400-e29b-41d4-a716-446655440000";
+        let id2 = "11111111-2222-3333-4444-555555555555";
+        let f = parse(
+            &format!("filters[author][$in][0]={id1}&filters[author][$in][1]={id2}"),
+            &ct_with_relation(),
+        )
+        .unwrap();
+        let conds = leaves(f);
+        assert_eq!(conds[0].column, "author_id");
+        assert_eq!(conds[0].kind, FieldKind::Uuid);
+        match &conds[0].value {
+            FilterValue::List(vs) => {
+                assert_eq!(vs.len(), 2);
+                assert!(matches!(vs[0], BoundValue::Uuid(_)));
+            }
+            other => panic!("expected List, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn relation_gt_rejected() {
+        // Order ops aren't allowed on Uuid → relation field. Verify the
+        // error mentions relation-specific phrasing so HTTP error mapping
+        // can surface RelationOpUnsupported.
+        let id = "550e8400-e29b-41d4-a716-446655440000";
+        let err = parse(
+            &format!("filters[author][$gt]={id}"),
+            &ct_with_relation(),
+        )
+        .unwrap_err();
+        let msg = format!("{err:?}");
+        assert!(
+            msg.contains("not supported on relation field"),
+            "expected relation-specific error, got {msg}"
+        );
+    }
+
+    #[test]
+    fn relation_contains_rejected() {
+        let err = parse("filters[author][$contains]=foo", &ct_with_relation()).unwrap_err();
+        let msg = format!("{err:?}");
+        assert!(msg.contains("not supported on relation field"));
+    }
+
+    #[test]
+    fn relation_bad_uuid_rejected() {
+        let err = parse("filters[author][$eq]=not-a-uuid", &ct_with_relation()).unwrap_err();
+        let msg = format!("{err:?}");
+        assert!(msg.contains("expected UUID"));
     }
 }
