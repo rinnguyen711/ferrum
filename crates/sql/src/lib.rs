@@ -6,7 +6,7 @@ pub mod filter;
 pub mod ident;
 pub mod sort;
 
-pub use ddl::{add_column, create_table, drop_column, drop_table, DdlError};
+pub use ddl::{add_column, alter_enum_values, create_table, drop_column, drop_table, DdlError};
 pub use dml::{
     count, delete, insert, render_where, select_by_id, select_list, update,
     DmlError, SqlAndBinds,

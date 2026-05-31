@@ -109,6 +109,30 @@ impl SchemaService {
             sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
         }
 
+        for ext in &payload.extend_enum_values {
+            // Compute the full values list (existing + appended). new_fields is
+            // the post-mutation field list; extend is on an existing field, so
+            // look it up there.
+            let target = new_fields
+                .iter_mut()
+                .find(|f| f.name == ext.field)
+                .expect("validated to exist by PatchContentType::validate");
+            let mut meta = target
+                .enum_meta()
+                .expect("validated to be enum by PatchContentType::validate");
+            meta.values.extend(ext.append.iter().cloned());
+            let sql = rustapi_sql::alter_enum_values(name, &ext.field, &meta.values)
+                .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
+            // alter_enum_values returns two statements joined by "; ". Split and
+            // execute each on the same transaction.
+            for stmt in sql.split("; ").filter(|s| !s.trim().is_empty()) {
+                sqlx::query(stmt).execute(&mut *tx).await.map_err(map_db_err)?;
+            }
+            // Update the in-memory field's kind_meta so the UPDATE below persists
+            // the new values list.
+            target.kind_meta = serde_json::json!({"values": meta.values});
+        }
+
         let new_display = payload
             .display_name
             .clone()
