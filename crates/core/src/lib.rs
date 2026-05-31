@@ -7,6 +7,7 @@ pub mod field;
 pub mod principal;
 pub mod reserved;
 pub mod system;
+pub mod validators;
 
 pub use error::{DbInfo, Error, FieldValidation, ValidationErrors};
 pub use event::Event;
