@@ -4,6 +4,7 @@ pub mod entry;
 pub mod error;
 pub mod filter;
 pub mod middleware;
+pub mod populate;
 pub mod query;
 pub mod routes;
 pub mod state;
