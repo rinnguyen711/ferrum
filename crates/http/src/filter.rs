@@ -853,7 +853,10 @@ fn coerce_value(field: FieldOrSystem<'_>, op: Op, col: &str, raw: &str) -> Resul
 
 fn coerce_bound(kind: FieldKind, col: &str, raw: &str) -> Result<BoundValue, Error> {
     let v = match kind {
-        FieldKind::String | FieldKind::Text => BoundValue::Str(raw.to_string()),
+        FieldKind::String | FieldKind::Text
+        | FieldKind::Email | FieldKind::Url | FieldKind::Slug | FieldKind::Enum => {
+            BoundValue::Str(raw.to_string())
+        }
         FieldKind::Integer => raw
             .parse::<i64>()
             .map(BoundValue::I64)
@@ -1603,5 +1606,57 @@ mod tests {
         let err = parse("filters[author][$eq]=not-a-uuid", &ct_with_relation()).unwrap_err();
         let msg = format!("{err:?}");
         assert!(msg.contains("expected UUID"));
+    }
+
+    fn ct_with_field(name: &str, kind: FieldKind, kind_meta: serde_json::Value) -> ContentType {
+        ContentType {
+            id: Uuid::nil(),
+            name: "thing".into(),
+            display_name: "Thing".into(),
+            fields: vec![Field {
+                name: name.into(),
+                kind,
+                required: false,
+                unique: false,
+                default: json!(null),
+                max_length: None,
+                kind_meta,
+            }],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn email_eq_accepts_non_email_filter_value() {
+        let ct = ct_with_field("email", FieldKind::Email, json!({}));
+        // Filter values that would FAIL email coercion at write time should
+        // still parse at filter time (raw string compare).
+        assert!(parse("filters[email][$contains]=not-an-email", &ct).is_ok());
+        assert!(parse("filters[email][$eq]=not-an-email", &ct).is_ok());
+    }
+
+    #[test]
+    fn slug_startswith_accepts_non_slug_filter_value() {
+        let ct = ct_with_field("slug", FieldKind::Slug, json!({}));
+        assert!(parse("filters[slug][$startsWith]=Some+Random+String", &ct).is_ok());
+    }
+
+    #[test]
+    fn url_in_accepts_arbitrary_strings() {
+        let ct = ct_with_field("url", FieldKind::Url, json!({}));
+        assert!(parse("filters[url][$in][0]=anything", &ct).is_ok());
+    }
+
+    #[test]
+    fn enum_eq_accepts_any_string_filter_value() {
+        let ct = ct_with_field(
+            "status",
+            FieldKind::Enum,
+            json!({"values": ["draft", "published"]}),
+        );
+        // Even a non-member value coerces fine (membership not checked at filter time).
+        assert!(parse("filters[status][$eq]=archived", &ct).is_ok());
+        assert!(parse("filters[status][$eq]=draft", &ct).is_ok());
     }
 }
