@@ -298,6 +298,176 @@ mod tests {
             CoerceError::TypeMismatch
         );
     }
+
+    #[test]
+    fn validate_enum_ok() {
+        let f = Field {
+            name: "status".into(),
+            kind: FieldKind::Enum,
+            required: false,
+            unique: false,
+            default: serde_json::Value::Null,
+            max_length: None,
+            kind_meta: serde_json::json!({"values": ["draft", "published"]}),
+        };
+        assert!(f.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_enum_with_valid_default() {
+        let f = Field {
+            name: "status".into(),
+            kind: FieldKind::Enum,
+            required: false,
+            unique: false,
+            default: serde_json::Value::String("draft".into()),
+            max_length: None,
+            kind_meta: serde_json::json!({"values": ["draft", "published"]}),
+        };
+        assert!(f.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_enum_default_not_in_values() {
+        let f = Field {
+            name: "status".into(),
+            kind: FieldKind::Enum,
+            required: false,
+            unique: false,
+            default: serde_json::Value::String("missing".into()),
+            max_length: None,
+            kind_meta: serde_json::json!({"values": ["draft", "published"]}),
+        };
+        assert_eq!(f.validate().unwrap_err(), FieldError::EnumDefaultNotInValues);
+    }
+
+    #[test]
+    fn validate_enum_unique_allowed() {
+        let f = Field {
+            name: "status".into(),
+            kind: FieldKind::Enum,
+            required: false,
+            unique: true,
+            default: serde_json::Value::Null,
+            max_length: None,
+            kind_meta: serde_json::json!({"values": ["a", "b"]}),
+        };
+        assert!(f.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_json_ok() {
+        let f = Field {
+            name: "meta".into(),
+            kind: FieldKind::Json,
+            required: false,
+            unique: false,
+            default: serde_json::Value::Null,
+            max_length: None,
+            kind_meta: serde_json::json!({}),
+        };
+        assert!(f.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_json_with_default() {
+        let f = Field {
+            name: "meta".into(),
+            kind: FieldKind::Json,
+            required: false,
+            unique: false,
+            default: serde_json::json!({"k": 1}),
+            max_length: None,
+            kind_meta: serde_json::json!({}),
+        };
+        assert!(f.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_json_rejects_unique() {
+        let f = Field {
+            name: "meta".into(),
+            kind: FieldKind::Json,
+            required: false,
+            unique: true,
+            default: serde_json::Value::Null,
+            max_length: None,
+            kind_meta: serde_json::json!({}),
+        };
+        assert_eq!(f.validate().unwrap_err(), FieldError::JsonUniqueUnsupported);
+    }
+
+    #[test]
+    fn validate_json_rejects_non_empty_kind_meta() {
+        let f = Field {
+            name: "meta".into(),
+            kind: FieldKind::Json,
+            required: false,
+            unique: false,
+            default: serde_json::Value::Null,
+            max_length: None,
+            kind_meta: serde_json::json!({"x": 1}),
+        };
+        assert_eq!(f.validate().unwrap_err(), FieldError::KindMetaNotEmpty);
+    }
+
+    #[test]
+    fn validate_email_url_slug_ok() {
+        for kind in [FieldKind::Email, FieldKind::Url, FieldKind::Slug] {
+            let f = Field {
+                name: "x".into(),
+                kind,
+                required: false,
+                unique: false,
+                default: serde_json::Value::Null,
+                max_length: None,
+                kind_meta: serde_json::json!({}),
+            };
+            assert!(f.validate().is_ok(), "kind {kind:?} should validate");
+        }
+    }
+
+    #[test]
+    fn validate_email_bad_default() {
+        let f = Field {
+            name: "e".into(),
+            kind: FieldKind::Email,
+            required: false,
+            unique: false,
+            default: serde_json::Value::String("nope".into()),
+            max_length: None,
+            kind_meta: serde_json::json!({}),
+        };
+        assert_eq!(f.validate().unwrap_err(), FieldError::BadDefault);
+    }
+
+    #[test]
+    fn validate_url_good_default() {
+        let f = Field {
+            name: "u".into(),
+            kind: FieldKind::Url,
+            required: false,
+            unique: false,
+            default: serde_json::Value::String("https://example.com".into()),
+            max_length: None,
+            kind_meta: serde_json::json!({}),
+        };
+        assert!(f.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_slug_bad_default() {
+        let f = Field {
+            name: "s".into(),
+            kind: FieldKind::Slug,
+            required: false,
+            unique: false,
+            default: serde_json::Value::String("Bad Slug".into()),
+            max_length: None,
+            kind_meta: serde_json::json!({}),
+        };
+        assert_eq!(f.validate().unwrap_err(), FieldError::BadDefault);
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -463,6 +633,40 @@ impl Field {
                 return Err(FieldError::RelationFieldDefaultUnsupported);
             }
             let _ = RelationMeta::from_value(&self.kind_meta)?;
+            return Ok(());
+        }
+        if self.kind == FieldKind::Enum {
+            let meta = EnumMeta::from_value(&self.kind_meta)?;
+            if !self.default.is_null() {
+                match self.default.as_str() {
+                    Some(s) if meta.values.iter().any(|v| v == s) => {}
+                    _ => return Err(FieldError::EnumDefaultNotInValues),
+                }
+            }
+            return Ok(());
+        }
+        if self.kind == FieldKind::Json {
+            if self.unique {
+                return Err(FieldError::JsonUniqueUnsupported);
+            }
+            if !is_empty_obj(&self.kind_meta) {
+                return Err(FieldError::KindMetaNotEmpty);
+            }
+            // Any JSON value is a valid default (including null, but null is the
+            // "no default" sentinel here — accept anything else verbatim).
+            return Ok(());
+        }
+        if matches!(
+            self.kind,
+            FieldKind::Email | FieldKind::Url | FieldKind::Slug
+        ) {
+            if !is_empty_obj(&self.kind_meta) {
+                return Err(FieldError::KindMetaNotEmpty);
+            }
+            if !self.default.is_null() {
+                BoundValue::from_json(self.kind, &self.default)
+                    .map_err(|_| FieldError::BadDefault)?;
+            }
             return Ok(());
         }
         // Primitive kinds: kind_meta must remain empty (existing v1 rule).
