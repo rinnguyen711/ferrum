@@ -81,17 +81,20 @@ pub fn op_allows_kind(op: Op, kind: FieldKind) -> bool {
     use FieldKind::*;
     use Op::*;
     match op {
-        Eq | Ne | IsNull => matches!(
+        Eq | Ne => matches!(
             kind,
             String | Text | Integer | Float | Boolean | Datetime | Uuid
+                | Email | Url | Slug | Enum
         ),
+        IsNull => true,
         Gt | Gte | Lt | Lte => matches!(kind, Integer | Float | Datetime),
         In | NotIn => matches!(
             kind,
             String | Text | Integer | Float | Boolean | Datetime | Uuid
+                | Email | Url | Slug | Enum
         ),
         Contains | StartsWith | EndsWith | ContainsI => {
-            matches!(kind, String | Text)
+            matches!(kind, String | Text | Email | Url | Slug)
         }
         // Same-crate `#[non_exhaustive]` does not require a wildcard. If a
         // new `Op` lands in this crate, the build breaks here until the
@@ -232,5 +235,47 @@ mod tests {
         assert_eq!(xs.len(), 2);
         assert!(matches!(xs[0], Filter::Leaf(_)));
         assert!(matches!(xs[1], Filter::Any(_)));
+    }
+
+    #[test]
+    fn op_allows_kind_enum() {
+        use FieldKind::Enum;
+        assert!(op_allows_kind(Op::Eq, Enum));
+        assert!(op_allows_kind(Op::Ne, Enum));
+        assert!(op_allows_kind(Op::IsNull, Enum));
+        assert!(op_allows_kind(Op::In, Enum));
+        assert!(op_allows_kind(Op::NotIn, Enum));
+        assert!(!op_allows_kind(Op::Contains, Enum));
+        assert!(!op_allows_kind(Op::StartsWith, Enum));
+        assert!(!op_allows_kind(Op::Gt, Enum));
+        assert!(!op_allows_kind(Op::Lt, Enum));
+    }
+
+    #[test]
+    fn op_allows_kind_json_isnull_only() {
+        use FieldKind::Json;
+        assert!(op_allows_kind(Op::IsNull, Json));
+        assert!(!op_allows_kind(Op::Eq, Json));
+        assert!(!op_allows_kind(Op::Ne, Json));
+        assert!(!op_allows_kind(Op::Contains, Json));
+        assert!(!op_allows_kind(Op::In, Json));
+        assert!(!op_allows_kind(Op::Gt, Json));
+    }
+
+    #[test]
+    fn op_allows_kind_email_url_slug_full_string() {
+        for kind in [FieldKind::Email, FieldKind::Url, FieldKind::Slug] {
+            assert!(op_allows_kind(Op::Eq, kind), "{kind:?}");
+            assert!(op_allows_kind(Op::Ne, kind), "{kind:?}");
+            assert!(op_allows_kind(Op::IsNull, kind), "{kind:?}");
+            assert!(op_allows_kind(Op::In, kind), "{kind:?}");
+            assert!(op_allows_kind(Op::NotIn, kind), "{kind:?}");
+            assert!(op_allows_kind(Op::Contains, kind), "{kind:?}");
+            assert!(op_allows_kind(Op::StartsWith, kind), "{kind:?}");
+            assert!(op_allows_kind(Op::EndsWith, kind), "{kind:?}");
+            assert!(op_allows_kind(Op::ContainsI, kind), "{kind:?}");
+            assert!(!op_allows_kind(Op::Gt, kind), "{kind:?}");
+            assert!(!op_allows_kind(Op::Lt, kind), "{kind:?}");
+        }
     }
 }
