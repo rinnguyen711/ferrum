@@ -218,6 +218,12 @@ mod tests {
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct EnumExtension {
+    pub field: String,
+    pub append: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct PatchContentType {
     #[serde(default)]
     pub display_name: Option<String>,
@@ -225,6 +231,8 @@ pub struct PatchContentType {
     pub add_fields: Vec<Field>,
     #[serde(default)]
     pub drop_fields: Vec<String>,
+    #[serde(default)]
+    pub extend_enum_values: Vec<EnumExtension>,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq)]
@@ -247,11 +255,21 @@ pub enum PatchError {
     NoOp,
     #[error("field name `{0}` collides with physical column of another field")]
     ColumnCollision(String),
+    #[error("extend_enum_values references unknown field `{0}`")]
+    EnumExtendUnknownField(String),
+    #[error("extend_enum_values targets non-enum field `{0}`")]
+    EnumExtendNotEnum(String),
+    #[error("field `{0}` is both modified via drop/add and extend_enum_values in the same patch")]
+    EnumExtendConflictWithAddDrop(String),
 }
 
 impl PatchContentType {
     pub fn validate(&self, existing: &ContentType) -> Result<(), PatchError> {
-        if self.display_name.is_none() && self.add_fields.is_empty() && self.drop_fields.is_empty() {
+        if self.display_name.is_none()
+            && self.add_fields.is_empty()
+            && self.drop_fields.is_empty()
+            && self.extend_enum_values.is_empty()
+        {
             return Err(PatchError::NoOp);
         }
         if let Some(d) = &self.display_name {
@@ -304,6 +322,45 @@ impl PatchContentType {
                 return Err(PatchError::ColumnCollision(col));
             }
         }
+        let add_names: std::collections::HashSet<&str> =
+            self.add_fields.iter().map(|f| f.name.as_str()).collect();
+        for ext in &self.extend_enum_values {
+            if drop_set.contains(ext.field.as_str()) || add_names.contains(ext.field.as_str()) {
+                return Err(PatchError::EnumExtendConflictWithAddDrop(ext.field.clone()));
+            }
+            let target = match existing.fields.iter().find(|f| f.name == ext.field) {
+                Some(f) => f,
+                None => return Err(PatchError::EnumExtendUnknownField(ext.field.clone())),
+            };
+            if target.kind != crate::field::FieldKind::Enum {
+                return Err(PatchError::EnumExtendNotEnum(ext.field.clone()));
+            }
+            if ext.append.is_empty() {
+                return Err(PatchError::BadField {
+                    name: ext.field.clone(),
+                    source: FieldError::EnumValuesEmpty,
+                });
+            }
+            let existing_meta = match target.enum_meta() {
+                Some(m) => m,
+                None => return Err(PatchError::EnumExtendNotEnum(ext.field.clone())),
+            };
+            let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+            for v in &ext.append {
+                if !crate::reserved::is_valid_ident(v) {
+                    return Err(PatchError::BadField {
+                        name: ext.field.clone(),
+                        source: FieldError::EnumValueInvalidIdent(v.clone()),
+                    });
+                }
+                if existing_meta.values.iter().any(|x| x == v) || !seen.insert(v.clone()) {
+                    return Err(PatchError::BadField {
+                        name: ext.field.clone(),
+                        source: FieldError::EnumValueDuplicate(v.clone()),
+                    });
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -337,7 +394,7 @@ mod patch_tests {
 
     #[test]
     fn noop_rejected() {
-        let p = PatchContentType { display_name: None, add_fields: vec![], drop_fields: vec![] };
+        let p = PatchContentType { display_name: None, add_fields: vec![], drop_fields: vec![], extend_enum_values: vec![] };
         assert_eq!(p.validate(&existing()).unwrap_err(), PatchError::NoOp);
     }
 
@@ -347,6 +404,7 @@ mod patch_tests {
             display_name: None,
             add_fields: vec![],
             drop_fields: vec!["missing".into()],
+            extend_enum_values: vec![],
         };
         assert!(matches!(p.validate(&existing()).unwrap_err(), PatchError::UnknownDropField(_)));
     }
@@ -357,6 +415,7 @@ mod patch_tests {
             display_name: None,
             add_fields: vec![],
             drop_fields: vec!["id".into()],
+            extend_enum_values: vec![],
         };
         assert!(matches!(p.validate(&existing()).unwrap_err(), PatchError::DropSystemField(_)));
     }
@@ -375,6 +434,7 @@ mod patch_tests {
                 kind_meta: json!({}),
             }],
             drop_fields: vec![],
+            extend_enum_values: vec![],
         };
         assert!(matches!(p.validate(&existing()).unwrap_err(), PatchError::DuplicateAddField(_)));
     }
@@ -394,6 +454,7 @@ mod patch_tests {
                 kind_meta: json!({}),
             }],
             drop_fields: vec!["title".into()],
+            extend_enum_values: vec![],
         };
         assert!(matches!(
             p.validate(&existing()).unwrap_err(),
@@ -429,9 +490,195 @@ mod patch_tests {
                 kind_meta: json!({"target":"user","cardinality":"many_to_one"}),
             }],
             drop_fields: vec![],
+            extend_enum_values: vec![],
         };
         let err = p.validate(&existing_with_author_id).unwrap_err();
         assert_eq!(err, PatchError::ColumnCollision("author_id".into()));
+    }
+
+    #[test]
+    fn patch_extend_enum_values_ok() {
+        let existing = ContentType {
+            id: Uuid::nil(),
+            name: "post".into(),
+            display_name: "Post".into(),
+            fields: vec![Field {
+                name: "status".into(),
+                kind: FieldKind::Enum,
+                required: false,
+                unique: false,
+                default: json!(null),
+                max_length: None,
+                kind_meta: json!({"values": ["draft", "published"]}),
+            }],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let p = PatchContentType {
+            display_name: None,
+            add_fields: vec![],
+            drop_fields: vec![],
+            extend_enum_values: vec![EnumExtension {
+                field: "status".into(),
+                append: vec!["archived".into()],
+            }],
+        };
+        assert!(p.validate(&existing).is_ok());
+    }
+
+    #[test]
+    fn patch_extend_enum_values_unknown_field() {
+        let existing = ContentType {
+            id: Uuid::nil(),
+            name: "post".into(),
+            display_name: "Post".into(),
+            fields: vec![Field {
+                name: "status".into(),
+                kind: FieldKind::Enum,
+                required: false,
+                unique: false,
+                default: json!(null),
+                max_length: None,
+                kind_meta: json!({"values": ["draft", "published"]}),
+            }],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let p = PatchContentType {
+            display_name: None,
+            add_fields: vec![],
+            drop_fields: vec![],
+            extend_enum_values: vec![EnumExtension {
+                field: "missing".into(),
+                append: vec!["archived".into()],
+            }],
+        };
+        let err = p.validate(&existing).unwrap_err();
+        assert!(format!("{err:?}").contains("EnumExtendUnknownField"));
+    }
+
+    #[test]
+    fn patch_extend_enum_values_not_enum_field() {
+        let existing = ContentType {
+            id: Uuid::nil(),
+            name: "post".into(),
+            display_name: "Post".into(),
+            fields: vec![Field {
+                name: "title".into(),
+                kind: FieldKind::String,
+                required: false,
+                unique: false,
+                default: json!(null),
+                max_length: None,
+                kind_meta: json!({}),
+            }],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let p = PatchContentType {
+            display_name: None,
+            add_fields: vec![],
+            drop_fields: vec![],
+            extend_enum_values: vec![EnumExtension {
+                field: "title".into(),
+                append: vec!["archived".into()],
+            }],
+        };
+        let err = p.validate(&existing).unwrap_err();
+        assert!(format!("{err:?}").contains("EnumExtendNotEnum"));
+    }
+
+    #[test]
+    fn patch_extend_enum_values_duplicate_against_existing() {
+        let existing = ContentType {
+            id: Uuid::nil(),
+            name: "post".into(),
+            display_name: "Post".into(),
+            fields: vec![Field {
+                name: "status".into(),
+                kind: FieldKind::Enum,
+                required: false,
+                unique: false,
+                default: json!(null),
+                max_length: None,
+                kind_meta: json!({"values": ["draft", "published"]}),
+            }],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let p = PatchContentType {
+            display_name: None,
+            add_fields: vec![],
+            drop_fields: vec![],
+            extend_enum_values: vec![EnumExtension {
+                field: "status".into(),
+                append: vec!["draft".into()],
+            }],
+        };
+        let err = p.validate(&existing).unwrap_err();
+        assert!(format!("{err:?}").contains("EnumValueDuplicate"));
+    }
+
+    #[test]
+    fn patch_extend_enum_values_empty_append() {
+        let existing = ContentType {
+            id: Uuid::nil(),
+            name: "post".into(),
+            display_name: "Post".into(),
+            fields: vec![Field {
+                name: "status".into(),
+                kind: FieldKind::Enum,
+                required: false,
+                unique: false,
+                default: json!(null),
+                max_length: None,
+                kind_meta: json!({"values": ["draft", "published"]}),
+            }],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let p = PatchContentType {
+            display_name: None,
+            add_fields: vec![],
+            drop_fields: vec![],
+            extend_enum_values: vec![EnumExtension {
+                field: "status".into(),
+                append: vec![],
+            }],
+        };
+        let err = p.validate(&existing).unwrap_err();
+        assert!(format!("{err:?}").contains("EnumValuesEmpty"));
+    }
+
+    #[test]
+    fn patch_extend_enum_values_conflict_with_drop() {
+        let existing = ContentType {
+            id: Uuid::nil(),
+            name: "post".into(),
+            display_name: "Post".into(),
+            fields: vec![Field {
+                name: "status".into(),
+                kind: FieldKind::Enum,
+                required: false,
+                unique: false,
+                default: json!(null),
+                max_length: None,
+                kind_meta: json!({"values": ["draft", "published"]}),
+            }],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let p = PatchContentType {
+            display_name: None,
+            add_fields: vec![],
+            drop_fields: vec!["status".into()],
+            extend_enum_values: vec![EnumExtension {
+                field: "status".into(),
+                append: vec!["archived".into()],
+            }],
+        };
+        let err = p.validate(&existing).unwrap_err();
+        assert!(format!("{err:?}").contains("EnumExtendConflictWithAddDrop"));
     }
 
     #[test]
@@ -461,6 +708,7 @@ mod patch_tests {
                 kind_meta: json!({"target":"user","cardinality":"many_to_one"}),
             }],
             drop_fields: vec!["author_id".into()],
+            extend_enum_values: vec![],
         };
         assert!(p.validate(&existing_with_author_id).is_ok());
     }
