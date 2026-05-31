@@ -50,6 +50,27 @@ impl SchemaRegistry {
         *self.inner.write().await = map;
         Ok(())
     }
+
+    /// Walks all registered content types looking for a relation field on any
+    /// source type whose `target` matches `target_name` and whose `inverse`
+    /// matches `inverse_name`. Returns `(source_type_name, fk_column)` if found.
+    /// O(types × fields) — small enough for v1 scale.
+    pub async fn inverse_lookup(
+        &self,
+        target_name: &str,
+        inverse_name: &str,
+    ) -> Option<(String, String)> {
+        let map = self.inner.read().await;
+        for ct in map.values() {
+            for f in &ct.fields {
+                let Some(meta) = f.relation_meta() else { continue };
+                if meta.target == target_name && meta.inverse.as_deref() == Some(inverse_name) {
+                    return Some((ct.name.clone(), f.physical_column()));
+                }
+            }
+        }
+        None
+    }
 }
 
 #[derive(sqlx::FromRow)]
@@ -118,5 +139,111 @@ mod tests {
         r.insert(ct("a")).await;
         let names: Vec<_> = r.list().await.into_iter().map(|c| c.name).collect();
         assert_eq!(names, vec!["a", "z"]);
+    }
+
+    #[tokio::test]
+    async fn inverse_lookup_finds_registered_pair() {
+        use rustapi_core::ContentType;
+
+        let reg = SchemaRegistry::new();
+        let user = ContentType {
+            id: Uuid::new_v4(),
+            name: "user".into(),
+            display_name: "User".into(),
+            fields: vec![],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let post = ContentType {
+            id: Uuid::new_v4(),
+            name: "post".into(),
+            display_name: "Post".into(),
+            fields: vec![Field {
+                name: "author".into(),
+                kind: FieldKind::Relation,
+                required: false,
+                unique: false,
+                default: serde_json::Value::Null,
+                max_length: None,
+                kind_meta: json!({
+                    "target": "user",
+                    "cardinality": "many_to_one",
+                    "inverse": "posts"
+                }),
+            }],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        reg.insert(user).await;
+        reg.insert(post).await;
+
+        let hit = reg.inverse_lookup("user", "posts").await;
+        assert_eq!(
+            hit.as_ref().map(|(s, c)| (s.as_str(), c.as_str())),
+            Some(("post", "author_id"))
+        );
+
+        assert!(reg.inverse_lookup("user", "nope").await.is_none());
+        assert!(reg.inverse_lookup("nope", "posts").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn inverse_lookup_ignores_relation_without_inverse() {
+        use rustapi_core::ContentType;
+
+        let reg = SchemaRegistry::new();
+        reg.insert(ContentType {
+            id: Uuid::new_v4(),
+            name: "user".into(),
+            display_name: "User".into(),
+            fields: vec![],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        })
+        .await;
+        reg.insert(ContentType {
+            id: Uuid::new_v4(),
+            name: "post".into(),
+            display_name: "Post".into(),
+            fields: vec![Field {
+                name: "author".into(),
+                kind: FieldKind::Relation,
+                required: false,
+                unique: false,
+                default: serde_json::Value::Null,
+                max_length: None,
+                kind_meta: json!({"target":"user","cardinality":"many_to_one"}),
+            }],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        })
+        .await;
+        // Relation has no inverse declared — lookup against "posts" finds nothing.
+        assert!(reg.inverse_lookup("user", "posts").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn inverse_lookup_skips_primitive_fields() {
+        use rustapi_core::ContentType;
+
+        let reg = SchemaRegistry::new();
+        reg.insert(ContentType {
+            id: Uuid::new_v4(),
+            name: "post".into(),
+            display_name: "Post".into(),
+            fields: vec![Field {
+                name: "title".into(),
+                kind: FieldKind::String,
+                required: false,
+                unique: false,
+                default: serde_json::Value::Null,
+                max_length: None,
+                kind_meta: json!({}),
+            }],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        })
+        .await;
+        assert!(reg.inverse_lookup("user", "anything").await.is_none());
     }
 }
