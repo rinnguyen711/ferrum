@@ -46,6 +46,9 @@ pub fn drop_table(ct_name: &str) -> Result<String, DdlError> {
 }
 
 fn column_def(f: &Field) -> Result<String, DdlError> {
+    if f.kind == FieldKind::Relation {
+        return relation_column_def(f);
+    }
     let col = quote_ident(&f.name)?;
     let ty = sql_type(f);
     let mut s = format!("{col} {ty}");
@@ -60,6 +63,18 @@ fn column_def(f: &Field) -> Result<String, DdlError> {
         s.push_str(" UNIQUE");
     }
     Ok(s)
+}
+
+fn relation_column_def(f: &Field) -> Result<String, DdlError> {
+    let meta = f.relation_meta().ok_or_else(|| {
+        IdentError("relation field missing/invalid kind_meta".into())
+    })?;
+    let col = quote_ident(&f.physical_column())?;
+    let target = table_name(&meta.target)?;
+    let not_null = if f.required { " NOT NULL" } else { "" };
+    Ok(format!(
+        "{col} uuid{not_null} REFERENCES {target}(\"id\") ON DELETE RESTRICT"
+    ))
 }
 
 fn sql_type(f: &Field) -> String {
@@ -177,5 +192,60 @@ mod tests {
     fn rejects_bad_table_name() {
         let bad = ContentType { name: "Bad".into(), ..ct(vec![field("title", FieldKind::String)]) };
         assert!(create_table(&bad).is_err());
+    }
+
+    #[test]
+    fn create_table_emits_relation_fk_nullable() {
+        let mut f = field("author", FieldKind::Relation);
+        f.kind_meta = json!({"target":"user","cardinality":"many_to_one"});
+        let sql = create_table(&ct(vec![f])).unwrap();
+        assert!(
+            sql.contains("\"author_id\" uuid REFERENCES \"ct_user\"(\"id\") ON DELETE RESTRICT"),
+            "got: {sql}"
+        );
+        // Nullable: no NOT NULL after the uuid keyword for this column.
+        assert!(!sql.contains("\"author_id\" uuid NOT NULL"), "got: {sql}");
+    }
+
+    #[test]
+    fn create_table_emits_relation_fk_not_null_when_required() {
+        let mut f = field("author", FieldKind::Relation);
+        f.required = true;
+        f.kind_meta = json!({"target":"user","cardinality":"many_to_one"});
+        let sql = create_table(&ct(vec![f])).unwrap();
+        assert!(
+            sql.contains("\"author_id\" uuid NOT NULL REFERENCES \"ct_user\"(\"id\") ON DELETE RESTRICT"),
+            "got: {sql}"
+        );
+    }
+
+    #[test]
+    fn add_column_emits_nullable_fk_for_relation() {
+        let mut f = field("author", FieldKind::Relation);
+        f.kind_meta = json!({"target":"user","cardinality":"many_to_one"});
+        let sql = add_column("post", &f).unwrap();
+        assert_eq!(
+            sql,
+            "ALTER TABLE \"ct_post\" ADD COLUMN \"author_id\" uuid REFERENCES \"ct_user\"(\"id\") ON DELETE RESTRICT"
+        );
+    }
+
+    #[test]
+    fn relation_fk_rejects_invalid_target() {
+        // RelationMeta::from_value enforces is_valid_ident for target, so
+        // a well-formed Field cannot reach column_def with an invalid target.
+        // But defend the emitter anyway: if someone passes a Field whose
+        // kind_meta says target="Bad" (uppercase rejected by is_valid_ident),
+        // table_name() should error.
+        let f = Field {
+            name: "author".into(),
+            kind: FieldKind::Relation,
+            required: false,
+            unique: false,
+            default: json!(null),
+            max_length: None,
+            kind_meta: json!({"target":"Bad","cardinality":"many_to_one"}),
+        };
+        assert!(add_column("post", &f).is_err());
     }
 }
