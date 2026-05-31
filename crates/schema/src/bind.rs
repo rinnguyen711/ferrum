@@ -34,6 +34,7 @@ fn bind_one<'q>(
         BoundValue::F64(f) => q.bind(*f),
         BoundValue::Bool(b) => q.bind(*b),
         BoundValue::DateTime(t) => q.bind(*t),
+        BoundValue::Uuid(u) => q.bind(*u),
     }
 }
 
@@ -48,6 +49,7 @@ fn bind_one_as<'q>(
         BoundValue::F64(f) => q.bind(*f),
         BoundValue::Bool(b) => q.bind(*b),
         BoundValue::DateTime(t) => q.bind(*t),
+        BoundValue::Uuid(u) => q.bind(*u),
     }
 }
 
@@ -61,6 +63,7 @@ fn bind_typed_null<'q>(
         FieldKind::Float => q.bind(Option::<f64>::None),
         FieldKind::Boolean => q.bind(Option::<bool>::None),
         FieldKind::Datetime => q.bind(Option::<chrono::DateTime<chrono::Utc>>::None),
+        FieldKind::Uuid => q.bind(Option::<uuid::Uuid>::None),
         _ => q.bind(Option::<String>::None),
     }
 }
@@ -75,6 +78,7 @@ fn bind_typed_null_as<'q>(
         FieldKind::Float => q.bind(Option::<f64>::None),
         FieldKind::Boolean => q.bind(Option::<bool>::None),
         FieldKind::Datetime => q.bind(Option::<chrono::DateTime<chrono::Utc>>::None),
+        FieldKind::Uuid => q.bind(Option::<uuid::Uuid>::None),
         _ => q.bind(Option::<String>::None),
     }
 }
