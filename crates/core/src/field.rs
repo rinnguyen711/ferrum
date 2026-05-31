@@ -14,10 +14,13 @@ pub enum FieldKind {
     Float,
     Boolean,
     Datetime,
-    /// Postgres UUID. Currently used internally for the `id` system column
-    /// so filters emit `::uuid` casts; not yet exposed as a user-creatable
-    /// field kind.
+    /// Postgres UUID. Used internally for the `id` system column AND for
+    /// relation FK columns (phase 2.4+). Not directly user-declarable as a
+    /// field kind — users declare `Relation` and the FK column infers `Uuid`.
     Uuid,
+    /// Phase 2.4: declares a foreign-key reference to another content type.
+    /// Configuration lives in `Field.kind_meta`; see `RelationMeta`.
+    Relation,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -30,6 +33,7 @@ pub enum BoundValue {
     F64(f64),
     Bool(bool),
     DateTime(DateTime<Utc>),
+    Uuid(uuid::Uuid),
 }
 
 impl BoundValue {
@@ -52,6 +56,10 @@ impl BoundValue {
             (FieldKind::Datetime, V::String(s)) => DateTime::parse_from_rfc3339(s)
                 .map(|dt| BoundValue::DateTime(dt.with_timezone(&Utc)))
                 .map_err(|_| CoerceError::BadDatetime),
+            (FieldKind::Uuid, V::String(s)) => uuid::Uuid::parse_str(s)
+                .map(BoundValue::Uuid)
+                .map_err(|_| CoerceError::BadUuid),
+            (FieldKind::Relation, _) => Err(CoerceError::TypeMismatch),
             _ => Err(CoerceError::TypeMismatch),
         }
     }
@@ -65,6 +73,8 @@ pub enum CoerceError {
     OutOfRange,
     #[error("invalid RFC3339 datetime")]
     BadDatetime,
+    #[error("invalid UUID")]
+    BadUuid,
 }
 
 #[cfg(test)]
@@ -141,6 +151,32 @@ mod tests {
     fn coerce_type_mismatch() {
         assert_eq!(
             BoundValue::from_json(FieldKind::Boolean, &json!("nope")).unwrap_err(),
+            CoerceError::TypeMismatch
+        );
+    }
+
+    #[test]
+    fn coerce_uuid_ok() {
+        let s = "550e8400-e29b-41d4-a716-446655440000";
+        let v = BoundValue::from_json(FieldKind::Uuid, &serde_json::json!(s)).unwrap();
+        match v {
+            BoundValue::Uuid(u) => assert_eq!(u.to_string(), s),
+            _ => panic!("expected BoundValue::Uuid"),
+        }
+    }
+
+    #[test]
+    fn coerce_uuid_bad() {
+        assert_eq!(
+            BoundValue::from_json(FieldKind::Uuid, &serde_json::json!("not-a-uuid")).unwrap_err(),
+            CoerceError::BadUuid
+        );
+    }
+
+    #[test]
+    fn coerce_uuid_rejects_non_string() {
+        assert_eq!(
+            BoundValue::from_json(FieldKind::Uuid, &serde_json::json!(123)).unwrap_err(),
             CoerceError::TypeMismatch
         );
     }
