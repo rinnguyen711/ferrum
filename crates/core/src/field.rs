@@ -347,6 +347,42 @@ impl RelationMeta {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumMeta {
+    pub values: Vec<String>,
+}
+
+impl EnumMeta {
+    pub fn from_value(v: &serde_json::Value) -> Result<Self, FieldError> {
+        let obj = v.as_object().ok_or(FieldError::EnumMetaShape)?;
+        for key in obj.keys() {
+            if key != "values" {
+                return Err(FieldError::EnumMetaShape);
+            }
+        }
+        let arr = obj
+            .get("values")
+            .and_then(|x| x.as_array())
+            .ok_or(FieldError::EnumMetaShape)?;
+        if arr.is_empty() {
+            return Err(FieldError::EnumValuesEmpty);
+        }
+        let mut values = Vec::with_capacity(arr.len());
+        let mut seen = std::collections::HashSet::new();
+        for item in arr {
+            let s = item.as_str().ok_or(FieldError::EnumMetaShape)?;
+            if !crate::reserved::is_valid_ident(s) {
+                return Err(FieldError::EnumValueInvalidIdent(s.to_string()));
+            }
+            if !seen.insert(s.to_string()) {
+                return Err(FieldError::EnumValueDuplicate(s.to_string()));
+            }
+            values.push(s.to_string());
+        }
+        Ok(Self { values })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Field {
     pub name: String,
@@ -393,6 +429,18 @@ pub enum FieldError {
     RelationFieldUniqueUnsupported,
     #[error("relation field cannot have a default")]
     RelationFieldDefaultUnsupported,
+    #[error("enum kind_meta must be {{values: [..]}} of valid idents")]
+    EnumMetaShape,
+    #[error("enum values list must contain at least one value")]
+    EnumValuesEmpty,
+    #[error("enum value `{0}` is not a valid identifier")]
+    EnumValueInvalidIdent(String),
+    #[error("enum value `{0}` appears more than once")]
+    EnumValueDuplicate(String),
+    #[error("enum default is not in the values list")]
+    EnumDefaultNotInValues,
+    #[error("json field cannot be unique")]
+    JsonUniqueUnsupported,
 }
 
 impl Field {
@@ -446,6 +494,14 @@ impl Field {
     pub fn relation_meta(&self) -> Option<RelationMeta> {
         if self.kind == FieldKind::Relation {
             RelationMeta::from_value(&self.kind_meta).ok()
+        } else {
+            None
+        }
+    }
+
+    pub fn enum_meta(&self) -> Option<EnumMeta> {
+        if self.kind == FieldKind::Enum {
+            EnumMeta::from_value(&self.kind_meta).ok()
         } else {
             None
         }
@@ -635,5 +691,65 @@ mod relation_meta_tests {
             kind_meta: json!({"x":1}),
         };
         assert_eq!(f.validate().unwrap_err(), FieldError::KindMetaNotEmpty);
+    }
+}
+
+#[cfg(test)]
+mod enum_meta_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn parse_minimal() {
+        let m = EnumMeta::from_value(&json!({"values": ["draft", "published"]})).unwrap();
+        assert_eq!(m.values, vec!["draft".to_string(), "published".to_string()]);
+    }
+
+    #[test]
+    fn reject_missing_values() {
+        assert_eq!(
+            EnumMeta::from_value(&json!({})).unwrap_err(),
+            FieldError::EnumMetaShape
+        );
+    }
+
+    #[test]
+    fn reject_empty_values() {
+        assert_eq!(
+            EnumMeta::from_value(&json!({"values": []})).unwrap_err(),
+            FieldError::EnumValuesEmpty
+        );
+    }
+
+    #[test]
+    fn reject_non_string_value() {
+        assert_eq!(
+            EnumMeta::from_value(&json!({"values": ["a", 1]})).unwrap_err(),
+            FieldError::EnumMetaShape
+        );
+    }
+
+    #[test]
+    fn reject_invalid_ident() {
+        assert_eq!(
+            EnumMeta::from_value(&json!({"values": ["Bad-Value"]})).unwrap_err(),
+            FieldError::EnumValueInvalidIdent("Bad-Value".into())
+        );
+    }
+
+    #[test]
+    fn reject_duplicate() {
+        assert_eq!(
+            EnumMeta::from_value(&json!({"values": ["a", "b", "a"]})).unwrap_err(),
+            FieldError::EnumValueDuplicate("a".into())
+        );
+    }
+
+    #[test]
+    fn reject_extra_keys() {
+        assert_eq!(
+            EnumMeta::from_value(&json!({"values": ["a"], "extra": 1})).unwrap_err(),
+            FieldError::EnumMetaShape
+        );
     }
 }

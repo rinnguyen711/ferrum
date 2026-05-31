@@ -11,7 +11,9 @@ pub mod validators;
 
 pub use error::{DbInfo, Error, FieldValidation, ValidationErrors};
 pub use event::Event;
-pub use field::{BoundValue, CoerceError, Field, FieldError, FieldKind, RelationMeta};
+pub use field::{
+    BoundValue, CoerceError, EnumMeta, Field, FieldError, FieldKind, RelationMeta,
+};
 pub use principal::{Action, Principal};
 pub use content_type::{ContentType, ContentTypeError, NewContentType, PatchContentType, PatchError};
 pub use system::{SystemColumn, SYSTEM_COLUMNS, is_system_column};
