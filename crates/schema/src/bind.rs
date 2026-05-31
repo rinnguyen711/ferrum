@@ -66,6 +66,9 @@ fn bind_typed_null<'q>(
         FieldKind::Boolean => q.bind(Option::<bool>::None),
         FieldKind::Datetime => q.bind(Option::<chrono::DateTime<chrono::Utc>>::None),
         FieldKind::Uuid => q.bind(Option::<uuid::Uuid>::None),
+        FieldKind::Json => {
+            q.bind(Option::<sqlx::types::Json<serde_json::Value>>::None)
+        }
         _ => q.bind(Option::<String>::None),
     }
 }
@@ -81,6 +84,9 @@ fn bind_typed_null_as<'q>(
         FieldKind::Boolean => q.bind(Option::<bool>::None),
         FieldKind::Datetime => q.bind(Option::<chrono::DateTime<chrono::Utc>>::None),
         FieldKind::Uuid => q.bind(Option::<uuid::Uuid>::None),
+        FieldKind::Json => {
+            q.bind(Option::<sqlx::types::Json<serde_json::Value>>::None)
+        }
         _ => q.bind(Option::<String>::None),
     }
 }
