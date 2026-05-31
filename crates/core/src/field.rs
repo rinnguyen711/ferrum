@@ -1,6 +1,5 @@
 //! Field types and value coercion.
 
-use crate::reserved::{is_reserved, is_valid_ident};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -182,6 +181,53 @@ mod tests {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct RelationMeta {
+    pub target: String,
+    pub cardinality: String,
+    pub inverse: Option<String>,
+}
+
+impl RelationMeta {
+    pub fn from_value(v: &serde_json::Value) -> Result<Self, FieldError> {
+        let obj = v.as_object().ok_or(FieldError::RelationMetaShape)?;
+        let target = obj
+            .get("target")
+            .and_then(|x| x.as_str())
+            .ok_or(FieldError::RelationMetaShape)?
+            .to_string();
+        if !crate::reserved::is_valid_ident(&target) {
+            return Err(FieldError::RelationMetaShape);
+        }
+        let cardinality = obj
+            .get("cardinality")
+            .and_then(|x| x.as_str())
+            .ok_or(FieldError::RelationMetaShape)?
+            .to_string();
+        if cardinality != "many_to_one" {
+            return Err(FieldError::BadCardinality);
+        }
+        let inverse = match obj.get("inverse") {
+            None => None,
+            Some(serde_json::Value::Null) => None,
+            Some(serde_json::Value::String(s)) => {
+                if !crate::reserved::is_valid_ident(s) || crate::reserved::is_reserved(s) {
+                    return Err(FieldError::InverseNameInvalid);
+                }
+                Some(s.clone())
+            }
+            _ => return Err(FieldError::RelationMetaShape),
+        };
+        // Reject unknown keys to keep the surface tight.
+        for key in obj.keys() {
+            if !matches!(key.as_str(), "target" | "cardinality" | "inverse") {
+                return Err(FieldError::RelationMetaShape);
+            }
+        }
+        Ok(Self { target, cardinality, inverse })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Field {
     pub name: String,
@@ -214,35 +260,76 @@ pub enum FieldError {
     Reserved,
     #[error("max_length must be 1..=10000")]
     BadMaxLength,
-    #[error("kind_meta must be empty in v1")]
+    #[error("kind_meta must be empty for primitive kinds")]
     KindMetaNotEmpty,
     #[error("default value does not match kind")]
     BadDefault,
+    #[error("relation kind_meta must have {{target, cardinality, inverse?}} with valid ident target")]
+    RelationMetaShape,
+    #[error("cardinality must be \"many_to_one\" in v2.4")]
+    BadCardinality,
+    #[error("inverse name invalid or reserved")]
+    InverseNameInvalid,
+    #[error("relation field cannot be unique")]
+    RelationFieldUniqueUnsupported,
+    #[error("relation field cannot have a default")]
+    RelationFieldDefaultUnsupported,
 }
 
 impl Field {
     pub fn validate(&self) -> Result<(), FieldError> {
-        if !is_valid_ident(&self.name) {
+        if !crate::reserved::is_valid_ident(&self.name) {
             return Err(FieldError::BadName);
         }
-        if is_reserved(&self.name) {
+        if crate::reserved::is_reserved(&self.name) {
             return Err(FieldError::Reserved);
         }
         match self.max_length {
             Some(n) if !(1..=10_000).contains(&n) => return Err(FieldError::BadMaxLength),
             _ => {}
         }
+        if self.kind == FieldKind::Relation {
+            if self.unique {
+                return Err(FieldError::RelationFieldUniqueUnsupported);
+            }
+            if !self.default.is_null() {
+                return Err(FieldError::RelationFieldDefaultUnsupported);
+            }
+            let _ = RelationMeta::from_value(&self.kind_meta)?;
+            return Ok(());
+        }
+        // Primitive kinds: kind_meta must remain empty (existing v1 rule).
         if !is_empty_obj(&self.kind_meta) {
             return Err(FieldError::KindMetaNotEmpty);
         }
         if !self.default.is_null() {
-            BoundValue::from_json(self.kind, &self.default).map_err(|_| FieldError::BadDefault)?;
+            BoundValue::from_json(self.kind, &self.default)
+                .map_err(|_| FieldError::BadDefault)?;
         }
         Ok(())
     }
 
     pub fn effective_max_length(&self) -> u32 {
         self.max_length.unwrap_or(255)
+    }
+
+    /// Resolve the physical SQL column name for this field. Primitives use the
+    /// declared name; relation fields suffix `_id`.
+    pub fn physical_column(&self) -> String {
+        if self.kind == FieldKind::Relation {
+            format!("{}_id", self.name)
+        } else {
+            self.name.clone()
+        }
+    }
+
+    /// Returns the relation meta if this is a relation field, otherwise `None`.
+    pub fn relation_meta(&self) -> Option<RelationMeta> {
+        if self.kind == FieldKind::Relation {
+            RelationMeta::from_value(&self.kind_meta).ok()
+        } else {
+            None
+        }
     }
 }
 
@@ -306,5 +393,128 @@ mod field_tests {
         let mut x = f("count", FieldKind::Integer);
         x.default = json!(7);
         assert!(x.validate().is_ok());
+    }
+}
+
+#[cfg(test)]
+mod relation_meta_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn parse_minimal_meta() {
+        let m = RelationMeta::from_value(&json!({
+            "target": "user",
+            "cardinality": "many_to_one"
+        }))
+        .unwrap();
+        assert_eq!(m.target, "user");
+        assert_eq!(m.cardinality, "many_to_one");
+        assert!(m.inverse.is_none());
+    }
+
+    #[test]
+    fn parse_with_inverse() {
+        let m = RelationMeta::from_value(&json!({
+            "target": "user",
+            "cardinality": "many_to_one",
+            "inverse": "posts"
+        }))
+        .unwrap();
+        assert_eq!(m.inverse.as_deref(), Some("posts"));
+    }
+
+    #[test]
+    fn reject_missing_target() {
+        assert_eq!(
+            RelationMeta::from_value(&json!({"cardinality": "many_to_one"})).unwrap_err(),
+            FieldError::RelationMetaShape
+        );
+    }
+
+    #[test]
+    fn reject_bad_cardinality() {
+        assert_eq!(
+            RelationMeta::from_value(&json!({"target":"user","cardinality":"one_to_many"}))
+                .unwrap_err(),
+            FieldError::BadCardinality
+        );
+        assert_eq!(
+            RelationMeta::from_value(&json!({"target":"user","cardinality":"many_to_many"}))
+                .unwrap_err(),
+            FieldError::BadCardinality
+        );
+        assert_eq!(
+            RelationMeta::from_value(&json!({"target":"user","cardinality":"nonsense"}))
+                .unwrap_err(),
+            FieldError::BadCardinality
+        );
+    }
+
+    #[test]
+    fn reject_inverse_bad_ident() {
+        assert_eq!(
+            RelationMeta::from_value(&json!({
+                "target":"user","cardinality":"many_to_one","inverse":"Bad"
+            }))
+            .unwrap_err(),
+            FieldError::InverseNameInvalid
+        );
+    }
+
+    #[test]
+    fn reject_inverse_reserved() {
+        assert_eq!(
+            RelationMeta::from_value(&json!({
+                "target":"user","cardinality":"many_to_one","inverse":"id"
+            }))
+            .unwrap_err(),
+            FieldError::InverseNameInvalid
+        );
+    }
+
+    #[test]
+    fn validate_relation_field_basic() {
+        let f = Field {
+            name: "author".into(),
+            kind: FieldKind::Relation,
+            required: false,
+            unique: false,
+            default: serde_json::Value::Null,
+            max_length: None,
+            kind_meta: json!({"target":"user","cardinality":"many_to_one"}),
+        };
+        assert!(f.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_relation_rejects_unique() {
+        let mut f = Field {
+            name: "author".into(),
+            kind: FieldKind::Relation,
+            required: false,
+            unique: true,
+            default: serde_json::Value::Null,
+            max_length: None,
+            kind_meta: json!({"target":"user","cardinality":"many_to_one"}),
+        };
+        assert_eq!(f.validate().unwrap_err(), FieldError::RelationFieldUniqueUnsupported);
+        f.unique = false;
+        f.default = json!("550e8400-e29b-41d4-a716-446655440000");
+        assert_eq!(f.validate().unwrap_err(), FieldError::RelationFieldDefaultUnsupported);
+    }
+
+    #[test]
+    fn validate_primitive_still_rejects_non_empty_kind_meta() {
+        let f = Field {
+            name: "title".into(),
+            kind: FieldKind::String,
+            required: false,
+            unique: false,
+            default: serde_json::Value::Null,
+            max_length: None,
+            kind_meta: json!({"x":1}),
+        };
+        assert_eq!(f.validate().unwrap_err(), FieldError::KindMetaNotEmpty);
     }
 }
