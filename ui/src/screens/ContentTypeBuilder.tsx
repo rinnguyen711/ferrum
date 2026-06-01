@@ -1,78 +1,68 @@
 import { useParams } from "react-router-dom";
-import { Icons, type IconKey } from "../components/icons";
-import { RUSTAPI } from "../mock/data";
-
-const TYPE_ICON: Record<string, IconKey> = {
-  Text: "type",
-  UID: "hash",
-  Enumeration: "layers",
-  Media: "image",
-  "Rich text": "doc",
-  Relation: "relation",
-  Boolean: "toggle",
-  Number: "hash",
-  Datetime: "calendar",
-};
+import { useResource } from "../hooks/useResource";
+import { getContentType } from "../api/endpoints";
+import { relationMeta, enumValues } from "../api/types";
+import type { Field } from "../api/types";
 
 export function ContentTypeBuilder() {
-  const { type = "article" } = useParams<{ type: string }>();
-  const t = RUSTAPI.types[type] ?? RUSTAPI.types.article;
+  const { type = "" } = useParams<{ type: string }>();
+  const { data: ct, loading, error, refetch } = useResource(
+    () => getContentType(type),
+    [type],
+  );
+
+  if (loading) return <div className="rs-empty">Loading…</div>;
+  if (error)
+    return (
+      <div className="rs-empty">
+        {error.message}{" "}
+        <button className="rs-link-btn" onClick={refetch}>
+          Retry
+        </button>
+      </div>
+    );
+  if (!ct) return <div className="rs-empty">Unknown content type.</div>;
+
+  const meta = (f: Field): string => {
+    if (f.kind === "relation") {
+      const m = relationMeta(f);
+      return m ? `→ ${m.target} (${m.cardinality})` : "relation";
+    }
+    if (f.kind === "enum") return enumValues(f).join(" · ");
+    return "";
+  };
+
   return (
-    <div className="rs-builder">
+    <div className="rs-cm">
       <div className="rs-cm-head">
         <div>
-          <h1>{t.display}</h1>
-          <p className="rs-cm-sub rs-mono">
-            api::{t.key}.{t.key} · {t.fields.length} fields · collection type
-          </p>
-        </div>
-        <div className="rs-editor-actions">
-          <button className="rs-btn rs-btn--ghost">
-            <Icons.eye size={15} /> Preview API
-          </button>
-          <button className="rs-btn rs-btn--primary">
-            <Icons.plus size={16} /> Add another field
-          </button>
+          <h1>{ct.display_name}</h1>
+          <p className="rs-cm-sub rs-mono">{ct.name} · {ct.fields.length} fields (read-only)</p>
         </div>
       </div>
-      <div className="rs-schema">
-        <div className="rs-schema-head">
-          <span>Field</span>
-          <span>Type</span>
-          <span />
-        </div>
-        {t.fields.map((f) => {
-          const I = Icons[TYPE_ICON[f.type] ?? "type"];
-          return (
-            <div className="rs-schema-row" key={f.name}>
-              <span className="rs-schema-drag">
-                <Icons.drag size={16} />
-              </span>
-              <div className="rs-schema-fieldicon">
-                <I size={16} />
-              </div>
-              <div className="rs-schema-name">
-                <strong className="rs-mono">{f.name}</strong>
-                {f.required && <span className="rs-req-tag">required</span>}
-              </div>
-              <div className="rs-schema-type">
-                <span className="rs-type-pill">{f.type}</span>
-                {f.meta && <span className="rs-cell-muted">{f.meta}</span>}
-              </div>
-              <div className="rs-schema-actions">
-                <button className="rs-row-btn">
-                  <Icons.edit size={15} />
-                </button>
-                <button className="rs-row-btn rs-danger">
-                  <Icons.trash size={15} />
-                </button>
-              </div>
-            </div>
-          );
-        })}
-        <button className="rs-schema-add">
-          <Icons.plus size={16} /> Add another field to this collection type
-        </button>
+      <div className="rs-table-wrap">
+        <table className="rs-table">
+          <thead>
+            <tr>
+              <th>Field</th>
+              <th>Kind</th>
+              <th>Required</th>
+              <th>Unique</th>
+              <th>Meta</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ct.fields.map((f) => (
+              <tr key={f.name}>
+                <td className="rs-cell-title">{f.name}</td>
+                <td className="rs-mono">{f.kind}</td>
+                <td>{f.required ? "yes" : "—"}</td>
+                <td>{f.unique ? "yes" : "—"}</td>
+                <td className="rs-cell-muted">{meta(f)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
