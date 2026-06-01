@@ -1,5 +1,5 @@
 import { apiFetch } from "./client";
-import type { ContentType, Entry, Health, ListResponse } from "./types";
+import type { ContentType, Entry, Health, ListResponse, NewContentType } from "./types";
 
 export function listContentTypes(): Promise<ContentType[]> {
   return apiFetch<ContentType[]>("/admin/content-types");
@@ -7,6 +7,17 @@ export function listContentTypes(): Promise<ContentType[]> {
 
 export function getContentType(name: string): Promise<ContentType> {
   return apiFetch<ContentType>(`/admin/content-types/${encodeURIComponent(name)}`);
+}
+
+export function createContentType(body: NewContentType): Promise<ContentType> {
+  return apiFetch<ContentType>("/admin/content-types", { method: "POST", body });
+}
+
+export function deleteContentType(name: string): Promise<void> {
+  return apiFetch<void>(
+    `/admin/content-types/${encodeURIComponent(name)}?confirm=true`,
+    { method: "DELETE" },
+  );
 }
 
 interface ListOpts {

@@ -35,6 +35,12 @@ export interface ContentType {
   updated_at: string;
 }
 
+export interface NewContentType {
+  name: string;
+  display_name: string;
+  fields: Field[];
+}
+
 export type Entry = {
   id: string;
   created_at: string;
