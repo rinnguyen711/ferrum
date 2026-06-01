@@ -1,10 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { Icons, type IconKey } from "./icons";
 import { getHealth, listContentTypes } from "../api/endpoints";
-import type { Health } from "../api/types";
+import type { Health, PatchContentType } from "../api/types";
 import { useResource } from "../hooks/useResource";
 import type { Section } from "../Layout";
+import { useBuilderDraft } from "../builder/BuilderDraftContext";
+import { diffToPatch } from "../builder/draftModel";
+import { CreateTypeModal } from "../builder/CreateTypeModal";
+import { SaveConfirmModal } from "../builder/SaveConfirmModal";
 
 export function Avatar({
   name,
@@ -110,11 +114,13 @@ function PanelGroup({
   label,
   count: _count,
   action,
+  onAction,
   children,
 }: {
   label: string;
   count: number;
   action?: boolean;
+  onAction?: () => void;
   children: ReactNode;
 }) {
   return (
@@ -122,7 +128,11 @@ function PanelGroup({
       <div className="rs-panel-grouphead">
         <span>{label}</span>
         {action && (
-          <button className="rs-panel-add" title={"New " + label.toLowerCase()}>
+          <button
+            className="rs-panel-add"
+            title={"New " + label.toLowerCase()}
+            onClick={onAction}
+          >
             <Icons.plus size={14} />
           </button>
         )}
@@ -192,41 +202,72 @@ function TypePanel({
   isBuilder: boolean;
   collection: string;
 }) {
-  const navigate = useNavigate();
   const location = useLocation();
+  const [modalOpen, setModalOpen] = useState(false);
+  const [confirmPatch, setConfirmPatch] = useState<PatchContentType | null>(null);
+  const builder = useBuilderDraft();
   const { data: types, loading, error } = useResource(
     () => listContentTypes(),
     [location.pathname],
   );
+
+  const onSaveClick = () => {
+    const d = builder.draft;
+    if (!d) return;
+    if (d.mode === "existing") {
+      const patch = diffToPatch(d);
+      if (patch.drop_fields.length > 0) {
+        setConfirmPatch(patch);
+        return;
+      }
+    }
+    void builder.save();
+  };
+
   return (
     <aside className="rs-panel">
       <div className="rs-panel-head">
         <h2>{isBuilder ? "Content-Type Builder" : "Content Manager"}</h2>
         {isBuilder && (
           <button
-            className="rs-panel-add"
-            title="New content type"
-            onClick={() => navigate("/builder/new")}
+            className={"rs-btn rs-btn--sm " + (builder.dirty ? "rs-btn--primary" : "rs-btn--ghost")}
+            disabled={!builder.dirty || builder.saving}
+            onClick={onSaveClick}
+            title="Save schema changes"
           >
-            <Icons.plus size={14} />
+            {builder.saving ? "Saving…" : "Save"}
           </button>
         )}
       </div>
       <div className="rs-panel-scroll">
-        <PanelGroup label="Collection types" count={types?.length ?? 0}>
+        <PanelGroup
+          label="Collection types"
+          count={types?.length ?? 0}
+          action={isBuilder}
+          onAction={() => setModalOpen(true)}
+        >
           {loading && <div className="rs-panel-item rs-cell-muted">Loading…</div>}
           {error && <div className="rs-panel-item rs-danger">Failed to load</div>}
           {types?.map((t) => (
-            <Link
+            <button
               key={t.name}
-              to={`${base}/${t.name}`}
-              className={"rs-panel-item" + (collection === t.name ? " is-active" : "")}
+              onClick={() => builder.guardedNavigate(`${base}/${t.name}`)}
+              className={"rs-panel-item rs-panel-item--btn" + (collection === t.name ? " is-active" : "")}
             >
               {t.display_name}
-            </Link>
+            </button>
           ))}
         </PanelGroup>
       </div>
+      {modalOpen && <CreateTypeModal onClose={() => setModalOpen(false)} />}
+      {confirmPatch && (
+        <SaveConfirmModal
+          patch={confirmPatch}
+          saving={builder.saving}
+          onConfirm={() => { setConfirmPatch(null); void builder.save(); }}
+          onCancel={() => setConfirmPatch(null)}
+        />
+      )}
     </aside>
   );
 }

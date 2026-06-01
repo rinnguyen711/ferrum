@@ -1,5 +1,6 @@
 import { Outlet, useLocation, useMatch, useParams } from "react-router-dom";
 import { Sidebar, SecondaryPanel, Topbar } from "./components/shell";
+import { BuilderDraftProvider } from "./builder/BuilderDraftContext";
 
 export type Section = "dashboard" | "content" | "builder" | "settings";
 
@@ -33,17 +34,19 @@ export function Layout({
   else if (section === "settings") crumbs = ["Settings"];
 
   return (
-    <div className="rs-app">
-      <Sidebar section={section} />
-      <SecondaryPanel section={section} collection={collection} />
-      <div className="rs-content">
-        {!showEditorBare && (
-          <Topbar crumbs={crumbs} dark={dark} onToggleDark={onToggleDark} />
-        )}
-        <div className={"rs-scroll" + (showEditorBare ? " rs-scroll--flush" : "")}>
-          <Outlet />
+    <BuilderDraftProvider>
+      <div className="rs-app">
+        <Sidebar section={section} />
+        <SecondaryPanel section={section} collection={collection} />
+        <div className="rs-content">
+          {!showEditorBare && (
+            <Topbar crumbs={crumbs} dark={dark} onToggleDark={onToggleDark} />
+          )}
+          <div className={"rs-scroll" + (showEditorBare ? " rs-scroll--flush" : "")}>
+            <Outlet />
+          </div>
         </div>
       </div>
-    </div>
+    </BuilderDraftProvider>
   );
 }
