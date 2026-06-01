@@ -2,7 +2,7 @@ mod config;
 
 use anyhow::{Context, Result};
 use config::Config;
-use rustapi_http::{build_router, AlwaysAllow, AppConfig, AppState, NoopSink};
+use rustapi_http::{build_router, mount_studio, AlwaysAllow, AppConfig, AppState, NoopSink};
 use rustapi_schema::{SchemaRegistry, SchemaService, MIGRATOR};
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
@@ -37,7 +37,11 @@ async fn main() -> Result<()> {
         },
     };
 
-    let app = build_router(state);
+    let mut app = build_router(state);
+    if let Some(ref dir) = cfg.studio_dir {
+        app = mount_studio(app, dir);
+        tracing::info!(dir = %dir, "studio UI mounted at /studio");
+    }
     let listener = tokio::net::TcpListener::bind(&cfg.bind).await.context("bind")?;
     tracing::info!(addr = %cfg.bind, "rustapi listening");
     axum::serve(listener, app).await.context("serve")?;
