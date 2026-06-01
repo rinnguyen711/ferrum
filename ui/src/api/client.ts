@@ -78,10 +78,17 @@ export async function apiFetch<T>(path: string, opts: FetchOpts = {}): Promise<T
   }
 
   if (!resp.ok) {
-    const env = (payload as { error?: { code?: string; message?: string; details?: { fields?: FieldError[] } } } | null)?.error;
+    // The server serializes per-field errors as `{field, reason}` (see
+    // rustapi_core::FieldValidation). Normalize `reason` into `message` so
+    // consumers can read a single field.
+    type WireField = { field: string; reason?: string; message?: string };
+    const env = (payload as { error?: { code?: string; message?: string; details?: { fields?: WireField[] } } } | null)?.error;
     const code = env?.code ?? "error";
     const message = env?.message ?? `Request failed (${resp.status}).`;
-    const fieldErrors = env?.details?.fields ?? [];
+    const fieldErrors: FieldError[] = (env?.details?.fields ?? []).map((f) => ({
+      field: f.field,
+      message: f.reason ?? f.message,
+    }));
     throw new ApiError(resp.status, code, message, fieldErrors);
   }
 
