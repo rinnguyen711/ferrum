@@ -32,6 +32,13 @@ function loadDark(): boolean {
   }
 }
 
+/** Landing for bare /content and /builder: the type chooser lives in the
+ * SecondaryPanel, so the main area just prompts the user to pick one. */
+function PickType({ kind }: { kind: "content" | "builder" }) {
+  const verb = kind === "builder" ? "inspect its schema" : "browse its entries";
+  return <div className="rs-empty">Select a content type to {verb}.</div>;
+}
+
 function RequireAuth({ children }: { children: ReactNode }) {
   const location = useLocation();
   if (!getKey()) {
@@ -84,8 +91,10 @@ export default function App() {
           }
         >
           <Route index element={<Dashboard />} />
+          <Route path="content" element={<PickType kind="content" />} />
           <Route path="content/:type" element={<ContentList />} />
           <Route path="content/:type/:id" element={<EntryEditor />} />
+          <Route path="builder" element={<PickType kind="builder" />} />
           <Route path="builder/:type" element={<ContentTypeBuilder />} />
           <Route path="settings" element={<Settings />} />
           <Route path="media" element={<Navigate to="/" replace />} />
