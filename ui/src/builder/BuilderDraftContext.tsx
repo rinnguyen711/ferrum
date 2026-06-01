@@ -17,6 +17,7 @@ interface BuilderDraftCtx {
   saving: boolean;
   banner: string | null;
   fieldErrors: Record<string, string>;
+  saveNonce: number;
   startNew(name: string, display: string): void;
   loadExisting(ct: ContentType): void;
   setDraft(updater: (d: Draft) => Draft): void;
@@ -40,6 +41,7 @@ export function BuilderDraftProvider({ children }: { children: ReactNode }) {
   const [saving, setSaving] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [saveNonce, setSaveNonce] = useState(0);
 
   const dirty = isDirty(draft);
 
@@ -108,6 +110,7 @@ export function BuilderDraftProvider({ children }: { children: ReactNode }) {
       try {
         const ct = await createContentType(toNewContentType(draft));
         setDraftState(seedFromContentType(ct));
+        setSaveNonce((n) => n + 1);
         navigate(`/builder/${ct.name}`);
       } catch (e) {
         applyApiError(e, "Create failed.");
@@ -122,6 +125,7 @@ export function BuilderDraftProvider({ children }: { children: ReactNode }) {
     try {
       const ct = await patchContentType(draft.name, patch);
       setDraftState(seedFromContentType(ct));
+      setSaveNonce((n) => n + 1);
     } catch (e) {
       applyApiError(e, "Save failed.");
     } finally {
@@ -143,10 +147,10 @@ export function BuilderDraftProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<BuilderDraftCtx>(
     () => ({
-      draft, dirty, saving, banner, fieldErrors,
+      draft, dirty, saving, banner, fieldErrors, saveNonce,
       startNew, loadExisting, setDraft, clearBanner, save, reset, guardedNavigate,
     }),
-    [draft, dirty, saving, banner, fieldErrors, startNew, loadExisting,
+    [draft, dirty, saving, banner, fieldErrors, saveNonce, startNew, loadExisting,
      setDraft, clearBanner, save, reset, guardedNavigate],
   );
 

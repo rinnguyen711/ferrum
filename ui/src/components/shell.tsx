@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import { Icons, type IconKey } from "./icons";
 import { getHealth, listContentTypes } from "../api/endpoints";
 import type { Health, PatchContentType } from "../api/types";
@@ -72,11 +72,15 @@ function RailLogo() {
 }
 
 export function Sidebar({ section: _section }: { section: Section }) {
+  const location = useLocation();
+  const builder = useBuilderDraft();
   const items: { to: string; label: string; icon: IconKey; end?: boolean }[] = [
     { to: "/", label: "Home", icon: "home", end: true },
     { to: "/content", label: "Content Manager", icon: "doc" },
     { to: "/builder", label: "Content-Type Builder", icon: "layers" },
   ];
+  const isActive = (to: string, end?: boolean) =>
+    end ? location.pathname === to : location.pathname.startsWith(to);
   return (
     <nav className="rs-rail">
       <RailLogo />
@@ -84,26 +88,25 @@ export function Sidebar({ section: _section }: { section: Section }) {
         {items.map((it) => {
           const I = Icons[it.icon];
           return (
-            <NavLink
+            <button
               key={it.to}
-              to={it.to}
-              end={it.end}
               data-tip={it.label}
-              className={({ isActive }) => "rs-rail-btn" + (isActive ? " is-active" : "")}
+              className={"rs-rail-btn" + (isActive(it.to, it.end) ? " is-active" : "")}
+              onClick={() => builder.guardedNavigate(it.to)}
             >
               <I size={20} />
-            </NavLink>
+            </button>
           );
         })}
       </div>
       <div className="rs-rail-foot">
-        <NavLink
-          to="/settings"
+        <button
           data-tip="Settings"
-          className={({ isActive }) => "rs-rail-btn" + (isActive ? " is-active" : "")}
+          className={"rs-rail-btn" + (location.pathname.startsWith("/settings") ? " is-active" : "")}
+          onClick={() => builder.guardedNavigate("/settings")}
         >
           <Icons.gear size={20} />
-        </NavLink>
+        </button>
         <Avatar name="Mara Velez" initials="MV" color="#C2410C" size={30} />
       </div>
     </nav>
@@ -208,7 +211,7 @@ function TypePanel({
   const builder = useBuilderDraft();
   const { data: types, loading, error } = useResource(
     () => listContentTypes(),
-    [location.pathname],
+    [location.pathname, builder.saveNonce],
   );
 
   const onSaveClick = () => {
@@ -244,7 +247,13 @@ function TypePanel({
           label="Collection types"
           count={types?.length ?? 0}
           action={isBuilder}
-          onAction={() => setModalOpen(true)}
+          onAction={() => {
+            if (builder.dirty) {
+              if (!window.confirm("You have unsaved changes. Discard them and create a new type?")) return;
+              builder.reset();
+            }
+            setModalOpen(true);
+          }}
         >
           {loading && <div className="rs-panel-item rs-cell-muted">Loading…</div>}
           {error && <div className="rs-panel-item rs-danger">Failed to load</div>}

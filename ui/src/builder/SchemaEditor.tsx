@@ -6,7 +6,7 @@ import {
   deleteContentType, getContentType, listContentTypes,
 } from "../api/endpoints";
 import { ApiError } from "../api/client";
-import { enumValues } from "../api/types";
+import { enumValues, relationMeta } from "../api/types";
 import { useBuilderDraft } from "./BuilderDraftContext";
 import { blankField, type DraftField } from "./draftModel";
 import { FieldRow } from "./FieldRow";
@@ -22,12 +22,13 @@ export function SchemaEditor() {
   // Existing-type route: load from server (once per :type).
   useEffect(() => {
     if (!type) return;
+    if (draft && draft.mode === "existing" && draft.name === type) return; // already seeded (e.g. just created)
     let ignore = false;
     getContentType(type)
       .then((ct) => { if (!ignore) loadExisting(ct); })
       .catch(() => { /* banner handled below via missing draft */ });
     return () => { ignore = true; };
-  }, [type, loadExisting]);
+  }, [type, loadExisting, draft]);
 
   // New-type route with no draft (direct hit / reload) → back to picker.
   useEffect(() => {
@@ -67,6 +68,14 @@ export function SchemaEditor() {
   if (!draft) return <div className="rs-empty">Loading…</div>;
 
   const snapshot = draft.serverSnapshot;
+
+  // Warn: a new field reusing the name of a dropped existing field = rename (unsupported).
+  const renameCollisions = (snapshot?.fields ?? [])
+    .filter((sf) =>
+      !draft.fields.some((d) => d.name === sf.name && d.origin === "existing") &&
+      draft.fields.some((d) => d.name === sf.name && d.origin === "new"),
+    )
+    .map((sf) => sf.name);
   const lockedEnum = (d: DraftField): string[] => {
     const orig = snapshot?.fields.find((f) => f.name === d.name);
     return orig ? enumValues(orig) : [];
@@ -95,13 +104,14 @@ export function SchemaEditor() {
     setStagedDrops((s) => { const n = new Set(s); n.delete(name); return n; });
     const orig = snapshot?.fields.find((f) => f.name === name);
     if (!orig) return;
+    const rel = relationMeta(orig);
     setDraft((d) => ({
       ...d,
       fields: [...d.fields, {
         id: crypto.randomUUID(),
         name: orig.name, kind: orig.kind, required: orig.required,
         unique: orig.unique, enumValues: enumValues(orig),
-        target: "", inverse: "", origin: "existing" as const,
+        target: rel?.target ?? "", inverse: rel?.inverse ?? "", origin: "existing" as const,
       }],
     }));
   };
@@ -157,6 +167,13 @@ export function SchemaEditor() {
 
       {banner && <div className="rs-login-error" style={{ marginBottom: 12 }}>{banner}</div>}
       {delBanner && <div className="rs-login-error" style={{ marginBottom: 12 }}>{delBanner}</div>}
+      {renameCollisions.length > 0 && (
+        <div className="rs-login-error" style={{ marginBottom: 12 }}>
+          Field{renameCollisions.length > 1 ? "s" : ""} {renameCollisions.join(", ")}{" "}
+          already exist on this type. Renaming or changing a field's type is not
+          supported — remove the new field or pick a different name.
+        </div>
+      )}
 
       <h2 className="rs-cm-sub" style={{ marginTop: 20 }}>Fields</h2>
       <div className="rs-fieldrows">

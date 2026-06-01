@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useBuilderDraft } from "./BuilderDraftContext";
 import { deriveApiId } from "./draftModel";
 
 export function CreateTypeModal({ onClose }: { onClose: () => void }) {
-  const { startNew, guardedNavigate } = useBuilderDraft();
+  const { startNew } = useBuilderDraft();
+  const navigate = useNavigate();
   const [display, setDisplay] = useState("");
   const [apiId, setApiId] = useState("");
   const [apiIdTouched, setApiIdTouched] = useState(false);
@@ -19,7 +21,7 @@ export function CreateTypeModal({ onClose }: { onClose: () => void }) {
     if (!apiId.trim()) return setErr("API ID is required.");
     startNew(apiId.trim(), display.trim());
     onClose();
-    guardedNavigate("/builder/new");
+    navigate("/builder/new");
   };
 
   return (
