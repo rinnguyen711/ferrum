@@ -8,6 +8,8 @@ async fn healthz_ok() {
     assert!(resp.status().is_success());
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["status"], "ok");
+    assert!(body["version"].as_str().is_some_and(|s| !s.is_empty()));
+    assert!(body["db_ms"].is_number());
 }
 
 #[tokio::test]
