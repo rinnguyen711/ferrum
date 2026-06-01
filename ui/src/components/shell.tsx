@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Link, NavLink } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { Icons, type IconKey } from "./icons";
 import { getHealth, listContentTypes } from "../api/endpoints";
 import type { Health } from "../api/types";
@@ -192,11 +192,25 @@ function TypePanel({
   isBuilder: boolean;
   collection: string;
 }) {
-  const { data: types, loading, error } = useResource(() => listContentTypes(), []);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { data: types, loading, error } = useResource(
+    () => listContentTypes(),
+    [location.pathname],
+  );
   return (
     <aside className="rs-panel">
       <div className="rs-panel-head">
         <h2>{isBuilder ? "Content-Type Builder" : "Content Manager"}</h2>
+        {isBuilder && (
+          <button
+            className="rs-panel-add"
+            title="New content type"
+            onClick={() => navigate("/builder/new")}
+          >
+            <Icons.plus size={14} />
+          </button>
+        )}
       </div>
       <div className="rs-panel-scroll">
         <PanelGroup label="Collection types" count={types?.length ?? 0}>

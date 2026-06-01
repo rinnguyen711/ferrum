@@ -9,6 +9,7 @@ import {
 } from "react-router-dom";
 import { Layout } from "./Layout";
 import { Dashboard } from "./screens/Dashboard";
+import { TypeBuilder } from "./screens/TypeBuilder";
 import { ContentTypeBuilder } from "./screens/ContentTypeBuilder";
 import { Settings } from "./screens/Settings";
 import { ContentList } from "./screens/ContentList";
@@ -95,6 +96,7 @@ export default function App() {
           <Route path="content/:type" element={<ContentList />} />
           <Route path="content/:type/:id" element={<EntryEditor />} />
           <Route path="builder" element={<PickType kind="builder" />} />
+          <Route path="builder/new" element={<TypeBuilder />} />
           <Route path="builder/:type" element={<ContentTypeBuilder />} />
           <Route path="settings" element={<Settings />} />
           <Route path="media" element={<Navigate to="/" replace />} />
