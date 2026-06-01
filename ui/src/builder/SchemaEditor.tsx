@@ -56,6 +56,14 @@ export function SchemaEditor() {
   // Staged drops: existing fields the user removed (kept visible, greyed).
   const [stagedDrops, setStagedDrops] = useState<Set<string>>(new Set());
 
+  // Reset per-type local UI state when switching between types.
+  useEffect(() => {
+    setStagedDrops(new Set());
+    setConfirming(false);
+    setDeleting(false);
+    setDelBanner(null);
+  }, [type]);
+
   if (!draft) return <div className="rs-empty">Loading…</div>;
 
   const snapshot = draft.serverSnapshot;
