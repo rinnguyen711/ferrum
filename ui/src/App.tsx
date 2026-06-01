@@ -1,12 +1,21 @@
-import { useEffect, useState } from "react";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { useEffect, useState, type ReactNode } from "react";
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 import { Layout } from "./Layout";
 import { Dashboard } from "./screens/Dashboard";
-import { MediaLibrary } from "./screens/MediaLibrary";
 import { ContentTypeBuilder } from "./screens/ContentTypeBuilder";
 import { Settings } from "./screens/Settings";
 import { ContentList } from "./screens/ContentList";
 import { EntryEditor } from "./screens/EntryEditor";
+import { Login } from "./screens/Login";
+import { getKey, clearKey } from "./auth";
+import { setAuthErrorHandler } from "./api/client";
 
 const ACCENT = "#D14D2B";
 const DENSITY = "comfortable";
@@ -21,6 +30,26 @@ function loadDark(): boolean {
   } catch {
     return false;
   }
+}
+
+function RequireAuth({ children }: { children: ReactNode }) {
+  const location = useLocation();
+  if (!getKey()) {
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
+  return <>{children}</>;
+}
+
+/** Registers the global 401 handler once, inside the router context. */
+function AuthErrorBridge() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    setAuthErrorHandler(() => {
+      clearKey();
+      navigate("/login", { replace: true });
+    });
+  }, [navigate]);
+  return null;
 }
 
 export default function App() {
@@ -44,16 +73,22 @@ export default function App() {
 
   return (
     <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, "") || "/"}>
+      <AuthErrorBridge />
       <Routes>
-        <Route element={<Layout dark={dark} onToggleDark={() => setDark((d) => !d)} />}>
+        <Route path="/login" element={<Login />} />
+        <Route
+          element={
+            <RequireAuth>
+              <Layout dark={dark} onToggleDark={() => setDark((d) => !d)} />
+            </RequireAuth>
+          }
+        >
           <Route index element={<Dashboard />} />
-          <Route path="content" element={<Navigate to="/content/article" replace />} />
+          <Route path="content" element={<Navigate to="/content" replace />} />
           <Route path="content/:type" element={<ContentList />} />
           <Route path="content/:type/:id" element={<EntryEditor />} />
-          <Route path="builder" element={<Navigate to="/builder/article" replace />} />
           <Route path="builder/:type" element={<ContentTypeBuilder />} />
-          <Route path="media" element={<MediaLibrary />} />
-          <Route path="settings" element={<Settings />} />
+          <Route path="media" element={<Navigate to="/" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
