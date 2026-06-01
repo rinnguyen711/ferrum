@@ -1,0 +1,24 @@
+# Build artefacts
+target/
+**/target/
+ui/dist/
+ui/node_modules/
+**/node_modules/
+
+# VCS + IDE
+.git/
+.gitignore
+.vscode/
+.idea/
+.VSCodeCounter/
+
+# Local + secrets
+.env
+.env.*
+*.log
+
+# Out-of-scope
+docs/
+design/
+.DS_Store
+README.md

@@ -1,0 +1,30 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: rustapi
+      POSTGRES_PASSWORD: rustapi
+      POSTGRES_DB: rustapi
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rustapi"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  rustapi:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://rustapi:rustapi@postgres:5432/rustapi
+      # Override before `docker compose up` for non-demo use:
+      #   export RUSTAPI_ADMIN_KEY=$(openssl rand -hex 32)
+      RUSTAPI_ADMIN_KEY: ${RUSTAPI_ADMIN_KEY:-demo-key-please-rotate-min-32-chars-aaaaaa}
+    ports:
+      - "8080:8080"
+
+volumes:
+  pgdata:

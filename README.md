@@ -1,10 +1,34 @@
 # rustapi
 
-Headless CMS framework in Rust. v1 in progress — see [design spec](docs/superpowers/specs/2026-05-28-rustapi-core-design.md).
+Headless CMS framework in Rust. Axum + sqlx backend, React + TS admin UI.
 
-## Dev
+## Layout
 
-Requires: Rust 1.88, Docker (for integration tests).
+- `crates/core` — domain types, validation, field kinds
+- `crates/sql` — Postgres storage layer (sqlx)
+- `crates/schema` — content-type registry
+- `crates/http` — axum router, HTTP surface
+- `crates/bin` — server binary
+- `ui/` — React + TS admin UI (Vite)
+
+## Docker (quickest demo)
+
+```sh
+docker compose up --build
+# → http://localhost:8080/studio  (UI)
+# → http://localhost:8080/healthz (API)
+```
+
+Override the default demo admin key for anything beyond a local demo:
+
+```sh
+export RUSTAPI_ADMIN_KEY=$(openssl rand -hex 32)
+docker compose up --build
+```
+
+## Backend
+
+Requires: Rust 1.88, Docker (integration tests).
 
 ```sh
 # Build
@@ -16,14 +40,25 @@ cargo test --workspace
 # Run the server against an external Postgres
 export DATABASE_URL=postgres://postgres:postgres@localhost:5432/rustapi
 export RUSTAPI_ADMIN_KEY=$(openssl rand -hex 32)
+export RUSTAPI_STUDIO_DIR=$PWD/ui/dist   # optional: serve admin UI at /studio
 cargo run -p rustapi
 ```
 
-## API
+## Admin UI
 
-See the [design spec §4](docs/superpowers/specs/2026-05-28-rustapi-core-design.md) for the full HTTP surface.
+Vite + React 18 + TypeScript. Currently renders from mock data; API wiring TBD.
 
-Quick start:
+```sh
+cd ui
+pnpm install
+pnpm dev      # http://localhost:5173 (proxies /api + /admin to :8080)
+pnpm build    # static bundle in ui/dist
+pnpm typecheck
+```
+
+Screens: Dashboard, Content Manager, Entry Editor, Content-Type Builder, Media Library, API tokens.
+
+## API quick start
 
 ```sh
 # Create a content type
