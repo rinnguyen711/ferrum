@@ -88,6 +88,7 @@ export default function App() {
           <Route path="content/:type" element={<ContentList />} />
           <Route path="content/:type/:id" element={<EntryEditor />} />
           <Route path="builder/:type" element={<ContentTypeBuilder />} />
+          <Route path="settings" element={<Settings />} />
           <Route path="media" element={<Navigate to="/" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
