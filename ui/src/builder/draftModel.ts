@@ -158,7 +158,9 @@ export function isPatchEmpty(p: PatchContentType): boolean {
 export function isDirty(draft: Draft | null): boolean {
   if (!draft) return false;
   if (draft.mode === "new") {
-    return draft.name.trim() !== "" || draft.fields.length > 0;
+    // A new type is only savable once it has at least one field — the server
+    // rejects an empty field list, so name alone is not enough to enable Save.
+    return draft.fields.length > 0;
   }
   return !isPatchEmpty(diffToPatch(draft));
 }
