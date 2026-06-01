@@ -84,7 +84,6 @@ export default function App() {
           }
         >
           <Route index element={<Dashboard />} />
-          <Route path="content" element={<Navigate to="/content" replace />} />
           <Route path="content/:type" element={<ContentList />} />
           <Route path="content/:type/:id" element={<EntryEditor />} />
           <Route path="builder/:type" element={<ContentTypeBuilder />} />
