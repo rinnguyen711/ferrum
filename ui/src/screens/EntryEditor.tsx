@@ -9,7 +9,7 @@ import {
   listEntries,
   updateEntry,
 } from "../api/endpoints";
-import type { ContentType, Entry, Field } from "../api/types";
+import type { Entry, Field } from "../api/types";
 import { enumValues, relationMeta } from "../api/types";
 import { relationLabel } from "../util";
 import { ApiError } from "../api/client";
