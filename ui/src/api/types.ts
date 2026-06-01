@@ -41,6 +41,19 @@ export interface NewContentType {
   fields: Field[];
 }
 
+// PATCH /admin/content-types/{name} wire shape — mirrors rustapi_core.
+export interface EnumExtension {
+  field: string;
+  append: string[];
+}
+
+export interface PatchContentType {
+  display_name?: string;
+  add_fields: Field[];
+  drop_fields: string[];
+  extend_enum_values: EnumExtension[];
+}
+
 export type Entry = {
   id: string;
   created_at: string;
