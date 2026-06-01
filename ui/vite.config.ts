@@ -11,6 +11,7 @@ export default defineConfig(({ command }) => ({
     proxy: {
       "/api": "http://localhost:8080",
       "/admin": "http://localhost:8080",
+      "/healthz": "http://localhost:8080",
     },
   },
 }));
