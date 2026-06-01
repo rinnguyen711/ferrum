@@ -1,7 +1,9 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { Icons, type IconKey } from "./icons";
-import { RUSTAPI, type Status } from "../mock/data";
+import { getHealth, listContentTypes } from "../api/endpoints";
+import type { Health } from "../api/types";
+import { useResource } from "../hooks/useResource";
 import type { Section } from "../Layout";
 
 export function Avatar({
@@ -25,6 +27,8 @@ export function Avatar({
     </span>
   );
 }
+
+type Status = "published" | "draft" | "review";
 
 const STATUS_MAP: Record<Status, { label: string; cls: string }> = {
   published: { label: "Published", cls: "ok" },
@@ -66,9 +70,8 @@ function RailLogo() {
 export function Sidebar({ section: _section }: { section: Section }) {
   const items: { to: string; label: string; icon: IconKey; end?: boolean }[] = [
     { to: "/", label: "Home", icon: "home", end: true },
-    { to: "/content/article", label: "Content Manager", icon: "doc" },
-    { to: "/builder/article", label: "Content-Type Builder", icon: "layers" },
-    { to: "/media", label: "Media Library", icon: "image" },
+    { to: "/content", label: "Content Manager", icon: "doc" },
+    { to: "/builder", label: "Content-Type Builder", icon: "layers" },
   ];
   return (
     <nav className="rs-rail">
@@ -136,55 +139,12 @@ export function SecondaryPanel({
   section: Section;
   collection: string;
 }) {
-  if (section === "dashboard" || section === "media") return null;
+  if (section === "dashboard") return null;
 
   if (section === "content" || section === "builder") {
     const isBuilder = section === "builder";
     const base = isBuilder ? "/builder" : "/content";
-    const collTypes = Object.values(RUSTAPI.types);
-    const counts: Record<string, number> = {
-      article: RUSTAPI.articles.length,
-      author: RUSTAPI.authors.length,
-      category: RUSTAPI.categories.length,
-    };
-    return (
-      <aside className="rs-panel">
-        <div className="rs-panel-head">
-          <h2>{isBuilder ? "Content-Type Builder" : "Content Manager"}</h2>
-        </div>
-        <div className="rs-panel-scroll">
-          <div className="rs-panel-search">
-            <Icons.search size={15} />
-            <input placeholder="Search types" />
-          </div>
-          <PanelGroup label="Collection types" count={collTypes.length} action={isBuilder}>
-            {collTypes.map((t) => (
-              <Link
-                key={t.key}
-                to={`${base}/${t.key}`}
-                className={"rs-panel-item" + (collection === t.key ? " is-active" : "")}
-              >
-                {t.plural}
-                <span className="rs-panel-count">{counts[t.key] ?? 0}</span>
-              </Link>
-            ))}
-          </PanelGroup>
-          <PanelGroup label="Single types" count={RUSTAPI.singleTypes.length} action={isBuilder}>
-            {RUSTAPI.singleTypes.map((t) => (
-              <button key={t.key} className="rs-panel-item">
-                {t.display}
-              </button>
-            ))}
-          </PanelGroup>
-          {isBuilder && (
-            <PanelGroup label="Components" count={2} action>
-              <button className="rs-panel-item">SEO</button>
-              <button className="rs-panel-item">Call to action</button>
-            </PanelGroup>
-          )}
-        </div>
-      </aside>
-    );
+    return <TypePanel base={base} isBuilder={isBuilder} collection={collection} />;
   }
 
   if (section === "settings") {
@@ -223,13 +183,80 @@ export function SecondaryPanel({
   return null;
 }
 
-export function HealthPill() {
+function TypePanel({
+  base,
+  isBuilder,
+  collection,
+}: {
+  base: string;
+  isBuilder: boolean;
+  collection: string;
+}) {
+  const { data: types, loading, error } = useResource(() => listContentTypes(), []);
   return (
-    <div className="rs-health" data-tip="Rust API · axum 0.7 · all systems healthy">
+    <aside className="rs-panel">
+      <div className="rs-panel-head">
+        <h2>{isBuilder ? "Content-Type Builder" : "Content Manager"}</h2>
+      </div>
+      <div className="rs-panel-scroll">
+        <PanelGroup label="Collection types" count={types?.length ?? 0}>
+          {loading && <div className="rs-panel-item rs-cell-muted">Loading…</div>}
+          {error && <div className="rs-panel-item rs-danger">Failed to load</div>}
+          {types?.map((t) => (
+            <Link
+              key={t.name}
+              to={`${base}/${t.name}`}
+              className={"rs-panel-item" + (collection === t.name ? " is-active" : "")}
+            >
+              {t.display_name}
+            </Link>
+          ))}
+        </PanelGroup>
+      </div>
+    </aside>
+  );
+}
+
+export function HealthPill() {
+  const [health, setHealth] = useState<Health | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let ignore = false;
+    getHealth()
+      .then((h) => {
+        if (!ignore) setHealth(h);
+      })
+      .catch(() => {
+        if (!ignore) setFailed(true);
+      });
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  if (failed) {
+    return (
+      <div className="rs-health rs-health--down" data-tip="API unreachable">
+        <span className="rs-health-dot" />
+        <span className="rs-health-text">API unreachable</span>
+      </div>
+    );
+  }
+  if (!health) {
+    return (
+      <div className="rs-health" data-tip="Checking…">
+        <span className="rs-health-dot" />
+        <span className="rs-health-text">Checking…</span>
+      </div>
+    );
+  }
+  return (
+    <div className="rs-health" data-tip={`Rust API · v${health.version}`}>
       <span className="rs-health-dot" />
       <span className="rs-health-text">API healthy</span>
       <span className="rs-health-sep" />
-      <span className="rs-mono rs-health-lat">11ms p99</span>
+      <span className="rs-mono rs-health-lat">v{health.version} · {health.db_ms}ms</span>
     </div>
   );
 }
