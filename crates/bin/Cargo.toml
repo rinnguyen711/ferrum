@@ -13,6 +13,8 @@ path = "src/main.rs"
 rustapi-core = { path = "../core" }
 rustapi-schema = { path = "../schema" }
 rustapi-http = { path = "../http" }
+rustapi-sql = { path = "../sql" }
+uuid.workspace = true
 tokio.workspace = true
 sqlx.workspace = true
 axum.workspace = true
