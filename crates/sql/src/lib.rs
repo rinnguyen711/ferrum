@@ -12,5 +12,5 @@ pub use dml::{
     DmlError, SqlAndBinds,
 };
 pub use filter::{op_allows_kind, Condition, Filter, FilterValue, Op};
-pub use ident::{quote_ident, table_name, IdentError};
+pub use ident::{join_table_name, quote_ident, table_name, IdentError};
 pub use sort::{Sort, SortDir};
