@@ -23,7 +23,13 @@ pub async fn require_admin_key(
         return Err(ApiError(Error::Unauthorized));
     }
 
-    req.extensions_mut().insert(Principal::Admin);
+    // TEMP stub (replaced wholesale in Task 9 by require_auth). Lets the crate
+    // compile after Principal::Admin was removed in Task 2.
+    req.extensions_mut().insert(Principal::User {
+        id: uuid::Uuid::nil(),
+        email: String::new(),
+        roles: vec!["admin".into()],
+    });
     Ok(next.run(req).await)
 }
 
