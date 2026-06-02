@@ -1,105 +1,70 @@
 import { Icons } from "../components/icons";
-import { KINDS, type DraftField } from "./draftModel";
+import type { DraftField } from "./draftModel";
 import type { FieldKind } from "../api/types";
-import { EnumEditor } from "./EnumEditor";
+
+// kind → icon key in ui/src/components/icons.tsx. icons.tsx has no
+// braces/mail keys, so json/email fall back to doc/type.
+const KIND_ICON: Record<FieldKind, keyof typeof Icons> = {
+  string: "type",
+  text: "doc",
+  slug: "hash",
+  integer: "hash",
+  float: "hash",
+  boolean: "toggle",
+  datetime: "calendar",
+  uuid: "hash",
+  relation: "relation",
+  enum: "layers",
+  json: "doc",
+  email: "type",
+  url: "link",
+};
+
+function metaText(f: DraftField): string {
+  switch (f.kind) {
+    case "relation": {
+      const many = f.cardinality === "many_to_many";
+      const arrow = many ? "↔ many" : "↔";
+      return `${arrow} ${f.target || "—"}`;
+    }
+    case "enum":
+      return f.enumValues.length ? `${f.enumValues.length} values` : "enumeration";
+    default:
+      return "";
+  }
+}
 
 export function FieldRow({
   field,
-  error,
-  typeNames,
-  lockedEnumValues,
-  staged,
-  onChange,
+  onEdit,
   onRemove,
 }: {
   field: DraftField;
-  error?: string;
-  typeNames: string[];
-  lockedEnumValues: string[];     // existing enum values (only for origin="existing")
-  staged: boolean;                // marked for drop (existing field removed)
-  onChange: (patch: Partial<DraftField>) => void;
+  onEdit: () => void;
   onRemove: () => void;
 }) {
-  const locked = field.origin === "existing";
+  const I = Icons[KIND_ICON[field.kind] ?? "type"];
+  const meta = metaText(field);
   return (
-    <div className={"rs-fieldrow" + (staged ? " is-staged-drop" : "")}>
-      <div className="rs-fieldrow-main">
-        <input
-          className="rs-input rs-mono"
-          placeholder="field_name"
-          value={field.name}
-          disabled={locked}
-          onChange={(e) => onChange({ name: e.target.value })}
-        />
-        <select
-          className="rs-input"
-          value={field.kind}
-          disabled={locked}
-          onChange={(e) => onChange({ kind: e.target.value as FieldKind })}
-        >
-          {KINDS.map((k) => (
-            <option key={k} value={k}>{k}</option>
-          ))}
-        </select>
-        <label className="rs-checkbox">
-          <input
-            type="checkbox"
-            checked={field.required}
-            disabled={locked}
-            onChange={(e) => onChange({ required: e.target.checked })}
-          />
-          required
-        </label>
-        <label className="rs-checkbox">
-          <input
-            type="checkbox"
-            checked={field.unique}
-            disabled={locked}
-            onChange={(e) => onChange({ unique: e.target.checked })}
-          />
-          unique
-        </label>
-        <button
-          className={"rs-row-btn " + (staged ? "" : "rs-danger")}
-          onClick={onRemove}
-          title={staged ? "Keep field" : "Remove field"}
-        >
-          {staged ? <Icons.plus size={15} /> : <Icons.trash size={15} />}
+    <div className="rs-schema-row">
+      <span className="rs-schema-drag"><Icons.drag size={16} /></span>
+      <div className="rs-schema-fieldicon"><I size={16} /></div>
+      <div className="rs-schema-name">
+        <strong className="rs-mono">{field.name || "untitled"}</strong>
+        {field.required && <span className="rs-req-tag">required</span>}
+      </div>
+      <div className="rs-schema-type">
+        <span className="rs-type-pill">{field.kind}</span>
+        {meta && <span className="rs-cell-muted">{meta}</span>}
+      </div>
+      <div className="rs-schema-actions">
+        <button className="rs-row-btn" onClick={onEdit} title="Edit field">
+          <Icons.edit size={15} />
+        </button>
+        <button className="rs-row-btn rs-danger" onClick={onRemove} title="Remove field">
+          <Icons.trash size={15} />
         </button>
       </div>
-
-      {field.kind === "relation" && (
-        <div className="rs-fieldrow-sub">
-          <select
-            className="rs-input"
-            value={field.target}
-            disabled={locked}
-            onChange={(e) => onChange({ target: e.target.value })}
-          >
-            <option value="">target type…</option>
-            {typeNames.map((n) => (
-              <option key={n} value={n}>{n}</option>
-            ))}
-          </select>
-          <input
-            className="rs-input rs-mono"
-            placeholder="inverse (optional)"
-            value={field.inverse}
-            disabled={locked}
-            onChange={(e) => onChange({ inverse: e.target.value })}
-          />
-        </div>
-      )}
-
-      {field.kind === "enum" && (
-        <EnumEditor
-          values={field.enumValues}
-          lockedValues={locked ? lockedEnumValues : []}
-          onChange={(enumValues) => onChange({ enumValues })}
-        />
-      )}
-
-      {error && <div className="rs-login-error">{error}</div>}
     </div>
   );
 }

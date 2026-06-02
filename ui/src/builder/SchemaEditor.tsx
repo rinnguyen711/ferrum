@@ -6,10 +6,11 @@ import {
   deleteContentType, getContentType, listContentTypes,
 } from "../api/endpoints";
 import { ApiError } from "../api/client";
-import { enumValues, relationMeta } from "../api/types";
+import { enumValues } from "../api/types";
 import { useBuilderDraft } from "./BuilderDraftContext";
-import { blankField, type Cardinality, type DraftField } from "./draftModel";
+import { blankField, type DraftField } from "./draftModel";
 import { FieldRow } from "./FieldRow";
+import { FieldConfigModal } from "./FieldConfigModal";
 
 export function SchemaEditor() {
   const { type } = useParams<{ type: string }>();
@@ -54,12 +55,12 @@ export function SchemaEditor() {
     }
   };
 
-  // Staged drops: existing fields the user removed (kept visible, greyed).
-  const [stagedDrops, setStagedDrops] = useState<Set<string>>(new Set());
+  // Field edit modal: { field, isNew } when open, null when closed.
+  const [modal, setModal] = useState<{ field: DraftField; isNew: boolean } | null>(null);
 
   // Reset per-type local UI state when switching between types.
   useEffect(() => {
-    setStagedDrops(new Set());
+    setModal(null);
     setConfirming(false);
     setDeleting(false);
     setDelBanner(null);
@@ -81,57 +82,22 @@ export function SchemaEditor() {
     return orig ? enumValues(orig) : [];
   };
 
-  const updateField = (id: string, patch: Partial<DraftField>) =>
-    setDraft((d) => ({ ...d, fields: d.fields.map((f) => (f.id === id ? { ...f, ...patch } : f)) }));
+  const removeField = (f: DraftField) =>
+    setDraft((d) => ({ ...d, fields: d.fields.filter((x) => x.id !== f.id) }));
 
-  const removeField = (f: DraftField) => {
-    if (f.origin === "existing") {
-      setStagedDrops((s) => {
-        const next = new Set(s);
-        next.add(f.name);
-        return next;
-      });
-      setDraft((d) => ({ ...d, fields: d.fields.filter((x) => x.id !== f.id) }));
-    } else {
-      setDraft((d) => ({ ...d, fields: d.fields.filter((x) => x.id !== f.id) }));
-    }
+  const addField = () => setModal({ field: blankField(), isNew: true });
+
+  const editField = (f: DraftField) => setModal({ field: f, isNew: false });
+
+  const saveField = (f: DraftField) => {
+    setDraft((d) => {
+      const exists = d.fields.some((x) => x.id === f.id);
+      return exists
+        ? { ...d, fields: d.fields.map((x) => (x.id === f.id ? f : x)) }
+        : { ...d, fields: [...d.fields, f] };
+    });
+    setModal(null);
   };
-
-  const addField = () =>
-    setDraft((d) => ({ ...d, fields: [...d.fields, blankField()] }));
-
-  const unstage = (name: string) => {
-    setStagedDrops((s) => { const n = new Set(s); n.delete(name); return n; });
-    const orig = snapshot?.fields.find((f) => f.name === name);
-    if (!orig) return;
-    const rel = relationMeta(orig);
-    setDraft((d) => ({
-      ...d,
-      fields: [...d.fields, {
-        id: crypto.randomUUID(),
-        name: orig.name, kind: orig.kind, required: orig.required,
-        unique: orig.unique, enumValues: enumValues(orig),
-        target: rel?.target ?? "", inverse: rel?.inverse ?? "",
-        cardinality: (rel?.cardinality as Cardinality) ?? "many_to_one", origin: "existing" as const,
-      }],
-    }));
-  };
-
-  // Rows for staged (removed) existing fields, shown greyed with an un-stage button.
-  const stagedRows: DraftField[] = (snapshot?.fields ?? [])
-    .filter((f) => stagedDrops.has(f.name) && !draft.fields.some((d) => d.name === f.name))
-    .map((f) => ({
-      id: "staged-" + f.name,
-      name: f.name,
-      kind: f.kind,
-      required: f.required,
-      unique: f.unique,
-      enumValues: enumValues(f),
-      target: "",
-      inverse: "",
-      cardinality: "many_to_one" as Cardinality,
-      origin: "existing" as const,
-    }));
 
   return (
     <div className="rs-cm">
@@ -183,34 +149,31 @@ export function SchemaEditor() {
       )}
 
       <h2 className="rs-cm-sub" style={{ marginTop: 20 }}>Fields</h2>
-      <div className="rs-fieldrows">
+      <div className="rs-schema">
+        <div className="rs-schema-head"><span>Field</span><span>Type</span><span></span></div>
         {draft.fields.map((f) => (
           <FieldRow
             key={f.id}
             field={f}
-            error={fieldErrors[f.name]}
-            typeNames={allTypes.data?.map((t) => t.name) ?? []}
-            lockedEnumValues={lockedEnum(f)}
-            staged={false}
-            onChange={(patch) => updateField(f.id, patch)}
+            onEdit={() => editField(f)}
             onRemove={() => removeField(f)}
           />
         ))}
-        {stagedRows.map((f) => (
-          <FieldRow
-            key={f.id}
-            field={f}
-            typeNames={allTypes.data?.map((t) => t.name) ?? []}
-            lockedEnumValues={f.enumValues}
-            staged={true}
-            onChange={() => {}}
-            onRemove={() => unstage(f.name)}
-          />
-        ))}
+        <button className="rs-schema-add" onClick={addField}>
+          <Icons.plus size={16} /> Add another field to this collection type
+        </button>
       </div>
-      <button className="rs-btn rs-btn--ghost" onClick={addField} style={{ marginTop: 12 }}>
-        <Icons.plus size={15} /> Add field
-      </button>
+
+      {modal && (
+        <FieldConfigModal
+          initial={modal.field}
+          isNew={modal.isNew}
+          typeNames={allTypes.data?.map((t) => t.name) ?? []}
+          lockedEnumValues={lockedEnum(modal.field)}
+          onSave={saveField}
+          onClose={() => setModal(null)}
+        />
+      )}
     </div>
   );
 }
