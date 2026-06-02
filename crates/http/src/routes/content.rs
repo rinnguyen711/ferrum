@@ -31,7 +31,7 @@ pub fn router() -> Router<AppState> {
 
 async fn ensure(state: &AppState, principal: &Principal, action: Action, ct: &str) -> Result<(), ApiError> {
     if !state.authz.can(principal, action, ct).await {
-        return Err(ApiError(Error::Unauthorized));
+        return Err(ApiError(Error::Forbidden));
     }
     Ok(())
 }
