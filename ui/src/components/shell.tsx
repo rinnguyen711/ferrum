@@ -107,7 +107,7 @@ export function Sidebar({ section: _section }: { section: Section }) {
         >
           <Icons.gear size={20} />
         </button>
-        <Avatar name="Mara Velez" initials="MV" color="#C2410C" size={30} />
+        <Avatar name="Admin" initials="AD" color="#52525B" size={30} />
       </div>
     </nav>
   );
@@ -366,10 +366,10 @@ export function Topbar({
           <span className="rs-bell-dot" />
         </button>
         <div className="rs-topbar-user">
-          <Avatar name="Mara Velez" initials="MV" color="#C2410C" size={28} />
+          <Avatar name="Admin" initials="AD" color="#52525B" size={28} />
           <div className="rs-topbar-user-meta">
-            <strong>Mara Velez</strong>
-            <span>Editor in chief</span>
+            <strong>Admin</strong>
+            <span>API key</span>
           </div>
           <Icons.chevDown size={15} />
         </div>
