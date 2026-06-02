@@ -8,7 +8,7 @@ import {
 import { ApiError } from "../api/client";
 import { enumValues, relationMeta } from "../api/types";
 import { useBuilderDraft } from "./BuilderDraftContext";
-import { blankField, type DraftField } from "./draftModel";
+import { blankField, type Cardinality, type DraftField } from "./draftModel";
 import { FieldRow } from "./FieldRow";
 
 export function SchemaEditor() {
@@ -111,7 +111,8 @@ export function SchemaEditor() {
         id: crypto.randomUUID(),
         name: orig.name, kind: orig.kind, required: orig.required,
         unique: orig.unique, enumValues: enumValues(orig),
-        target: rel?.target ?? "", inverse: rel?.inverse ?? "", origin: "existing" as const,
+        target: rel?.target ?? "", inverse: rel?.inverse ?? "",
+        cardinality: (rel?.cardinality as Cardinality) ?? "many_to_one", origin: "existing" as const,
       }],
     }));
   };
@@ -128,6 +129,7 @@ export function SchemaEditor() {
       enumValues: enumValues(f),
       target: "",
       inverse: "",
+      cardinality: "many_to_one" as Cardinality,
       origin: "existing" as const,
     }));
 
