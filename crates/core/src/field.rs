@@ -470,10 +470,29 @@ mod tests {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Cardinality {
+    ManyToOne,
+    OneToOne,
+    ManyToMany,
+}
+
+impl Cardinality {
+    fn parse(s: &str) -> Result<Self, FieldError> {
+        match s {
+            "many_to_one" => Ok(Cardinality::ManyToOne),
+            "one_to_one" => Ok(Cardinality::OneToOne),
+            "many_to_many" => Ok(Cardinality::ManyToMany),
+            _ => Err(FieldError::BadCardinality),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct RelationMeta {
     pub target: String,
-    pub cardinality: String,
+    pub cardinality: Cardinality,
     pub inverse: Option<String>,
 }
 
@@ -488,14 +507,11 @@ impl RelationMeta {
         if !crate::reserved::is_valid_ident(&target) {
             return Err(FieldError::RelationMetaShape);
         }
-        let cardinality = obj
+        let cardinality_str = obj
             .get("cardinality")
             .and_then(|x| x.as_str())
-            .ok_or(FieldError::RelationMetaShape)?
-            .to_string();
-        if cardinality != "many_to_one" {
-            return Err(FieldError::BadCardinality);
-        }
+            .ok_or(FieldError::RelationMetaShape)?;
+        let cardinality = Cardinality::parse(cardinality_str)?;
         let inverse = match obj.get("inverse") {
             None => None,
             Some(serde_json::Value::Null) => None,
@@ -591,7 +607,7 @@ pub enum FieldError {
     BadDefault,
     #[error("relation kind_meta must have {{target, cardinality, inverse?}} with valid ident target")]
     RelationMetaShape,
-    #[error("cardinality must be \"many_to_one\" in v2.4")]
+    #[error("cardinality must be one of: many_to_one, one_to_one, many_to_many")]
     BadCardinality,
     #[error("inverse name invalid or reserved")]
     InverseNameInvalid,
@@ -788,7 +804,7 @@ mod relation_meta_tests {
         }))
         .unwrap();
         assert_eq!(m.target, "user");
-        assert_eq!(m.cardinality, "many_to_one");
+        assert_eq!(m.cardinality, Cardinality::ManyToOne);
         assert!(m.inverse.is_none());
     }
 
@@ -804,6 +820,27 @@ mod relation_meta_tests {
     }
 
     #[test]
+    fn cardinality_parses_all_three() {
+        for (s, expected) in [
+            ("many_to_one", Cardinality::ManyToOne),
+            ("one_to_one", Cardinality::OneToOne),
+            ("many_to_many", Cardinality::ManyToMany),
+        ] {
+            let m = RelationMeta::from_value(&json!({"target":"user","cardinality":s})).unwrap();
+            assert_eq!(m.cardinality, expected);
+        }
+    }
+
+    #[test]
+    fn cardinality_rejects_unknown() {
+        assert_eq!(
+            RelationMeta::from_value(&json!({"target":"user","cardinality":"nonsense"}))
+                .unwrap_err(),
+            FieldError::BadCardinality
+        );
+    }
+
+    #[test]
     fn reject_missing_target() {
         assert_eq!(
             RelationMeta::from_value(&json!({"cardinality": "many_to_one"})).unwrap_err(),
@@ -815,11 +852,6 @@ mod relation_meta_tests {
     fn reject_bad_cardinality() {
         assert_eq!(
             RelationMeta::from_value(&json!({"target":"user","cardinality":"one_to_many"}))
-                .unwrap_err(),
-            FieldError::BadCardinality
-        );
-        assert_eq!(
-            RelationMeta::from_value(&json!({"target":"user","cardinality":"many_to_many"}))
                 .unwrap_err(),
             FieldError::BadCardinality
         );
