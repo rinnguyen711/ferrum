@@ -100,7 +100,7 @@ async fn create(
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     ensure(&state, &principal, Action::ContentWrite, &ct_name).await?;
     let ct = state.schemas.registry().get(&ct_name).await.ok_or(ApiError(Error::NotFound))?;
-    let (binds_map, checks) = body_to_binds(&ct, body, true)?;
+    let (binds_map, checks, _links) = body_to_binds(&ct, body, true)?;
     verify_relation_targets_exist(&state, &checks).await?;
 
     let (sql, binds) = rustapi_sql::insert(&ct, &binds_map)
@@ -151,7 +151,7 @@ async fn update(
 ) -> Result<Json<Value>, ApiError> {
     ensure(&state, &principal, Action::ContentWrite, &ct_name).await?;
     let ct = state.schemas.registry().get(&ct_name).await.ok_or(ApiError(Error::NotFound))?;
-    let (mut binds_map, checks) = body_to_binds(&ct, body, true)?;
+    let (mut binds_map, checks, _links) = body_to_binds(&ct, body, true)?;
     verify_relation_targets_exist(&state, &checks).await?;
 
     // PUT is full-replace per spec §6.2: fields absent from the body that are

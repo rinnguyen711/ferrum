@@ -212,9 +212,11 @@ function TypePanel({
   const [modalOpen, setModalOpen] = useState(false);
   const [confirmPatch, setConfirmPatch] = useState<PatchContentType | null>(null);
   const builder = useBuilderDraft();
+  // Refetch only when entering this section (base) or after a save — not on
+  // every collection click, which just changes the path suffix.
   const { data: types, loading, error } = useResource(
     () => listContentTypes(),
-    [location.pathname, builder.saveNonce],
+    [base, builder.saveNonce],
   );
 
   const onSaveClick = () => {
@@ -262,8 +264,11 @@ function TypePanel({
             setModalOpen(true);
           }}
         >
-          {loading && <div className="rs-panel-item rs-cell-muted">Loading…</div>}
-          {error && <div className="rs-panel-item rs-danger">Failed to load</div>}
+          {loading && !types &&
+            [72, 56, 64, 48].map((w, i) => (
+              <div key={i} className="rs-skel" style={{ width: `${w}%` }} />
+            ))}
+          {error && !types && <div className="rs-panel-item rs-danger">Failed to load</div>}
           {types?.map((t) => (
             <button
               key={t.name}

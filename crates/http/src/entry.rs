@@ -21,11 +21,27 @@ pub struct RelationCheck {
     pub id: Uuid,
 }
 
+/// A pending many-to-many replace-set for one relation field. `present` is
+/// always true when emitted (the field appeared in the body); `ids` may be
+/// empty, meaning "remove all links". The handler runs the replace-set inside
+/// the write transaction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinkPlan {
+    pub field: String,
+    pub target: String,
+    pub ids: Vec<Uuid>,
+    pub present: bool,
+}
+
+/// Return type of `body_to_binds`: column binds, relation existence checks,
+/// and many-to-many link plans.
+pub type BodyBinds = (BTreeMap<String, BoundValue>, Vec<RelationCheck>, Vec<LinkPlan>);
+
 pub fn body_to_binds(
     ct: &ContentType,
     mut body: Map<String, Value>,
     require_required: bool,
-) -> Result<(BTreeMap<String, BoundValue>, Vec<RelationCheck>), Error> {
+) -> Result<BodyBinds, Error> {
     for sys in &["id", "created_at", "updated_at"] {
         body.remove(*sys);
     }
@@ -42,6 +58,7 @@ pub fn body_to_binds(
 
     let mut out = BTreeMap::new();
     let mut checks: Vec<RelationCheck> = Vec::new();
+    let mut links: Vec<LinkPlan> = Vec::new();
     for f in &ct.fields {
         match body.get(&f.name) {
             Some(v) => {
@@ -49,7 +66,14 @@ pub fn body_to_binds(
                     return Err(Error::Validation(ValidationErrors::field(&f.name, "required")));
                 }
                 if f.kind == FieldKind::Relation {
-                    coerce_relation(f, v, &mut out, &mut checks)?;
+                    let meta = f.relation_meta().ok_or_else(|| {
+                        Error::Validation(ValidationErrors::field(&f.name, "missing relation kind_meta"))
+                    })?;
+                    if meta.cardinality == rustapi_core::Cardinality::ManyToMany {
+                        links.push(coerce_m2m(f, &meta.target, v)?);
+                    } else {
+                        coerce_relation(f, v, &mut out, &mut checks)?;
+                    }
                     continue;
                 }
                 if f.kind == FieldKind::String {
@@ -91,7 +115,7 @@ pub fn body_to_binds(
             }
         }
     }
-    Ok((out, checks))
+    Ok((out, checks, links))
 }
 
 /// Coerce a JSON value (uuid string | null) for a `FieldKind::Relation` field.
@@ -129,6 +153,36 @@ fn coerce_relation(
         }
     }
     Ok(())
+}
+
+/// Parse a many-to-many field's JSON value (must be an array of uuid strings)
+/// into a `LinkPlan`. An empty array is a valid "clear all links" instruction.
+/// Duplicate ids are de-duplicated (the join-table PK would reject them anyway).
+fn coerce_m2m(f: &Field, target: &str, v: &Value) -> Result<LinkPlan, Error> {
+    let arr = v.as_array().ok_or_else(|| {
+        Error::Validation(ValidationErrors::field(
+            &f.name,
+            "many_to_many value must be an array of uuid strings",
+        ))
+    })?;
+    let mut ids = Vec::with_capacity(arr.len());
+    let mut seen = std::collections::HashSet::new();
+    for item in arr {
+        let s = item.as_str().ok_or_else(|| {
+            Error::Validation(ValidationErrors::field(&f.name, "many_to_many ids must be strings"))
+        })?;
+        let id = Uuid::parse_str(s)
+            .map_err(|_| Error::Validation(ValidationErrors::field(&f.name, "invalid uuid")))?;
+        if seen.insert(id) {
+            ids.push(id);
+        }
+    }
+    Ok(LinkPlan {
+        field: f.name.clone(),
+        target: target.to_string(),
+        ids,
+        present: true,
+    })
 }
 
 pub fn row_to_json(ct: &ContentType, row: &PgRow) -> Result<Value, Error> {
@@ -256,7 +310,7 @@ mod tests {
         .as_object()
         .unwrap()
         .clone();
-        let (out, checks) = body_to_binds(&ct(), body, true).unwrap();
+        let (out, checks, _links) = body_to_binds(&ct(), body, true).unwrap();
         assert_eq!(out.get("title").unwrap(), &BoundValue::Str("hi".into()));
         assert_eq!(out.get("count").unwrap(), &BoundValue::I64(7));
         assert!(checks.is_empty());
@@ -330,7 +384,7 @@ mod tests {
                 .as_object()
                 .unwrap()
                 .clone();
-        let (out, checks) = body_to_binds(&ct_with_relation(), body, true).unwrap();
+        let (out, checks, _links) = body_to_binds(&ct_with_relation(), body, true).unwrap();
         assert_eq!(out.get("author").unwrap(), &BoundValue::Uuid(id));
         assert_eq!(checks.len(), 1);
         assert_eq!(checks[0].field, "author");
@@ -346,7 +400,7 @@ mod tests {
                 .as_object()
                 .unwrap()
                 .clone();
-        let (out, checks) = body_to_binds(&ct_with_relation(), body, true).unwrap();
+        let (out, checks, _links) = body_to_binds(&ct_with_relation(), body, true).unwrap();
         assert_eq!(
             out.get("author").unwrap(),
             &BoundValue::Null(FieldKind::Uuid)
@@ -393,5 +447,121 @@ mod tests {
                 .unwrap()
                 .clone();
         assert!(matches!(body_to_binds(&c, body, true), Err(Error::Validation(_))));
+    }
+
+    fn ct_with_m2m() -> ContentType {
+        ContentType {
+            id: Uuid::nil(),
+            name: "post".into(),
+            display_name: "Post".into(),
+            fields: vec![
+                Field {
+                    name: "title".into(),
+                    kind: FieldKind::String,
+                    required: false,
+                    unique: false,
+                    default: json!(null),
+                    max_length: None,
+                    kind_meta: json!({}),
+                },
+                Field {
+                    name: "tags".into(),
+                    kind: FieldKind::Relation,
+                    required: false,
+                    unique: false,
+                    default: json!(null),
+                    max_length: None,
+                    kind_meta: json!({"target":"tag","cardinality":"many_to_many"}),
+                },
+            ],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn m2m_array_becomes_link_plan_not_bind() {
+        let a = Uuid::new_v4();
+        let b = Uuid::new_v4();
+        let body: Map<String, Value> = serde_json::from_value::<Value>(json!({
+            "title": "hi", "tags": [a.to_string(), b.to_string()]
+        }))
+        .unwrap()
+        .as_object()
+        .unwrap()
+        .clone();
+        let (out, _checks, links) = body_to_binds(&ct_with_m2m(), body, true).unwrap();
+        assert!(!out.contains_key("tags"));
+        assert!(out.contains_key("title"));
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].field, "tags");
+        assert_eq!(links[0].target, "tag");
+        assert_eq!(links[0].ids, vec![a, b]);
+        assert!(links[0].present);
+    }
+
+    #[test]
+    fn m2m_empty_array_is_explicit_clear() {
+        let body: Map<String, Value> = serde_json::from_value::<Value>(json!({"tags": []}))
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .clone();
+        let (_out, _checks, links) = body_to_binds(&ct_with_m2m(), body, true).unwrap();
+        assert_eq!(links.len(), 1);
+        assert!(links[0].ids.is_empty());
+        assert!(links[0].present);
+    }
+
+    #[test]
+    fn m2m_absent_field_no_link_plan() {
+        let body: Map<String, Value> = serde_json::from_value::<Value>(json!({"title": "x"}))
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .clone();
+        let (_out, _checks, links) = body_to_binds(&ct_with_m2m(), body, true).unwrap();
+        assert!(links.is_empty());
+    }
+
+    #[test]
+    fn m2m_rejects_non_array() {
+        let body: Map<String, Value> =
+            serde_json::from_value::<Value>(json!({"tags": "nope"}))
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .clone();
+        assert!(matches!(
+            body_to_binds(&ct_with_m2m(), body, true),
+            Err(Error::Validation(_))
+        ));
+    }
+
+    #[test]
+    fn m2m_rejects_bad_uuid_in_array() {
+        let body: Map<String, Value> =
+            serde_json::from_value::<Value>(json!({"tags": ["not-a-uuid"]}))
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .clone();
+        assert!(matches!(
+            body_to_binds(&ct_with_m2m(), body, true),
+            Err(Error::Validation(_))
+        ));
+    }
+
+    #[test]
+    fn m2m_dedups_ids() {
+        let a = Uuid::new_v4();
+        let body: Map<String, Value> =
+            serde_json::from_value::<Value>(json!({"tags": [a.to_string(), a.to_string()]}))
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .clone();
+        let (_out, _checks, links) = body_to_binds(&ct_with_m2m(), body, true).unwrap();
+        assert_eq!(links[0].ids, vec![a]);
     }
 }

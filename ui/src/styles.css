@@ -129,6 +129,13 @@ h1, h2 { margin: 0; }
 .rs-panel-item:hover { background: var(--surface-3); color: var(--text); }
 .rs-panel-item.is-active { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
 .rs-panel-count { font-size: 11.5px; color: var(--text-subtle); font-variant-numeric: tabular-nums; }
+.rs-skel {
+  height: 15px; margin: 8px 10px; border-radius: var(--r-sm);
+  background: linear-gradient(90deg, var(--surface-3) 25%, var(--surface-2) 50%, var(--surface-3) 75%);
+  background-size: 200% 100%; animation: rs-skel-shimmer 1.2s ease-in-out infinite;
+}
+@keyframes rs-skel-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .rs-skel { animation: none; } }
 .rs-panel-item.is-active .rs-panel-count { color: var(--accent-text); }
 
 /* ============ Topbar ============ */
