@@ -142,10 +142,14 @@ export function SchemaEditor() {
             placeholder="Display name"
           />
           <p className="rs-cm-sub rs-mono">
-            {draft.name} · {draft.fields.length} fields
+            api::{draft.name}.{draft.name} · {draft.fields.length} fields · collection type
             {draft.mode === "new" ? " · unsaved" : ""}
           </p>
         </div>
+        <div className="rs-editor-actions">
+          <button className="rs-btn rs-btn--ghost" data-placeholder title="Coming soon">
+            <Icons.eye size={15} /> Preview API
+          </button>
         {draft.mode === "existing" && (
           confirming ? (
             <div className="rs-confirm">
@@ -163,6 +167,7 @@ export function SchemaEditor() {
             </button>
           )
         )}
+        </div>
       </div>
 
       {banner && <div className="rs-login-error" style={{ marginBottom: 12 }}>{banner}</div>}
