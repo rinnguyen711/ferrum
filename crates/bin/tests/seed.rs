@@ -44,7 +44,7 @@ async fn seeds_default_types_and_data() {
         let path = path.to_string();
         async move {
             let r = app.admin(app.client.get(app.url(&path))).send().await.unwrap();
-            assert_eq!(r.status(), 200, "{}", path);
+            assert_eq!(r.status(), 200, "{path}");
             let v: Value = r.json().await.unwrap();
             v["meta"]["total"].as_i64().unwrap()
         }
