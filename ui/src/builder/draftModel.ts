@@ -8,6 +8,8 @@ export const KINDS: FieldKind[] = [
   "relation", "enum", "json", "email", "url", "slug",
 ];
 
+export type Cardinality = "many_to_one" | "one_to_one" | "many_to_many";
+
 export interface DraftField {
   id: string;                    // crypto.randomUUID() — React key, not sent
   name: string;
@@ -17,6 +19,7 @@ export interface DraftField {
   enumValues: string[];          // kind === "enum"
   target: string;                // kind === "relation"
   inverse: string;               // kind === "relation" (optional)
+  cardinality: Cardinality;      // kind === "relation"
   origin: "existing" | "new";
 }
 
@@ -38,6 +41,7 @@ export function blankField(): DraftField {
     enumValues: [],
     target: "",
     inverse: "",
+    cardinality: "many_to_one",
     origin: "new",
   };
 }
@@ -71,6 +75,7 @@ export function seedFromContentType(ct: ContentType): Draft {
       enumValues: enumValues(f),
       target: rel?.target ?? "",
       inverse: rel?.inverse ?? "",
+      cardinality: (rel?.cardinality as Cardinality) ?? "many_to_one",
       origin: "existing",
     };
   });
@@ -88,7 +93,7 @@ function draftFieldToField(d: DraftField): Field {
   if (d.kind === "relation") {
     kind_meta = {
       target: d.target,
-      cardinality: "many_to_one",
+      cardinality: d.cardinality,
       ...(d.inverse ? { inverse: d.inverse } : {}),
     };
   } else if (d.kind === "enum") {
