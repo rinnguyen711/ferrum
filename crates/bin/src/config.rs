@@ -35,6 +35,7 @@ impl Config {
         let studio_dir = std::env::var("RUSTAPI_STUDIO_DIR").ok().filter(|s| !s.is_empty());
         let seed = std::env::var("RUSTAPI_SEED")
             .ok()
+            .filter(|s| !s.is_empty())
             .map(|s| !matches!(s.as_str(), "0" | "false" | "no"))
             .unwrap_or(true);
         Ok(Self {
