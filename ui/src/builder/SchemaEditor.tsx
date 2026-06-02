@@ -147,6 +147,13 @@ export function SchemaEditor() {
           supported — remove the new field or pick a different name.
         </div>
       )}
+      {Object.keys(fieldErrors).length > 0 && (
+        <div className="rs-login-error" style={{ marginBottom: 12 }}>
+          {Object.entries(fieldErrors).map(([name, msg]) => (
+            <div key={name}><strong className="rs-mono">{name}</strong>: {msg}</div>
+          ))}
+        </div>
+      )}
 
       <h2 className="rs-cm-sub" style={{ marginTop: 20 }}>Fields</h2>
       <div className="rs-schema">
