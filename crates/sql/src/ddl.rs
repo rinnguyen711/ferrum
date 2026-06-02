@@ -137,14 +137,16 @@ fn column_def(ct_name: &str, f: &Field) -> Result<String, DdlError> {
 }
 
 fn relation_column_def(f: &Field) -> Result<String, DdlError> {
+    use rustapi_core::Cardinality;
     let meta = f.relation_meta().ok_or_else(|| {
         IdentError("relation field missing/invalid kind_meta".into())
     })?;
     let col = quote_ident(&f.physical_column())?;
     let target = table_name(&meta.target)?;
     let not_null = if f.required { " NOT NULL" } else { "" };
+    let unique = if meta.cardinality == Cardinality::OneToOne { " UNIQUE" } else { "" };
     Ok(format!(
-        "{col} uuid{not_null} REFERENCES {target}(\"id\") ON DELETE RESTRICT"
+        "{col} uuid{not_null}{unique} REFERENCES {target}(\"id\") ON DELETE RESTRICT"
     ))
 }
 
@@ -409,6 +411,37 @@ mod tests {
         assert!(sql.contains("ALTER TABLE"));
         assert!(sql.contains("ADD COLUMN \"status\" text"));
         assert!(sql.contains("CONSTRAINT \"post_status_enum_chk\""));
+    }
+
+    #[test]
+    fn create_table_one_to_one_emits_unique_fk() {
+        let mut f = field("profile", FieldKind::Relation);
+        f.kind_meta = json!({"target":"profile","cardinality":"one_to_one"});
+        let sql = create_table(&ct(vec![f])).unwrap();
+        assert!(
+            sql.contains("\"profile_id\" uuid UNIQUE REFERENCES \"ct_profile\"(\"id\") ON DELETE RESTRICT"),
+            "got: {sql}"
+        );
+    }
+
+    #[test]
+    fn many_to_one_still_has_no_unique() {
+        let mut f = field("author", FieldKind::Relation);
+        f.kind_meta = json!({"target":"user","cardinality":"many_to_one"});
+        let sql = create_table(&ct(vec![f])).unwrap();
+        assert!(!sql.contains("\"author_id\" uuid UNIQUE"), "got: {sql}");
+    }
+
+    #[test]
+    fn create_table_required_one_to_one_emits_not_null_unique() {
+        let mut f = field("profile", FieldKind::Relation);
+        f.required = true;
+        f.kind_meta = json!({"target":"profile","cardinality":"one_to_one"});
+        let sql = create_table(&ct(vec![f])).unwrap();
+        assert!(
+            sql.contains("\"profile_id\" uuid NOT NULL UNIQUE REFERENCES \"ct_profile\"(\"id\") ON DELETE RESTRICT"),
+            "got: {sql}"
+        );
     }
 
     #[test]
