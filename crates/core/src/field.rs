@@ -627,6 +627,8 @@ pub enum FieldError {
     EnumDefaultNotInValues,
     #[error("json field cannot be unique")]
     JsonUniqueUnsupported,
+    #[error("many_to_many relation field cannot be required")]
+    ManyToManyCannotBeRequired,
 }
 
 impl Field {
@@ -648,7 +650,10 @@ impl Field {
             if !self.default.is_null() {
                 return Err(FieldError::RelationFieldDefaultUnsupported);
             }
-            let _ = RelationMeta::from_value(&self.kind_meta)?;
+            let meta = RelationMeta::from_value(&self.kind_meta)?;
+            if meta.cardinality == Cardinality::ManyToMany && self.required {
+                return Err(FieldError::ManyToManyCannotBeRequired);
+            }
             return Ok(());
         }
         if self.kind == FieldKind::Enum {
@@ -708,6 +713,18 @@ impl Field {
         } else {
             self.name.clone()
         }
+    }
+
+    /// Whether this field maps to a physical column on the type's own table.
+    /// Many-to-many relations live in a join table and have no row column.
+    pub fn is_stored_column(&self) -> bool {
+        if self.kind == FieldKind::Relation {
+            return self
+                .relation_meta()
+                .map(|m| m.cardinality != Cardinality::ManyToMany)
+                .unwrap_or(false);
+        }
+        true
     }
 
     /// Returns the relation meta if this is a relation field, otherwise `None`.
@@ -913,6 +930,66 @@ mod relation_meta_tests {
         f.unique = false;
         f.default = json!("550e8400-e29b-41d4-a716-446655440000");
         assert_eq!(f.validate().unwrap_err(), FieldError::RelationFieldDefaultUnsupported);
+    }
+
+    #[test]
+    fn many_to_many_rejects_required() {
+        let f = Field {
+            name: "tags".into(),
+            kind: FieldKind::Relation,
+            required: true,
+            unique: false,
+            default: serde_json::Value::Null,
+            max_length: None,
+            kind_meta: json!({"target":"tag","cardinality":"many_to_many"}),
+        };
+        assert_eq!(f.validate().unwrap_err(), FieldError::ManyToManyCannotBeRequired);
+    }
+
+    #[test]
+    fn many_to_many_basic_ok() {
+        let f = Field {
+            name: "tags".into(),
+            kind: FieldKind::Relation,
+            required: false,
+            unique: false,
+            default: serde_json::Value::Null,
+            max_length: None,
+            kind_meta: json!({"target":"tag","cardinality":"many_to_many"}),
+        };
+        assert!(f.validate().is_ok());
+    }
+
+    #[test]
+    fn one_to_one_basic_ok() {
+        let f = Field {
+            name: "profile".into(),
+            kind: FieldKind::Relation,
+            required: false,
+            unique: false,
+            default: serde_json::Value::Null,
+            max_length: None,
+            kind_meta: json!({"target":"profile","cardinality":"one_to_one"}),
+        };
+        assert!(f.validate().is_ok());
+    }
+
+    #[test]
+    fn is_stored_column_matrix() {
+        let mk = |card: &str| Field {
+            name: "r".into(),
+            kind: FieldKind::Relation,
+            required: false,
+            unique: false,
+            default: serde_json::Value::Null,
+            max_length: None,
+            kind_meta: json!({"target":"x","cardinality":card}),
+        };
+        assert!(mk("many_to_one").is_stored_column());
+        assert!(mk("one_to_one").is_stored_column());
+        assert!(!mk("many_to_many").is_stored_column());
+        let s = Field { name: "t".into(), kind: FieldKind::String, required: false, unique: false, default: serde_json::Value::Null, max_length: None, kind_meta: json!({}) };
+        assert!(s.is_stored_column());
     }
 
     #[test]
