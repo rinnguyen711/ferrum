@@ -27,6 +27,10 @@ async fn main() -> Result<()> {
 
     let schemas = SchemaService::new(pool.clone(), registry.clone());
 
+    seed::seed_if_empty(&pool, &schemas, cfg.seed)
+        .await
+        .context("seed default content")?;
+
     let state = AppState {
         pool,
         schemas,

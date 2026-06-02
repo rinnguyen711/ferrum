@@ -1,7 +1,5 @@
 //! First-boot seeding: default Article/Author/Category types + sample data.
 //! Idempotent — skips entirely if any content type already exists.
-// Helpers are wired into startup by the next task; allow until then.
-#![allow(dead_code)]
 
 use anyhow::Result;
 use rustapi_core::{ContentType, Field, FieldKind, NewContentType};

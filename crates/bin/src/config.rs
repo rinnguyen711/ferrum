@@ -3,7 +3,6 @@
 use anyhow::{anyhow, Context, Result};
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct Config {
     pub database_url: String,
     pub admin_key: String,
