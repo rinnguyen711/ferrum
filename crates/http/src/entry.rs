@@ -214,6 +214,11 @@ pub fn row_to_json(ct: &ContentType, row: &PgRow) -> Result<Value, Error> {
 }
 
 fn decode_field(row: &PgRow, f: &Field) -> Result<Value, Error> {
+    debug_assert!(
+        f.is_stored_column(),
+        "decode_field called for non-stored field `{}`",
+        f.name
+    );
     match f.kind {
         FieldKind::String | FieldKind::Text => {
             let v: Option<String> = row.try_get(f.name.as_str()).map_err(decode)?;

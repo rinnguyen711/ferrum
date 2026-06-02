@@ -764,7 +764,9 @@ fn field_for<'a>(ct: &'a ContentType, col: &str) -> Result<FieldOrSystem<'a>, Er
     if is_system_column(col) {
         return Ok(FieldOrSystem::System(system_kind(col)));
     }
-    if let Some(f) = ct.fields.iter().find(|f| f.name == col) {
+    // Many-to-many fields have no column on this table and are not filterable
+    // (data lives in the join table); treat them like unknown fields.
+    if let Some(f) = ct.fields.iter().find(|f| f.name == col && f.is_stored_column()) {
         return Ok(FieldOrSystem::User(f));
     }
     Err(Error::Validation(ValidationErrors::field(
@@ -1075,6 +1077,30 @@ mod tests {
     fn unknown_field_rejected() {
         let err = parse("filters[ghost][$eq]=1", &ct()).unwrap_err();
         assert!(matches!(err, Error::Validation(_)));
+    }
+
+    #[test]
+    fn m2m_field_not_filterable() {
+        use rustapi_core::{ContentType, Field, FieldKind};
+        use chrono::Utc;
+        let ct = ContentType {
+            id: uuid::Uuid::nil(),
+            name: "post".into(),
+            display_name: "Post".into(),
+            fields: vec![Field {
+                name: "tags".into(),
+                kind: FieldKind::Relation,
+                required: false,
+                unique: false,
+                default: json!(null),
+                max_length: None,
+                kind_meta: json!({"target": "tag", "cardinality": "many_to_many"}),
+            }],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let err = parse("filters[tags][$eq]=x", &ct).unwrap_err();
+        assert!(matches!(err, Error::Validation(_)), "got: {err:?}");
     }
 
     #[test]

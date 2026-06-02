@@ -67,7 +67,8 @@ fn is_sortable(col: &str, ct: &ContentType) -> bool {
     if rustapi_core::is_system_column(col) {
         return true;
     }
-    ct.fields.iter().any(|f| f.name == col)
+    // Many-to-many fields have no sortable column on this table.
+    ct.fields.iter().any(|f| f.name == col && f.is_stored_column())
 }
 
 #[cfg(test)]
@@ -144,5 +145,39 @@ mod tests {
             100,
         );
         assert!(matches!(r, Err(Error::Validation(_))));
+    }
+
+    #[test]
+    fn m2m_field_not_sortable() {
+        use rustapi_core::ContentType;
+        let ct_m2m = ContentType {
+            id: Uuid::nil(),
+            name: "post".into(),
+            display_name: "Post".into(),
+            fields: vec![
+                Field {
+                    name: "tags".into(),
+                    kind: FieldKind::Relation,
+                    required: false,
+                    unique: false,
+                    default: json!(null),
+                    max_length: None,
+                    kind_meta: json!({"target": "tag", "cardinality": "many_to_many"}),
+                },
+                Field {
+                    name: "title".into(),
+                    kind: FieldKind::String,
+                    required: false,
+                    unique: false,
+                    default: json!(null),
+                    max_length: None,
+                    kind_meta: json!({}),
+                },
+            ],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        assert!(!is_sortable("tags", &ct_m2m), "m2m field must not be sortable");
+        assert!(is_sortable("title", &ct_m2m), "stored field must be sortable");
     }
 }
