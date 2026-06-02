@@ -171,6 +171,11 @@ async fn update(
     // shape as if the client had POSTed the entry without that field). For
     // relation fields the typed null is FieldKind::Uuid (matches the FK col).
     for f in &ct.fields {
+        // Many-to-many fields have no column on this table; skip them here.
+        // Their links are handled by write_links below.
+        if !f.is_stored_column() {
+            continue;
+        }
         if !binds_map.contains_key(&f.name) && !f.required {
             let null_kind = if f.kind == rustapi_core::FieldKind::Relation {
                 rustapi_core::FieldKind::Uuid

@@ -201,6 +201,11 @@ pub fn row_to_json(ct: &ContentType, row: &PgRow) -> Result<Value, Error> {
         if is_system_column(&f.name) {
             continue;
         }
+        // Many-to-many fields have no column on this table; they are hydrated
+        // only by the populate pass (apply_many). Omit them from the base row.
+        if !f.is_stored_column() {
+            continue;
+        }
         let v = decode_field(row, f)?;
         obj.insert(f.name.clone(), v);
     }
