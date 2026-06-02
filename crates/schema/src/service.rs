@@ -2,7 +2,7 @@
 
 use crate::registry::SchemaRegistry;
 use chrono::Utc;
-use rustapi_core::{ContentType, Error, Field, NewContentType, PatchContentType, ValidationErrors};
+use rustapi_core::{Cardinality, ContentType, Error, Field, NewContentType, PatchContentType, ValidationErrors};
 use sqlx::{PgPool, Postgres, Transaction};
 use tracing::instrument;
 use uuid::Uuid;
@@ -69,6 +69,16 @@ impl SchemaService {
             .await
             .map_err(map_db_err)?;
 
+        // Many-to-many fields need a join table each (created after the main
+        // table so its FK to ct_<owner> resolves).
+        for f in &ct.fields {
+            if let Some(meta) = f.relation_meta() {
+                if meta.cardinality == Cardinality::ManyToMany {
+                    exec_create_join_table(&mut tx, &ct.name, &f.name, &meta.target).await?;
+                }
+            }
+        }
+
         tx.commit().await.map_err(internal)?;
 
         self.registry.insert(ct.clone()).await;
@@ -99,11 +109,29 @@ impl SchemaService {
         let mut tx: Transaction<'_, Postgres> = self.pool.begin().await.map_err(internal)?;
 
         for drop_name in &payload.drop_fields {
-            let sql = rustapi_sql::drop_column(name, drop_name)
-                .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
-            sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
+            // Find the field being dropped on the existing type to learn its kind.
+            let dropped = existing.fields.iter().find(|f| &f.name == drop_name);
+            let is_m2m = dropped
+                .and_then(|f| f.relation_meta())
+                .map(|m| m.cardinality == Cardinality::ManyToMany)
+                .unwrap_or(false);
+            if is_m2m {
+                let sql = rustapi_sql::drop_join_table(name, drop_name)
+                    .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
+                sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
+            } else {
+                let sql = rustapi_sql::drop_column(name, drop_name)
+                    .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
+                sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
+            }
         }
         for f in &payload.add_fields {
+            if let Some(meta) = f.relation_meta() {
+                if meta.cardinality == Cardinality::ManyToMany {
+                    exec_create_join_table(&mut tx, name, &f.name, &meta.target).await?;
+                    continue;
+                }
+            }
             let sql = rustapi_sql::add_column(name, f)
                 .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
             sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
@@ -169,10 +197,27 @@ impl SchemaService {
         if self.registry.get(name).await.is_none() {
             return Err(Error::NotFound);
         }
+        let owned = self.registry.m2m_targets(name).await;
+        let referencing = self.registry.m2m_referencing(name).await;
         let drop_sql = rustapi_sql::drop_table(name)
             .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
 
         let mut tx = self.pool.begin().await.map_err(internal)?;
+        // Drop dependent join tables first so the main DROP TABLE has no
+        // lingering FK references.
+        for (field, _target) in &owned {
+            let sql = rustapi_sql::drop_join_table(name, field)
+                .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
+            sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
+        }
+        for (owner, field) in &referencing {
+            if owner == name {
+                continue; // already handled in `owned`
+            }
+            let sql = rustapi_sql::drop_join_table(owner, field)
+                .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
+            sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
+        }
         sqlx::query(&drop_sql).execute(&mut *tx).await.map_err(map_db_err)?;
         sqlx::query("DELETE FROM _content_types WHERE name = $1")
             .bind(name)
@@ -193,6 +238,7 @@ impl SchemaService {
 /// * `inverse` name must not collide with an existing field on the target type
 /// * `inverse` name must not collide with another source's inverse on the same target
 /// * PATCH-added relation fields cannot be `required: true` (no backfill in v1)
+/// * applies to all cardinalities (ManyToOne, OneToOne, ManyToMany)
 pub async fn validate_relation_cross_refs(
     registry: &SchemaRegistry,
     candidate_name: &str,
@@ -280,6 +326,21 @@ fn map_db_err(e: sqlx::Error) -> Error {
         return Error::Validation(rustapi_core::ValidationErrors::db(code, db.message()));
     }
     internal(e)
+}
+
+/// Create a many-to-many join table (table + index) inside an existing
+/// transaction. Used by both `create` and `patch` add-paths.
+async fn exec_create_join_table(
+    tx: &mut Transaction<'_, Postgres>,
+    owner: &str,
+    field: &str,
+    target: &str,
+) -> Result<(), Error> {
+    let (jt, idx) = rustapi_sql::create_join_table(owner, field, target)
+        .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
+    sqlx::query(&jt).execute(&mut **tx).await.map_err(map_db_err)?;
+    sqlx::query(&idx).execute(&mut **tx).await.map_err(map_db_err)?;
+    Ok(())
 }
 
 #[cfg(test)]
