@@ -100,19 +100,27 @@ async fn create(
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     ensure(&state, &principal, Action::ContentWrite, &ct_name).await?;
     let ct = state.schemas.registry().get(&ct_name).await.ok_or(ApiError(Error::NotFound))?;
-    let (binds_map, checks, _links) = body_to_binds(&ct, body, true)?;
+    let (binds_map, checks, links) = body_to_binds(&ct, body, true)?;
     verify_relation_targets_exist(&state, &checks).await?;
+    verify_link_targets_exist(&state, &links).await?;
 
     let (sql, binds) = rustapi_sql::insert(&ct, &binds_map)
         .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
-    let q = bind_all(sqlx::query(&sql), &binds);
-    let row = q.fetch_one(&state.pool).await.map_err(|e| db_with_relation_context(e, &checks))?;
 
+    let mut tx = state.pool.begin().await.map_err(db)?;
+    let q = bind_all(sqlx::query(&sql), &binds);
+    let row = q.fetch_one(&mut *tx).await.map_err(|e| db_with_relation_context(e, &checks))?;
     let body = row_to_json(&ct, &row)?;
-    let id = body.get("id").and_then(|v| v.as_str()).and_then(|s| Uuid::parse_str(s).ok());
-    if let Some(id) = id {
-        state.events.emit(Event::EntryCreated { content_type: ct.name.clone(), id }).await;
-    }
+    let new_id = body
+        .get("id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok())
+        .ok_or_else(|| ApiError(Error::Internal(anyhow::anyhow!("insert returned no id"))))?;
+
+    write_links(&mut tx, &ct.name, &links, new_id).await?;
+    tx.commit().await.map_err(db)?;
+
+    state.events.emit(Event::EntryCreated { content_type: ct.name.clone(), id: new_id }).await;
     Ok((StatusCode::CREATED, Json(body)))
 }
 
@@ -151,8 +159,9 @@ async fn update(
 ) -> Result<Json<Value>, ApiError> {
     ensure(&state, &principal, Action::ContentWrite, &ct_name).await?;
     let ct = state.schemas.registry().get(&ct_name).await.ok_or(ApiError(Error::NotFound))?;
-    let (mut binds_map, checks, _links) = body_to_binds(&ct, body, true)?;
+    let (mut binds_map, checks, links) = body_to_binds(&ct, body, true)?;
     verify_relation_targets_exist(&state, &checks).await?;
+    verify_link_targets_exist(&state, &links).await?;
 
     // PUT is full-replace per spec §6.2: fields absent from the body that are
     // not required get explicitly nulled. Required-with-no-default would have
@@ -174,9 +183,19 @@ async fn update(
 
     let (sql, binds) = rustapi_sql::update(&ct, id, &binds_map)
         .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
+
+    let mut tx = state.pool.begin().await.map_err(db)?;
     let q = bind_all(sqlx::query(&sql), &binds);
-    let row = q.fetch_optional(&state.pool).await.map_err(|e| db_with_relation_context(e, &checks))?;
-    let row = row.ok_or(ApiError(Error::NotFound))?;
+    let row = q
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| db_with_relation_context(e, &checks))?;
+    let row = match row {
+        Some(r) => r,
+        None => return Err(ApiError(Error::NotFound)), // tx rolls back on drop
+    };
+    write_links(&mut tx, &ct.name, &links, id).await?;
+    tx.commit().await.map_err(db)?;
 
     state.events.emit(Event::EntryUpdated { content_type: ct.name.clone(), id }).await;
     Ok(Json(row_to_json(&ct, &row)?))
@@ -346,4 +365,72 @@ fn relation_field_from_constraint(constraint: &str, checks: &[RelationCheck]) ->
         }
     }
     None
+}
+
+/// Pre-check that every many-to-many target id exists, per field. Mirrors
+/// `verify_relation_targets_exist` but for `LinkPlan`s. Returns 422
+/// RelationTargetMissing naming the first field with any unresolved id.
+async fn verify_link_targets_exist(
+    state: &AppState,
+    links: &[crate::entry::LinkPlan],
+) -> Result<(), ApiError> {
+    for plan in links {
+        if plan.ids.is_empty() {
+            continue;
+        }
+        let table = rustapi_sql::table_name(&plan.target)
+            .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
+        let sql = format!("SELECT id FROM {table} WHERE id = ANY($1)");
+        let rows = sqlx::query(&sql).bind(&plan.ids).fetch_all(&state.pool).await.map_err(db)?;
+        let mut found = std::collections::HashSet::new();
+        for r in &rows {
+            let id: Uuid = r.try_get("id").map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e))))?;
+            found.insert(id);
+        }
+        let missing: Vec<String> = plan
+            .ids
+            .iter()
+            .filter(|id| !found.contains(id))
+            .map(|id| id.to_string())
+            .collect();
+        if !missing.is_empty() {
+            return Err(ApiError(Error::Validation(
+                ValidationErrors::relation_target_missing(&plan.field, missing),
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Apply each present LinkPlan as a replace-set inside the given transaction:
+/// delete all existing links for the owner on that field, then insert the
+/// supplied target ids. Absent fields are not in `links`, so their links are
+/// untouched.
+async fn write_links(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    owner_type: &str,
+    links: &[crate::entry::LinkPlan],
+    owner_id: Uuid,
+) -> Result<(), ApiError> {
+    for plan in links {
+        if !plan.present {
+            continue;
+        }
+        let (del_sql, _) = rustapi_sql::delete_links(owner_type, &plan.field, owner_id)
+            .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
+        sqlx::query(&del_sql).bind(owner_id).execute(&mut **tx).await.map_err(db)?;
+        if plan.ids.is_empty() {
+            continue;
+        }
+        let (ins_sql, _) =
+            rustapi_sql::insert_links(owner_type, &plan.field, &plan.target, owner_id)
+                .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
+        sqlx::query(&ins_sql)
+            .bind(owner_id)
+            .bind(&plan.ids)
+            .execute(&mut **tx)
+            .await
+            .map_err(db)?;
+    }
+    Ok(())
 }
