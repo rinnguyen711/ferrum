@@ -26,6 +26,9 @@ export RUSTAPI_ADMIN_KEY=$(openssl rand -hex 32)
 docker compose up --build
 ```
 
+The demo seeds default **Article**, **Author**, and **Category** types with
+sample data on first boot (empty DB only). Disable with `RUSTAPI_SEED=false`.
+
 ## Backend
 
 Requires: Rust 1.88, Docker (integration tests).
