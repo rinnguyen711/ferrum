@@ -95,7 +95,10 @@ export function FieldConfigModal({
               </div>
 
               <div className="rs-field">
-                <div className="rs-field-label"><label>Type</label></div>
+                <div className="rs-field-label">
+                  <label>Type</label>
+                  {locked && <span className="rs-field-hint">type can't be changed after creation</span>}
+                </div>
                 <select
                   className="rs-input"
                   value={field.kind}
@@ -175,28 +178,37 @@ export function FieldConfigModal({
                       : "The entry can't be saved while this is empty."}
                   </span>
                 </div>
-                <label className="rs-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={field.required && !m2mRequiredBlocked}
-                    disabled={locked || m2mRequiredBlocked}
-                    onChange={(e) => set({ required: e.target.checked })}
-                  />
-                </label>
+                <Toggle
+                  on={field.required && !m2mRequiredBlocked}
+                  disabled={locked || m2mRequiredBlocked}
+                  onChange={(v) => set({ required: v })}
+                />
               </div>
               <div className="rs-setting-row">
                 <div className="rs-setting-meta">
                   <strong>Unique field</strong>
                   <span>No two entries may share the same value.</span>
                 </div>
-                <label className="rs-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={field.unique}
-                    disabled={locked}
-                    onChange={(e) => set({ unique: e.target.checked })}
-                  />
-                </label>
+                <Toggle on={field.unique} disabled={locked} onChange={(v) => set({ unique: v })} />
+              </div>
+              <div className="rs-setting-row">
+                <div className="rs-setting-meta">
+                  <strong>Private field</strong>
+                  <span>Hidden from the public API response.</span>
+                </div>
+                <Toggle on={field.isPrivate} onChange={(v) => set({ isPrivate: v })} />
+              </div>
+              <div className="rs-field">
+                <div className="rs-field-label">
+                  <label>Default value</label>
+                  <span className="rs-field-hint">pre-filled when a new entry is created</span>
+                </div>
+                <input
+                  className="rs-input rs-mono"
+                  placeholder={field.kind === "boolean" ? "true / false" : "leave empty for none"}
+                  value={field.defaultValue}
+                  onChange={(e) => set({ defaultValue: e.target.value })}
+                />
               </div>
             </div>
           )}
@@ -204,11 +216,34 @@ export function FieldConfigModal({
 
         <div className="rs-modal-foot">
           <button className="rs-btn rs-btn--ghost" onClick={onClose}>Cancel</button>
+          <div className="rs-spacer" />
           <button className="rs-btn rs-btn--primary" onClick={save}>
             <Icons.check size={15} /> {isNew ? "Add field" : "Save changes"}
           </button>
         </div>
       </div>
     </div>
+  );
+}
+
+function Toggle({
+  on,
+  disabled,
+  onChange,
+}: {
+  on: boolean;
+  disabled?: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={"rs-toggle" + (on ? " is-on" : "")}
+      disabled={disabled}
+      aria-pressed={on}
+      onClick={() => onChange(!on)}
+    >
+      <span className="rs-toggle-knob" />
+    </button>
   );
 }

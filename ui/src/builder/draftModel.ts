@@ -20,6 +20,8 @@ export interface DraftField {
   target: string;                // kind === "relation"
   inverse: string;               // kind === "relation" (optional)
   cardinality: Cardinality;      // kind === "relation"
+  defaultValue: string;          // raw text; "" → null on the wire
+  isPrivate: boolean;            // UI-only — not yet persisted by the server
   origin: "existing" | "new";
 }
 
@@ -42,6 +44,8 @@ export function blankField(): DraftField {
     target: "",
     inverse: "",
     cardinality: "many_to_one",
+    defaultValue: "",
+    isPrivate: false,
     origin: "new",
   };
 }
@@ -76,6 +80,8 @@ export function seedFromContentType(ct: ContentType): Draft {
       target: rel?.target ?? "",
       inverse: rel?.inverse ?? "",
       cardinality: (rel?.cardinality as Cardinality) ?? "many_to_one",
+      defaultValue: defaultToText(f.default),
+      isPrivate: false,
       origin: "existing",
     };
   });
@@ -86,6 +92,29 @@ export function seedFromContentType(ct: ContentType): Draft {
     mode: "existing",
     serverSnapshot: ct,
   };
+}
+
+/** Server `default` (any JSON) → editable text for the input box. */
+function defaultToText(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "string") return v;
+  return JSON.stringify(v);
+}
+
+/** Editable text → wire `default`. Empty → null. Numbers/booleans get
+ *  typed for numeric/boolean kinds; everything else stays a string. */
+function textToDefault(text: string, kind: FieldKind): unknown {
+  const t = text.trim();
+  if (t === "") return null;
+  if (kind === "boolean") return t === "true";
+  if (kind === "integer" || kind === "float") {
+    const n = Number(t);
+    return Number.isFinite(n) ? n : t;
+  }
+  if (kind === "json") {
+    try { return JSON.parse(t); } catch { return t; }
+  }
+  return t;
 }
 
 function draftFieldToField(d: DraftField): Field {
@@ -104,7 +133,7 @@ function draftFieldToField(d: DraftField): Field {
     kind: d.kind,
     required: d.required,
     unique: d.unique,
-    default: null,
+    default: textToDefault(d.defaultValue, d.kind),
     kind_meta,
   };
 }
