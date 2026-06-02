@@ -273,6 +273,40 @@ async fn apply_populate(
                 )
                 .await?;
             }
+            PopulateField::InverseOne {
+                field_name,
+                source,
+                fk_col,
+            } => {
+                populate::apply_inverse_one(
+                    &state.pool,
+                    registry,
+                    rows,
+                    &field_name,
+                    &source,
+                    &fk_col,
+                )
+                .await?;
+            }
+            PopulateField::Many {
+                field_name,
+                join_table,
+                self_col,
+                other_col,
+                target,
+            } => {
+                populate::apply_many(
+                    &state.pool,
+                    registry,
+                    rows,
+                    &field_name,
+                    &join_table,
+                    &self_col,
+                    &other_col,
+                    &target,
+                )
+                .await?;
+            }
         }
     }
     Ok(())

@@ -27,6 +27,22 @@ pub enum PopulateField {
         source: String,
         fk_col: String,
     },
+    /// one_to_one inverse: at most one child (FK is UNIQUE), returned as a
+    /// single object or null rather than an array.
+    InverseOne {
+        field_name: String,
+        source: String,
+        fk_col: String,
+    },
+    /// many_to_many (forward or inverse). `self_col`/`other_col` are the join
+    /// table's owner/target columns from the *current* type's perspective.
+    Many {
+        field_name: String,
+        join_table: String,
+        self_col: String,
+        other_col: String,
+        target: String,
+    },
 }
 
 /// Parse `?populate=foo,bar` against a content type and registry. Returns
@@ -64,18 +80,77 @@ pub async fn parse_populate(
                         "unknown populate field `{name}`"
                     )))
                 })?;
-                out.push(PopulateField::Forward {
-                    field_name: name.to_string(),
-                    target: meta.target,
-                });
+                if meta.cardinality == rustapi_core::Cardinality::ManyToMany {
+                    let join_table = rustapi_sql::join_table_name(&ct.name, &f.name)
+                        .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
+                    out.push(PopulateField::Many {
+                        field_name: name.to_string(),
+                        join_table,
+                        self_col: format!("{}_id", ct.name),
+                        other_col: format!("{}_id", meta.target),
+                        target: meta.target,
+                    });
+                } else {
+                    out.push(PopulateField::Forward {
+                        field_name: name.to_string(),
+                        target: meta.target,
+                    });
+                }
                 continue;
             }
         }
         if let Some((source, fk_col)) = registry.inverse_lookup(&ct.name, name).await {
-            out.push(PopulateField::Inverse {
+            // inverse_lookup is cardinality-agnostic; check whether the source
+            // relation is M2M — if so skip this hit and fall through to
+            // inverse_lookup_m2m below.
+            let cardinality = registry
+                .get(&source)
+                .await
+                .and_then(|src| {
+                    src.fields.iter().find_map(|f| {
+                        f.relation_meta().and_then(|m| {
+                            if m.target == ct.name && m.inverse.as_deref() == Some(name) {
+                                Some(m.cardinality)
+                            } else {
+                                None
+                            }
+                        })
+                    })
+                });
+            match cardinality {
+                Some(rustapi_core::Cardinality::ManyToMany) => {
+                    // Fall through to inverse_lookup_m2m.
+                }
+                Some(rustapi_core::Cardinality::OneToOne) => {
+                    out.push(PopulateField::InverseOne {
+                        field_name: name.to_string(),
+                        source,
+                        fk_col,
+                    });
+                    continue;
+                }
+                _ => {
+                    // many_to_one (or unknown — treat as array inverse).
+                    out.push(PopulateField::Inverse {
+                        field_name: name.to_string(),
+                        source,
+                        fk_col,
+                    });
+                    continue;
+                }
+            }
+        }
+        if let Some((owner, field)) = registry.inverse_lookup_m2m(&ct.name, name).await {
+            let join_table = rustapi_sql::join_table_name(&owner, &field)
+                .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
+            // Current type is the *target* of the M:N; in the join table its own
+            // id column is `<ct.name>_id`, children rows are `<owner>_id`.
+            out.push(PopulateField::Many {
                 field_name: name.to_string(),
-                source,
-                fk_col,
+                join_table,
+                self_col: format!("{}_id", ct.name),
+                other_col: format!("{owner}_id"),
+                target: owner,
             });
             continue;
         }
@@ -262,6 +337,121 @@ pub async fn apply_inverse(
                 r.insert(field_name.into(), Value::Array(Vec::new()));
             }
         }
+    }
+    Ok(())
+}
+
+/// Hydrate a many-to-many field in-place. One batched SELECT joins the join
+/// table to the target rows for all parents, then groups per parent with the
+/// existing per-parent cap. Parents with no links get `[]`.
+#[allow(clippy::too_many_arguments)]
+pub async fn apply_many(
+    pool: &PgPool,
+    registry: &SchemaRegistry,
+    rows: &mut [Map<String, Value>],
+    field_name: &str,
+    join_table: &str,
+    self_col: &str,
+    other_col: &str,
+    target: &str,
+) -> Result<(), Error> {
+    let target_ct = registry.get(target).await.ok_or_else(|| {
+        Error::Internal(anyhow::anyhow!("populate m2m target vanished: {target}"))
+    })?;
+    let mut parent_ids: Vec<Uuid> = Vec::with_capacity(rows.len());
+    for r in rows.iter() {
+        if let Some(Value::String(s)) = r.get("id") {
+            if let Ok(u) = Uuid::parse_str(s) {
+                parent_ids.push(u);
+            }
+        }
+    }
+    if parent_ids.is_empty() {
+        for r in rows.iter_mut() {
+            r.insert(field_name.into(), Value::Array(Vec::new()));
+        }
+        return Ok(());
+    }
+    let target_tbl = rustapi_sql::table_name(target)
+        .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
+    let self_q = rustapi_sql::quote_ident(self_col)
+        .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
+    let other_q = rustapi_sql::quote_ident(other_col)
+        .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
+    // join_table is already a quoted identifier from join_table_name.
+    let limit = (INVERSE_LIMIT_PER_PARENT + 1) * parent_ids.len();
+    let sql = format!(
+        "SELECT j.{self_q} AS __parent, t.* \
+         FROM {join_table} j JOIN {target_tbl} t ON t.\"id\" = j.{other_q} \
+         WHERE j.{self_q} = ANY($1) \
+         ORDER BY j.{self_q}, t.\"id\" LIMIT {limit}"
+    );
+    let fetched = sqlx::query(&sql)
+        .bind(&parent_ids)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| Error::Internal(anyhow::anyhow!(e)))?;
+    let mut buckets: Vec<(Uuid, Map<String, Value>)> = Vec::with_capacity(fetched.len());
+    for row in &fetched {
+        let parent: Uuid = row
+            .try_get("__parent")
+            .map_err(|e| Error::Internal(anyhow::anyhow!(e)))?;
+        let map = match crate::entry::row_to_json(&target_ct, row)? {
+            Value::Object(m) => m,
+            _ => unreachable!("row_to_json returns an object"),
+        };
+        buckets.push((parent, map));
+    }
+    let grouped = group_inverse_children(&parent_ids, buckets, INVERSE_LIMIT_PER_PARENT);
+    for r in rows.iter_mut() {
+        let pid = r
+            .get("id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| Uuid::parse_str(s).ok());
+        match pid.and_then(|p| grouped.get(&p)) {
+            Some(g) => {
+                r.insert(field_name.into(), Value::Array(g.children.clone()));
+                if g.truncated {
+                    r.insert(format!("{field_name}_truncated"), Value::Bool(true));
+                }
+            }
+            None => {
+                r.insert(field_name.into(), Value::Array(Vec::new()));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Hydrate a one_to_one inverse: at most one child per parent (FK is UNIQUE).
+/// Sets the field to the single child object, or `null` when none.
+pub async fn apply_inverse_one(
+    pool: &PgPool,
+    registry: &SchemaRegistry,
+    rows: &mut [Map<String, Value>],
+    field_name: &str,
+    source_table: &str,
+    fk_col: &str,
+) -> Result<(), Error> {
+    let tmp_key = format!("__one_{field_name}");
+    apply_inverse(pool, registry, rows, &tmp_key, source_table, fk_col).await?;
+    for r in rows.iter_mut() {
+        let collapsed = match r.remove(&tmp_key) {
+            Some(Value::Array(mut xs)) if !xs.is_empty() => {
+                if xs.len() > 1 {
+                    tracing::warn!(
+                        field = field_name,
+                        source = source_table,
+                        count = xs.len(),
+                        "one_to_one inverse resolved more than one child; FK uniqueness may be violated — taking the first"
+                    );
+                }
+                xs.remove(0)
+            }
+            _ => Value::Null,
+        };
+        r.remove(&format!("{tmp_key}_truncated"));
+        r.insert(field_name.into(), collapsed);
     }
     Ok(())
 }
@@ -460,5 +650,80 @@ mod tests {
         let g = grouped.get(&parents[0]).unwrap();
         assert_eq!(g.children.len(), 25);
         assert!(!g.truncated);
+    }
+
+    fn ct_with_m2m() -> ContentType {
+        ContentType {
+            id: Uuid::new_v4(),
+            name: "post".into(),
+            display_name: "Post".into(),
+            fields: vec![Field {
+                name: "tags".into(),
+                kind: FieldKind::Relation,
+                required: false,
+                unique: false,
+                default: serde_json::Value::Null,
+                max_length: None,
+                kind_meta: json!({"target":"tag","cardinality":"many_to_many","inverse":"posts"}),
+            }],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn tag_ct() -> ContentType {
+        ContentType {
+            id: Uuid::new_v4(),
+            name: "tag".into(),
+            display_name: "Tag".into(),
+            fields: vec![Field {
+                name: "label".into(),
+                kind: FieldKind::String,
+                required: false,
+                unique: false,
+                default: serde_json::Value::Null,
+                max_length: None,
+                kind_meta: json!({}),
+            }],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    #[tokio::test]
+    async fn parse_m2m_forward() {
+        let reg = SchemaRegistry::new();
+        reg.insert(tag_ct()).await;
+        reg.insert(ct_with_m2m()).await;
+        let post = reg.get("post").await.unwrap();
+        let out = parse_populate(&post, &reg, "tags").await.unwrap();
+        match &out[0] {
+            PopulateField::Many { field_name, join_table, self_col, other_col, target } => {
+                assert_eq!(field_name, "tags");
+                assert_eq!(join_table, "\"j_post_tags\"");
+                assert_eq!(self_col, "post_id");
+                assert_eq!(other_col, "tag_id");
+                assert_eq!(target, "tag");
+            }
+            other => panic!("expected Many, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn parse_m2m_inverse() {
+        let reg = SchemaRegistry::new();
+        reg.insert(tag_ct()).await;
+        reg.insert(ct_with_m2m()).await;
+        let tag = reg.get("tag").await.unwrap();
+        let out = parse_populate(&tag, &reg, "posts").await.unwrap();
+        match &out[0] {
+            PopulateField::Many { field_name, self_col, other_col, target, .. } => {
+                assert_eq!(field_name, "posts");
+                assert_eq!(self_col, "tag_id");
+                assert_eq!(other_col, "post_id");
+                assert_eq!(target, "post");
+            }
+            other => panic!("expected Many (inverse), got {other:?}"),
+        }
     }
 }
