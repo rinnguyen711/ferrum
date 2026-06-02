@@ -17,6 +17,9 @@ pub struct TestApp {
     pub base_url: String,
     pub pool: PgPool,
     pub client: reqwest::Client,
+    /// The same SchemaService (and registry) the in-process router uses, so a
+    /// test can mutate schema state and have the router observe it.
+    pub schemas: SchemaService,
     _pg: ContainerAsync<PgImage>,
     _shutdown: tokio::sync::oneshot::Sender<()>,
 }
@@ -42,7 +45,7 @@ impl TestApp {
 
         let state = AppState {
             pool: pool.clone(),
-            schemas,
+            schemas: schemas.clone(),
             authz: Arc::new(AlwaysAllow),
             events: Arc::new(NoopSink),
             config: AppConfig {
@@ -67,6 +70,7 @@ impl TestApp {
             base_url: format!("http://{addr}"),
             pool,
             client: reqwest::Client::new(),
+            schemas,
             _pg: pg,
             _shutdown: tx,
         }

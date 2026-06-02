@@ -1,8 +1,6 @@
-mod config;
-mod seed;
-
 use anyhow::{Context, Result};
-use config::Config;
+use rustapi::config::Config;
+use rustapi::seed;
 use rustapi_http::{build_router, mount_studio, AlwaysAllow, AppConfig, AppState, NoopSink};
 use rustapi_schema::{SchemaRegistry, SchemaService, MIGRATOR};
 use sqlx::postgres::PgPoolOptions;
