@@ -1,6 +1,7 @@
 //! In-memory cache of all content types. The HTTP layer reads from here on
 //! every request; only the SchemaService mutates it.
 
+use rustapi_core::Cardinality;
 use rustapi_core::ContentType;
 use sqlx::PgPool;
 use std::collections::HashMap;
@@ -49,6 +50,71 @@ impl SchemaRegistry {
         }
         *self.inner.write().await = map;
         Ok(())
+    }
+
+    /// Many-to-many fields *owned by* `owner` → `(field_name, target)` pairs.
+    /// Used by SchemaService to create/drop join tables for a type.
+    pub async fn m2m_targets(&self, owner: &str) -> Vec<(String, String)> {
+        let map = self.inner.read().await;
+        let mut out = Vec::new();
+        if let Some(ct) = map.get(owner) {
+            for f in &ct.fields {
+                let Some(meta) = f
+                    .relation_meta()
+                    .filter(|m| m.cardinality == Cardinality::ManyToMany)
+                else {
+                    continue;
+                };
+                out.push((f.name.clone(), meta.target));
+            }
+        }
+        out
+    }
+
+    /// Many-to-many fields *targeting* `target` → `(owner_type, field_name)`.
+    /// Used to drop dependent join tables before dropping a target type.
+    pub async fn m2m_referencing(&self, target: &str) -> Vec<(String, String)> {
+        let map = self.inner.read().await;
+        let mut out = Vec::new();
+        for ct in map.values() {
+            for f in &ct.fields {
+                let Some(meta) = f
+                    .relation_meta()
+                    .filter(|m| m.cardinality == Cardinality::ManyToMany)
+                else {
+                    continue;
+                };
+                if meta.target == target {
+                    out.push((ct.name.clone(), f.name.clone()));
+                }
+            }
+        }
+        out
+    }
+
+    /// Resolve an inverse populate name against many-to-many relations. Returns
+    /// `(owner_type, field_name)` where `owner.field` is the M:N relation whose
+    /// `inverse` matches and whose `target` is `target_name`.
+    pub async fn inverse_lookup_m2m(
+        &self,
+        target_name: &str,
+        inverse_name: &str,
+    ) -> Option<(String, String)> {
+        let map = self.inner.read().await;
+        for ct in map.values() {
+            for f in &ct.fields {
+                let Some(meta) = f
+                    .relation_meta()
+                    .filter(|m| m.cardinality == Cardinality::ManyToMany)
+                else {
+                    continue;
+                };
+                if meta.target == target_name && meta.inverse.as_deref() == Some(inverse_name) {
+                    return Some((ct.name.clone(), f.name.clone()));
+                }
+            }
+        }
+        None
     }
 
     /// Walks all registered content types looking for a relation field on any
@@ -220,6 +286,89 @@ mod tests {
         .await;
         // Relation has no inverse declared — lookup against "posts" finds nothing.
         assert!(reg.inverse_lookup("user", "posts").await.is_none());
+    }
+
+    fn m2m_field(name: &str, target: &str, inverse: Option<&str>) -> Field {
+        let mut meta = serde_json::Map::new();
+        meta.insert("target".into(), json!(target));
+        meta.insert("cardinality".into(), json!("many_to_many"));
+        if let Some(i) = inverse {
+            meta.insert("inverse".into(), json!(i));
+        }
+        Field {
+            name: name.into(),
+            kind: FieldKind::Relation,
+            required: false,
+            unique: false,
+            default: serde_json::Value::Null,
+            max_length: None,
+            kind_meta: serde_json::Value::Object(meta),
+        }
+    }
+
+    #[tokio::test]
+    async fn m2m_targets_lists_owned_join_tables() {
+        let reg = SchemaRegistry::new();
+        let mut post = ct("post");
+        post.fields.push(m2m_field("tags", "tag", None));
+        reg.insert(post).await;
+        let hits = reg.m2m_targets("post").await;
+        assert_eq!(hits, vec![("tags".to_string(), "tag".to_string())]);
+    }
+
+    #[tokio::test]
+    async fn m2m_referencing_finds_join_tables_pointing_at_type() {
+        let reg = SchemaRegistry::new();
+        let mut post = ct("post");
+        post.fields.push(m2m_field("tags", "tag", None));
+        reg.insert(post).await;
+        let hits = reg.m2m_referencing("tag").await;
+        assert_eq!(hits, vec![("post".to_string(), "tags".to_string())]);
+    }
+
+    #[tokio::test]
+    async fn inverse_lookup_resolves_m2m() {
+        let reg = SchemaRegistry::new();
+        reg.insert(ct("tag")).await;
+        let mut post = ct("post");
+        post.fields.push(m2m_field("tags", "tag", Some("posts")));
+        reg.insert(post).await;
+        let hit = reg.inverse_lookup_m2m("tag", "posts").await;
+        assert_eq!(hit, Some(("post".to_string(), "tags".to_string())));
+    }
+
+    #[tokio::test]
+    async fn m2m_targets_unknown_type_is_empty() {
+        let reg = SchemaRegistry::new();
+        assert!(reg.m2m_targets("nope").await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn m2m_referencing_ignores_many_to_one() {
+        let reg = SchemaRegistry::new();
+        reg.insert(ct("user")).await;
+        let mut post = ct("post");
+        // many_to_one author → user, NOT m2m: must not appear in m2m_referencing.
+        post.fields.push(Field {
+            name: "author".into(),
+            kind: FieldKind::Relation,
+            required: false,
+            unique: false,
+            default: serde_json::Value::Null,
+            max_length: None,
+            kind_meta: json!({"target":"user","cardinality":"many_to_one"}),
+        });
+        reg.insert(post).await;
+        assert!(reg.m2m_referencing("user").await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn inverse_lookup_m2m_wrong_name_is_none() {
+        let reg = SchemaRegistry::new();
+        let mut post = ct("post");
+        post.fields.push(m2m_field("tags", "tag", Some("posts")));
+        reg.insert(post).await;
+        assert!(reg.inverse_lookup_m2m("tag", "wrong").await.is_none());
     }
 
     #[tokio::test]
