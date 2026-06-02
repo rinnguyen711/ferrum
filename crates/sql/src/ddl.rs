@@ -19,6 +19,9 @@ pub fn create_table(ct: &ContentType) -> Result<String, DdlError> {
         r#""updated_at" TIMESTAMPTZ NOT NULL DEFAULT now()"#.into(),
     ];
     for f in &ct.fields {
+        if !f.is_stored_column() {
+            continue;
+        }
         cols.push(column_def(&ct.name, f)?);
     }
     let body = cols.join(", ");
@@ -27,6 +30,14 @@ pub fn create_table(ct: &ContentType) -> Result<String, DdlError> {
 
 /// `ALTER TABLE ct_<name> ADD COLUMN ...`
 pub fn add_column(ct_name: &str, field: &Field) -> Result<String, DdlError> {
+    // Many-to-many fields have no row column; the caller manages the join
+    // table separately (see SchemaService). Reaching here with one is a bug.
+    if field.relation_meta().is_some() && !field.is_stored_column() {
+        return Err(DdlError::Ident(IdentError(format!(
+            "add_column called for non-stored field `{}`",
+            field.name
+        ))));
+    }
     let table = table_name(ct_name)?;
     let def = column_def(ct_name, field)?;
     Ok(format!("ALTER TABLE {table} ADD COLUMN {def}"))
@@ -67,6 +78,37 @@ pub fn alter_enum_values(
          ALTER TABLE {table} ADD CONSTRAINT {constraint_q} \
          CHECK ({col_q} IS NULL OR {col_q} IN ({values_lit}))"
     ))
+}
+
+/// Build the `CREATE TABLE` + `CREATE INDEX` statements for a many-to-many
+/// join table on `owner.<field>` targeting `target`. Returns
+/// `(create_table_sql, create_index_sql)`. Column names are `<owner>_id` and
+/// `<target>_id`; both FKs cascade on delete so removing a linked entry drops
+/// its links.
+pub fn create_join_table(
+    owner: &str,
+    field: &str,
+    target: &str,
+) -> Result<(String, String), DdlError> {
+    let jt = crate::ident::join_table_name(owner, field)?;
+    let owner_tbl = table_name(owner)?;
+    let target_tbl = table_name(target)?;
+    let owner_col = quote_ident(&format!("{owner}_id"))?;
+    let target_col = quote_ident(&format!("{target}_id"))?;
+    let create = format!(
+        "CREATE TABLE {jt} (\
+{owner_col} uuid NOT NULL REFERENCES {owner_tbl}(\"id\") ON DELETE CASCADE, \
+{target_col} uuid NOT NULL REFERENCES {target_tbl}(\"id\") ON DELETE CASCADE, \
+PRIMARY KEY ({owner_col}, {target_col}))"
+    );
+    let index = format!("CREATE INDEX ON {jt} ({target_col})");
+    Ok((create, index))
+}
+
+/// `DROP TABLE <join table for owner.field>`.
+pub fn drop_join_table(owner: &str, field: &str) -> Result<String, DdlError> {
+    let jt = crate::ident::join_table_name(owner, field)?;
+    Ok(format!("DROP TABLE {jt}"))
 }
 
 fn column_def(ct_name: &str, f: &Field) -> Result<String, DdlError> {
@@ -460,6 +502,43 @@ mod tests {
             max_length: None,
             kind_meta: json!({"target":"Bad","cardinality":"many_to_one"}),
         };
+        assert!(add_column("post", &f).is_err());
+    }
+
+    #[test]
+    fn create_join_table_emits_table_and_index() {
+        let (create, index) =
+            create_join_table("post", "tags", "tag").unwrap();
+        assert_eq!(
+            create,
+            "CREATE TABLE \"j_post_tags\" (\
+\"post_id\" uuid NOT NULL REFERENCES \"ct_post\"(\"id\") ON DELETE CASCADE, \
+\"tag_id\" uuid NOT NULL REFERENCES \"ct_tag\"(\"id\") ON DELETE CASCADE, \
+PRIMARY KEY (\"post_id\", \"tag_id\"))"
+        );
+        assert_eq!(
+            index,
+            "CREATE INDEX ON \"j_post_tags\" (\"tag_id\")"
+        );
+    }
+
+    #[test]
+    fn drop_join_table_works() {
+        assert_eq!(drop_join_table("post", "tags").unwrap(), "DROP TABLE \"j_post_tags\"");
+    }
+
+    #[test]
+    fn create_table_skips_many_to_many_columns() {
+        let mut f = field("tags", FieldKind::Relation);
+        f.kind_meta = json!({"target":"tag","cardinality":"many_to_many"});
+        let sql = create_table(&ct(vec![f])).unwrap();
+        assert!(!sql.contains("tags"), "got: {sql}");
+    }
+
+    #[test]
+    fn add_column_rejects_many_to_many() {
+        let mut f = field("tags", FieldKind::Relation);
+        f.kind_meta = json!({"target":"tag","cardinality":"many_to_many"});
         assert!(add_column("post", &f).is_err());
     }
 }
