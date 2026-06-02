@@ -467,24 +467,6 @@ select.rs-input { appearance: none; background-image: url("data:image/svg+xml,%3
 }
 
 /* ============ Type builder ============ */
-.rs-fieldrows {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.rs-fieldrow {
-  border: 1px solid var(--border, #e7e2da);
-  border-radius: 8px;
-  padding: 10px;
-  background: var(--surface, #fff);
-}
-.rs-fieldrow-main {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-.rs-fieldrow-main > .rs-input:first-child { flex: 1 1 160px; }
 .rs-fieldrow-sub {
   display: flex;
   gap: 8px;
@@ -560,15 +542,6 @@ select.rs-input { appearance: none; background-image: url("data:image/svg+xml,%3
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-
-/* --- Staged-for-drop field row --- */
-.rs-fieldrow.is-staged-drop {
-  opacity: .55;
-}
-.rs-fieldrow.is-staged-drop .rs-input,
-.rs-fieldrow.is-staged-drop .rs-checkbox {
-  text-decoration: line-through;
 }
 
 /* --- Inline title input in editor head --- */
