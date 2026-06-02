@@ -2,9 +2,10 @@ import { Outlet, useLocation, useMatch, useParams } from "react-router-dom";
 import { Sidebar, SecondaryPanel, Topbar } from "./components/shell";
 import { BuilderDraftProvider } from "./builder/BuilderDraftContext";
 
-export type Section = "dashboard" | "content" | "builder" | "settings";
+export type Section = "dashboard" | "content" | "builder" | "settings" | "media";
 
 function sectionFromPath(pathname: string): Section {
+  if (pathname.startsWith("/media")) return "media";
   if (pathname.startsWith("/content")) return "content";
   if (pathname.startsWith("/builder")) return "builder";
   if (pathname.startsWith("/settings")) return "settings";
@@ -32,6 +33,7 @@ export function Layout({
   else if (section === "content") crumbs = ["Content Manager", collection];
   else if (section === "builder") crumbs = ["Content-Type Builder", collection];
   else if (section === "settings") crumbs = ["Settings"];
+  else if (section === "media") crumbs = ["Media Library"];
 
   return (
     <BuilderDraftProvider>

@@ -5,6 +5,10 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[lib]
+name = "rustapi"
+path = "src/lib.rs"
+
 [[bin]]
 name = "rustapi"
 path = "src/main.rs"
@@ -13,12 +17,15 @@ path = "src/main.rs"
 rustapi-core = { path = "../core" }
 rustapi-schema = { path = "../schema" }
 rustapi-http = { path = "../http" }
+rustapi-sql = { path = "../sql" }
+uuid.workspace = true
 tokio.workspace = true
 sqlx.workspace = true
 axum.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 anyhow.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 reqwest.workspace = true

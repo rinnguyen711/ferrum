@@ -1752,6 +1752,7 @@ dependencies = [
  "rustapi-core",
  "rustapi-http",
  "rustapi-schema",
+ "rustapi-sql",
  "serde_json",
  "sqlx",
  "testcontainers",

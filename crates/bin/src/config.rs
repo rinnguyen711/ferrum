@@ -12,6 +12,9 @@ pub struct Config {
     /// When set, the built admin UI in this directory is served at /studio.
     /// Unset → no UI route is mounted (API-only server).
     pub studio_dir: Option<String>,
+    /// When true (default), an empty DB is seeded with default content types
+    /// and sample data at startup. Set RUSTAPI_SEED=false to disable.
+    pub seed: bool,
 }
 
 impl Config {
@@ -30,6 +33,11 @@ impl Config {
             .and_then(|s| s.parse::<u32>().ok())
             .unwrap_or(100);
         let studio_dir = std::env::var("RUSTAPI_STUDIO_DIR").ok().filter(|s| !s.is_empty());
+        let seed = std::env::var("RUSTAPI_SEED")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .map(|s| !matches!(s.as_str(), "0" | "false" | "no"))
+            .unwrap_or(true);
         Ok(Self {
             database_url,
             admin_key,
@@ -37,6 +45,7 @@ impl Config {
             log,
             page_size_max,
             studio_dir,
+            seed,
         })
     }
 }

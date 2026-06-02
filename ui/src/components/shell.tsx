@@ -78,6 +78,7 @@ export function Sidebar({ section: _section }: { section: Section }) {
     { to: "/", label: "Home", icon: "home", end: true },
     { to: "/content", label: "Content Manager", icon: "doc" },
     { to: "/builder", label: "Content-Type Builder", icon: "layers" },
+    { to: "/media", label: "Media Library", icon: "image" },
   ];
   const isActive = (to: string, end?: boolean) =>
     end ? location.pathname === to : location.pathname.startsWith(to);
@@ -107,7 +108,7 @@ export function Sidebar({ section: _section }: { section: Section }) {
         >
           <Icons.gear size={20} />
         </button>
-        <Avatar name="Mara Velez" initials="MV" color="#C2410C" size={30} />
+        <Avatar name="Admin" initials="AD" color="#52525B" size={30} />
       </div>
     </nav>
   );
@@ -152,7 +153,7 @@ export function SecondaryPanel({
   section: Section;
   collection: string;
 }) {
-  if (section === "dashboard") return null;
+  if (section === "dashboard" || section === "media") return null;
 
   if (section === "content" || section === "builder") {
     const isBuilder = section === "builder";
@@ -176,17 +177,19 @@ export function SecondaryPanel({
               <div className="rs-panel-grouphead">
                 <span>{g.label}</span>
               </div>
-              {g.items.map((it) => (
-                <button
-                  key={it}
-                  className={
-                    "rs-panel-item" +
-                    (g.label === "Global settings" && it === "API tokens" ? " is-active" : "")
-                  }
-                >
-                  {it}
-                </button>
-              ))}
+              {g.items.map((it) => {
+                const enabled = g.label === "Global settings" && it === "API tokens";
+                return (
+                  <button
+                    key={it}
+                    disabled={!enabled}
+                    title={enabled ? undefined : "Coming soon"}
+                    className={"rs-panel-item" + (enabled ? " is-active" : "")}
+                  >
+                    {it}
+                  </button>
+                );
+              })}
             </div>
           ))}
         </div>
@@ -243,6 +246,10 @@ function TypePanel({
         )}
       </div>
       <div className="rs-panel-scroll">
+        <div className="rs-panel-search">
+          <Icons.search size={15} />
+          <input placeholder="Search types" disabled />
+        </div>
         <PanelGroup
           label="Collection types"
           count={types?.length ?? 0}
@@ -267,6 +274,18 @@ function TypePanel({
             </button>
           ))}
         </PanelGroup>
+        <div className="rs-panel-group">
+          <div className="rs-panel-grouphead"><span>Single types</span></div>
+          <button className="rs-panel-item" disabled title="Coming soon">Homepage</button>
+          <button className="rs-panel-item" disabled title="Coming soon">Global</button>
+        </div>
+        {isBuilder && (
+          <div className="rs-panel-group">
+            <div className="rs-panel-grouphead"><span>Components</span></div>
+            <button className="rs-panel-item" disabled title="Coming soon">SEO</button>
+            <button className="rs-panel-item" disabled title="Coming soon">Call to action</button>
+          </div>
+        )}
       </div>
       {modalOpen && <CreateTypeModal onClose={() => setModalOpen(false)} />}
       {confirmPatch && (
@@ -366,10 +385,10 @@ export function Topbar({
           <span className="rs-bell-dot" />
         </button>
         <div className="rs-topbar-user">
-          <Avatar name="Mara Velez" initials="MV" color="#C2410C" size={28} />
+          <Avatar name="Admin" initials="AD" color="#52525B" size={28} />
           <div className="rs-topbar-user-meta">
-            <strong>Mara Velez</strong>
-            <span>Editor in chief</span>
+            <strong>Admin</strong>
+            <span>API key</span>
           </div>
           <Icons.chevDown size={15} />
         </div>
