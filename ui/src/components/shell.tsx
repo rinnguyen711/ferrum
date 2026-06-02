@@ -78,6 +78,7 @@ export function Sidebar({ section: _section }: { section: Section }) {
     { to: "/", label: "Home", icon: "home", end: true },
     { to: "/content", label: "Content Manager", icon: "doc" },
     { to: "/builder", label: "Content-Type Builder", icon: "layers" },
+    { to: "/media", label: "Media Library", icon: "image" },
   ];
   const isActive = (to: string, end?: boolean) =>
     end ? location.pathname === to : location.pathname.startsWith(to);
@@ -152,7 +153,7 @@ export function SecondaryPanel({
   section: Section;
   collection: string;
 }) {
-  if (section === "dashboard") return null;
+  if (section === "dashboard" || section === "media") return null;
 
   if (section === "content" || section === "builder") {
     const isBuilder = section === "builder";
