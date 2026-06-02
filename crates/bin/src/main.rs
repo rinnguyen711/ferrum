@@ -1,4 +1,5 @@
 mod config;
+mod seed;
 
 use anyhow::{Context, Result};
 use config::Config;
