@@ -510,13 +510,21 @@ select.rs-input { appearance: none; background-image: url("data:image/svg+xml,%3
   background: var(--surface);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  width: min(460px, 92vw);
+  border-radius: var(--r-xl);
+  width: 100%;
+  max-width: 540px;
+  max-height: 86vh;
   box-shadow: var(--shadow-lg);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: rs-pop .16s cubic-bezier(.2, .8, .3, 1);
 }
 .rs-modal-head {
-  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px;
   border-bottom: 1px solid var(--border);
 }
 .rs-modal-head h2 {
@@ -524,10 +532,8 @@ select.rs-input { appearance: none; background-image: url("data:image/svg+xml,%3
   font-size: 16px;
 }
 .rs-modal-body {
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+  padding: 22px 20px;
+  overflow-y: auto;
 }
 .rs-modal-foot {
   padding: 14px 20px;
