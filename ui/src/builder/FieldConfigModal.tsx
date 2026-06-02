@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icons } from "../components/icons";
 import type { FieldKind } from "../api/types";
 import { KINDS, type Cardinality, type DraftField } from "./draftModel";
@@ -30,11 +30,13 @@ export function FieldConfigModal({
   const [field, setField] = useState<DraftField>(initial);
   const [err, setErr] = useState<string | null>(null);
 
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onCloseRef.current(); };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, [onClose]);
+  }, []);
 
   const set = (patch: Partial<DraftField>) => setField((f) => ({ ...f, ...patch }));
 

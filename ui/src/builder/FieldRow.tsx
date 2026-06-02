@@ -23,8 +23,9 @@ const KIND_ICON: Record<FieldKind, keyof typeof Icons> = {
 function metaText(f: DraftField): string {
   switch (f.kind) {
     case "relation": {
-      const many = f.cardinality === "many_to_many";
-      const arrow = many ? "↔ many" : "↔";
+      const arrow =
+        f.cardinality === "many_to_many" ? "↔ many" :
+        f.cardinality === "one_to_one" ? "↔" : "→";
       return `${arrow} ${f.target || "—"}`;
     }
     case "enum":
