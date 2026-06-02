@@ -7,6 +7,8 @@ use crate::field::CoerceError;
 pub enum Error {
     #[error("unauthorized")]
     Unauthorized,
+    #[error("forbidden")]
+    Forbidden,
     #[error("not found")]
     NotFound,
     #[error("validation failed")]

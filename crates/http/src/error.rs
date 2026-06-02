@@ -17,7 +17,8 @@ impl From<Error> for ApiError {
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, code, message, details) = match self.0 {
-            Error::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized", "missing or invalid API key".to_string(), None),
+            Error::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized", "missing or invalid credentials".to_string(), None),
+            Error::Forbidden => (StatusCode::FORBIDDEN, "forbidden", "insufficient permissions".to_string(), None),
             Error::NotFound => (StatusCode::NOT_FOUND, "not_found", "resource not found".to_string(), None),
             Error::Validation(v) => {
                 let msg = v.message.clone().unwrap_or_else(|| "validation failed".into());
@@ -105,6 +106,15 @@ mod tests {
         let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(v["error"]["code"], "unauthorized");
+    }
+
+    #[tokio::test]
+    async fn forbidden_is_403() {
+        let resp = ApiError(Error::Forbidden).into_response();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(v["error"]["code"], "forbidden");
     }
 
     #[tokio::test]
