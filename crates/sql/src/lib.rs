@@ -11,8 +11,8 @@ pub use ddl::{
     drop_join_table, drop_table, DdlError,
 };
 pub use dml::{
-    count, delete, insert, render_where, select_by_id, select_list, update,
-    DmlError, SqlAndBinds,
+    count, delete, delete_links, insert, insert_links, render_where,
+    select_by_id, select_list, update, DmlError, SqlAndBinds,
 };
 pub use filter::{op_allows_kind, Condition, Filter, FilterValue, Op};
 pub use ident::{join_table_name, quote_ident, table_name, IdentError};

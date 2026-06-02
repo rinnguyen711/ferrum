@@ -1,8 +1,12 @@
-//! DML string + bind-plan builders. Always returns `(String, Vec<BoundValue>)`.
-//! HTTP layer translates `BoundValue` into sqlx binds.
+//! DML string + bind-plan builders. Most builders return `SqlAndBinds`
+//! (`(String, Vec<BoundValue>)`) and the HTTP layer translates `BoundValue`
+//! into sqlx binds via `bind_all`. The many-to-many link helpers
+//! (`insert_links`/`delete_links`) instead return plain `(String, Uuid, …)`
+//! because they bind a `uuid[]` array (`$2`) that `BoundValue` has no variant
+//! for; their callers bind directly with `sqlx::query(...).bind(...)`.
 
 use crate::filter::{Condition, Filter, FilterValue, Op};
-use crate::ident::{quote_ident, table_name, IdentError};
+use crate::ident::{join_table_name, quote_ident, table_name, IdentError};
 use crate::sort::Sort;
 use rustapi_core::{BoundValue, ContentType, FieldKind};
 use std::collections::BTreeMap;
@@ -81,6 +85,45 @@ pub fn delete(ct_name: &str, id: Uuid) -> Result<SqlAndBinds, DmlError> {
     let table = table_name(ct_name)?;
     let sql = format!("DELETE FROM {table} WHERE \"id\" = $1::uuid");
     Ok((sql, vec![BoundValue::Str(id.to_string())]))
+}
+
+/// Build the multi-row link INSERT for a many-to-many field. The caller binds
+/// `$1` = owner id (`Uuid`) and `$2` = target ids (`Vec<Uuid>`). `ON CONFLICT
+/// DO NOTHING` makes re-inserting an existing link a no-op (PK guards dupes).
+/// An empty `$2` array is a safe no-op (UNNEST yields zero rows), so callers
+/// may skip the call for empty input but are not required to.
+/// Does NOT return `SqlAndBinds`: `$2` is a `uuid[]` array bind with no
+/// `BoundValue` variant, so the caller binds `$1`/`$2` directly.
+pub fn insert_links(
+    owner_type: &str,
+    field: &str,
+    target_type: &str,
+    owner_id: Uuid,
+) -> Result<(String, Uuid), DmlError> {
+    let jt = join_table_name(owner_type, field)?;
+    let owner_col = quote_ident(&format!("{owner_type}_id"))?;
+    let target_col = quote_ident(&format!("{target_type}_id"))?;
+    let sql = format!(
+        "INSERT INTO {jt} ({owner_col}, {target_col}) \
+SELECT $1::uuid, x FROM UNNEST($2::uuid[]) AS x ON CONFLICT DO NOTHING"
+    );
+    Ok((sql, owner_id))
+}
+
+/// `DELETE FROM <join> WHERE <owner>_id = $1::uuid` — clears all links for an
+/// owner ahead of a replace-set re-insert. Caller binds `$1` = owner id.
+/// Does NOT return `SqlAndBinds`: same direct-bind rationale as `insert_links`
+/// (the pair are always called together; keeping the same return shape is
+/// consistent and avoids a `BoundValue::Uuid` round-trip for the owner id).
+pub fn delete_links(
+    owner_type: &str,
+    field: &str,
+    owner_id: Uuid,
+) -> Result<(String, Uuid), DmlError> {
+    let jt = join_table_name(owner_type, field)?;
+    let owner_col = quote_ident(&format!("{owner_type}_id"))?;
+    let sql = format!("DELETE FROM {jt} WHERE {owner_col} = $1::uuid");
+    Ok((sql, owner_id))
 }
 
 /// `SELECT * FROM ct_<name> WHERE id=$1`
@@ -346,6 +389,26 @@ mod tests {
             "SELECT count(*) FROM \"ct_post\" WHERE \"views\" <> $1::int8"
         );
         assert_eq!(binds, vec![BoundValue::I64(0)]);
+    }
+
+    #[test]
+    fn insert_links_uses_unnest() {
+        let owner = Uuid::nil();
+        let (sql, owner_bind) = insert_links("post", "tags", "tag", owner).unwrap();
+        assert_eq!(
+            sql,
+            "INSERT INTO \"j_post_tags\" (\"post_id\", \"tag_id\") \
+SELECT $1::uuid, x FROM UNNEST($2::uuid[]) AS x ON CONFLICT DO NOTHING"
+        );
+        assert_eq!(owner_bind, owner);
+    }
+
+    #[test]
+    fn delete_links_clears_owner() {
+        let owner = Uuid::nil();
+        let (sql, bind) = delete_links("post", "tags", owner).unwrap();
+        assert_eq!(sql, "DELETE FROM \"j_post_tags\" WHERE \"post_id\" = $1::uuid");
+        assert_eq!(bind, owner);
     }
 }
 
