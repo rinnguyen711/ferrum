@@ -1,11 +1,14 @@
-//! Phase 2.4 populate pass. Runs AFTER the main SELECT returns rows.
+//! Populate pass. Runs AFTER the main SELECT returns rows, enriching
+//! relation fields with their referenced objects. Four variants are supported:
 //!
-//! Forward populate (many_to_one): one batched SELECT per target type
-//! replaces the FK uuid string under the relation field's JSON key with
-//! the full target object.
-//!
-//! Inverse populate (virtual reverse of a registered relation): lands in
-//! Task 12 with a hard per-parent cap.
+//! * `Forward` — many_to_one or one_to_one (forward): FK lives on the owning
+//!   row; resolved to a single object.
+//! * `Inverse` — many_to_one reverse: one batched SELECT on the source table
+//!   returns a capped array of child objects per parent.
+//! * `InverseOne` — one_to_one reverse: FK is UNIQUE on the source table;
+//!   resolved to a single object or null rather than an array.
+//! * `Many` — many_to_many (forward or inverse): resolved via the join table
+//!   with a per-parent cap, returning a capped array of objects.
 
 use rustapi_core::{ContentType, Error, FieldKind, ValidationErrors};
 use rustapi_schema::SchemaRegistry;

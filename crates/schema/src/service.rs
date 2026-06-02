@@ -255,6 +255,13 @@ pub async fn validate_relation_cross_refs(
             )));
         }
 
+        if meta.cardinality == Cardinality::ManyToMany && meta.target == candidate_name {
+            return Err(Error::Validation(ValidationErrors::field(
+                &f.name,
+                "self-referential many_to_many is not supported",
+            )));
+        }
+
         if meta.target != candidate_name && registry.get(&meta.target).await.is_none() {
             return Err(Error::Validation(ValidationErrors::field(
                 &f.name,
@@ -516,5 +523,33 @@ mod tests {
         validate_relation_cross_refs(&reg, "post", &[f], false)
             .await
             .expect("primitive fields bypass cross-CT relation validation");
+    }
+
+    #[tokio::test]
+    async fn create_rejects_self_referential_m2m() {
+        let reg = SchemaRegistry::new();
+        let f = Field {
+            name: "friends".into(),
+            kind: FieldKind::Relation,
+            required: false,
+            unique: false,
+            default: json!(null),
+            max_length: None,
+            kind_meta: json!({"target":"person","cardinality":"many_to_many"}),
+        };
+        let err = validate_relation_cross_refs(&reg, "person", &[f], false)
+            .await
+            .unwrap_err();
+        assert_validation_msg(&err, "self-referential many_to_many");
+    }
+
+    #[tokio::test]
+    async fn create_allows_self_referential_many_to_one() {
+        // many_to_one self-ref stays allowed (regression guard).
+        let reg = SchemaRegistry::new();
+        let f = relation_field("parent", "node", None); // many_to_one helper
+        validate_relation_cross_refs(&reg, "node", &[f], false)
+            .await
+            .expect("many_to_one self-ref allowed");
     }
 }
