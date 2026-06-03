@@ -106,3 +106,21 @@ export interface LoginResponse {
 export interface SetupStatus {
   setup_required: boolean;
 }
+
+export interface User {
+  id: string;
+  email: string;
+  roles: string[];
+}
+
+export interface NewUser {
+  email: string;
+  password: string;
+  roles: string[];
+}
+
+export interface PatchUser {
+  email?: string;
+  password?: string;
+  roles?: string[];
+}

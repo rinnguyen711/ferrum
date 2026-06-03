@@ -6,8 +6,11 @@ import type {
   ListResponse,
   LoginResponse,
   NewContentType,
+  NewUser,
   PatchContentType,
+  PatchUser,
   SetupStatus,
+  User,
 } from "./types";
 
 export function listContentTypes(): Promise<ContentType[]> {
@@ -95,4 +98,20 @@ export function setup(email: string, password: string): Promise<void> {
 /** Exchange credentials for a JWT. */
 export function login(email: string, password: string): Promise<LoginResponse> {
   return apiFetch<LoginResponse>("/auth/login", { method: "POST", body: { email, password } });
+}
+
+export function listUsers(): Promise<User[]> {
+  return apiFetch<User[]>("/admin/users");
+}
+
+export function createUser(body: NewUser): Promise<User> {
+  return apiFetch<User>("/admin/users", { method: "POST", body });
+}
+
+export function updateUser(id: string, body: PatchUser): Promise<User> {
+  return apiFetch<User>(`/admin/users/${encodeURIComponent(id)}`, { method: "PATCH", body });
+}
+
+export function deleteUser(id: string): Promise<void> {
+  return apiFetch<void>(`/admin/users/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
