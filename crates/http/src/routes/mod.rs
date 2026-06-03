@@ -7,6 +7,7 @@ use std::path::Path;
 
 pub mod content;
 pub mod health;
+pub mod media;
 pub mod schema;
 pub mod users;
 
@@ -19,6 +20,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(schema::router())
         .merge(content::router())
         .merge(users::router())
+        .merge(media::router())
         .merge(auth::protected_router())
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
