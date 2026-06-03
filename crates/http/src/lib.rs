@@ -4,6 +4,7 @@ pub mod auth;
 pub mod entry;
 pub mod error;
 pub mod filter;
+pub mod media;
 pub mod middleware;
 pub mod populate;
 pub mod query;
