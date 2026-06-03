@@ -101,3 +101,25 @@ async fn asset_upload_and_raw_round_trip() {
         .send().await.unwrap();
     assert_eq!(gone.status(), 404);
 }
+
+#[tokio::test]
+async fn folders_scope_all_returns_full_tree() {
+    let app = TestApp::spawn().await;
+
+    let root: serde_json::Value = app.admin(app.client.post(app.url("/admin/media/folders")))
+        .json(&serde_json::json!({ "name": "covers" }))
+        .send().await.unwrap().json().await.unwrap();
+    let rid = root["id"].as_str().unwrap().to_string();
+
+    app.admin(app.client.post(app.url("/admin/media/folders")))
+        .json(&serde_json::json!({ "name": "2026", "parent_id": rid }))
+        .send().await.unwrap();
+
+    let level: serde_json::Value = app.admin(app.client.get(app.url("/admin/media/folders")))
+        .send().await.unwrap().json().await.unwrap();
+    assert_eq!(level.as_array().unwrap().len(), 1, "root level shows one folder");
+
+    let all: serde_json::Value = app.admin(app.client.get(app.url("/admin/media/folders?scope=all")))
+        .send().await.unwrap().json().await.unwrap();
+    assert_eq!(all.as_array().unwrap().len(), 2, "scope=all shows every folder");
+}

@@ -34,6 +34,16 @@ pub async fn list_folders(pool: &PgPool, parent_id: Option<Uuid>) -> Result<Vec<
     Ok(rows.into_iter().map(folder_from).collect())
 }
 
+/// Every folder, name-sorted, ignoring hierarchy. Backs the UI tree builder.
+pub async fn list_all_folders(pool: &PgPool) -> Result<Vec<FolderRow>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, FolderTuple>(&format!(
+        "SELECT {FOLDER_COLS} FROM _media_folders ORDER BY name"
+    ))
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(folder_from).collect())
+}
+
 pub async fn create_folder(pool: &PgPool, parent_id: Option<Uuid>, name: &str) -> Result<FolderRow, sqlx::Error> {
     let t = sqlx::query_as::<_, FolderTuple>(&format!(
         "INSERT INTO _media_folders (parent_id, name) VALUES ($1, $2) RETURNING {FOLDER_COLS}"

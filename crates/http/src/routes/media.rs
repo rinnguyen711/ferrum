@@ -62,7 +62,10 @@ impl From<store::FolderRow> for FolderView {
 }
 
 #[derive(Deserialize)]
-struct FolderQuery { parent_id: Option<Uuid> }
+struct FolderQuery {
+    parent_id: Option<Uuid>,
+    scope: Option<String>,
+}
 
 async fn list_folders(
     State(state): State<AppState>,
@@ -70,7 +73,11 @@ async fn list_folders(
     Query(q): Query<FolderQuery>,
 ) -> Result<Json<Vec<FolderView>>, ApiError> {
     ensure(&state, &principal, Action::ContentRead).await?;
-    let rows = store::list_folders(&state.pool, q.parent_id).await.map_err(internal)?;
+    let rows = if q.scope.as_deref() == Some("all") {
+        store::list_all_folders(&state.pool).await.map_err(internal)?
+    } else {
+        store::list_folders(&state.pool, q.parent_id).await.map_err(internal)?
+    };
     Ok(Json(rows.into_iter().map(FolderView::from).collect()))
 }
 
