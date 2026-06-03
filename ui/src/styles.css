@@ -594,6 +594,10 @@ select.rs-input { appearance: none; background-image: url("data:image/svg+xml,%3
 .rs-modal-x:hover { background: var(--surface-3); color: var(--text); }
 .rs-back--sm { width: 34px; height: 34px; flex-shrink: 0; }
 .rs-modal-tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--border); margin: 14px -4px 0 22px; }
+.rs-modal-tab { border: none; background: none; padding: 0 0 10px; font-size: 13.5px; font-weight: 600; color: var(--text-muted); border-bottom: 2px solid transparent; margin-bottom: -1px; transition: .14s; }
+.rs-modal-tab:hover { color: var(--text); }
+.rs-modal-tab.is-on { color: var(--accent-text); border-bottom-color: var(--accent); }
+.rs-modal-ico { width: 34px; height: 34px; border-radius: var(--r-md); background: var(--accent-soft); color: var(--accent-text); display: grid; place-items: center; flex-shrink: 0; }
 
 /* API id preview card */
 .rs-apiid-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-md); padding: 14px 16px; }
