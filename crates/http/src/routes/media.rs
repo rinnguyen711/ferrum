@@ -13,6 +13,9 @@ use rustapi_core::{Action, Error, Principal};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+// Task 13 imports
+use rustapi_media::ProviderDescriptor;
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/admin/media/providers", get(list_providers))
@@ -136,11 +139,136 @@ where
     serde::Deserialize::deserialize(de).map(Some)
 }
 
-// ---- STUBS replaced in tasks 13–14 ----
-async fn list_providers() -> Result<Json<serde_json::Value>, ApiError> { Ok(Json(serde_json::json!([]))) }
-async fn get_settings() -> Result<Json<serde_json::Value>, ApiError> { Ok(Json(serde_json::json!(null))) }
-async fn put_settings() -> Result<StatusCode, ApiError> { Ok(StatusCode::NOT_IMPLEMENTED) }
-async fn test_settings() -> Result<StatusCode, ApiError> { Ok(StatusCode::NOT_IMPLEMENTED) }
+// ---- Task 13: settings + providers ----
+
+async fn list_providers(
+    State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
+) -> Result<Json<Vec<ProviderDescriptor>>, ApiError> {
+    ensure(&state, &principal, Action::ContentRead).await?;
+    Ok(Json(rustapi_media::descriptors()))
+}
+
+const MASK: &str = "••••";
+
+#[derive(Serialize)]
+struct SettingsView { provider: String, config: serde_json::Value }
+
+async fn get_settings(
+    State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
+) -> Result<Json<Option<SettingsView>>, ApiError> {
+    ensure(&state, &principal, Action::ContentRead).await?;
+    let row = store::get_settings(&state.pool).await.map_err(internal)?;
+    let view = row.map(|r| {
+        let mut cfg = r.config.clone();
+        if let Some(obj) = cfg.as_object_mut() {
+            for name in rustapi_media::secret_fields(&r.provider) {
+                if obj.contains_key(name) {
+                    obj.insert(name.to_string(), serde_json::Value::String(MASK.into()));
+                }
+            }
+        }
+        SettingsView { provider: r.provider, config: cfg }
+    });
+    Ok(Json(view))
+}
+
+#[derive(Deserialize)]
+struct SettingsBody { provider: String, config: serde_json::Value }
+
+/// Encrypt secret fields. If a secret equals the mask (or absent), reuse the
+/// previously-stored encrypted value instead of re-encrypting.
+fn prepare_config_for_save(
+    state: &AppState,
+    provider: &str,
+    mut config: serde_json::Value,
+    previous: Option<&store::SettingsRow>,
+) -> Result<serde_json::Value, ApiError> {
+    let secrets = rustapi_media::secret_fields(provider);
+    if secrets.is_empty() {
+        return Ok(config);
+    }
+    let key = state.secret_key.ok_or_else(|| {
+        ApiError(Error::Conflict("RUSTAPI_SECRET_KEY not set; cannot store provider secrets".into()))
+    })?;
+    if let Some(obj) = config.as_object_mut() {
+        for name in secrets {
+            match obj.get(name).and_then(|v| v.as_str()) {
+                Some(MASK) | None => {
+                    if let Some(prev) = previous.and_then(|p| {
+                        if p.provider == provider { p.config.get(name).cloned() } else { None }
+                    }) {
+                        obj.insert(name.to_string(), prev);
+                    }
+                }
+                Some(plain) => {
+                    let enc = rustapi_media::secret::encrypt(&key, plain)
+                        .map_err(|_| internal(anyhow::anyhow!("encrypt failed")))?;
+                    obj.insert(name.to_string(), serde_json::Value::String(enc));
+                }
+            }
+        }
+    }
+    Ok(config)
+}
+
+async fn put_settings(
+    State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
+    Json(body): Json<SettingsBody>,
+) -> Result<StatusCode, ApiError> {
+    ensure(&state, &principal, Action::ContentWrite).await?;
+    rustapi_media::validate(&body.provider, &body.config)
+        .map_err(|e| ApiError(Error::Validation(rustapi_core::ValidationErrors::field("config", e.to_string()))))?;
+
+    let previous = store::get_settings(&state.pool).await.map_err(internal)?;
+    let to_store = prepare_config_for_save(&state, &body.provider, body.config.clone(), previous.as_ref())?;
+    store::put_settings(&state.pool, &body.provider, &to_store).await.map_err(internal)?;
+
+    let mut live_cfg = to_store.clone();
+    if let Some(key) = &state.secret_key {
+        crate::media::boot::decrypt_secrets(&body.provider, &mut live_cfg, key);
+    }
+    let provider = rustapi_media::build(&body.provider, &live_cfg)
+        .map_err(|e| ApiError(Error::Unsupported(e.to_string())))?;
+    *state.storage.write().await = std::sync::Arc::from(provider);
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn test_settings(
+    State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
+    Json(body): Json<SettingsBody>,
+) -> Result<StatusCode, ApiError> {
+    ensure(&state, &principal, Action::ContentWrite).await?;
+    rustapi_media::validate(&body.provider, &body.config)
+        .map_err(|e| ApiError(Error::Validation(rustapi_core::ValidationErrors::field("config", e.to_string()))))?;
+    let mut cfg = body.config.clone();
+    if let Some(obj) = cfg.as_object_mut() {
+        let prev = store::get_settings(&state.pool).await.map_err(internal)?;
+        for name in rustapi_media::secret_fields(&body.provider) {
+            if obj.get(name).and_then(|v| v.as_str()) == Some(MASK) {
+                if let (Some(prev), Some(key)) = (&prev, &state.secret_key) {
+                    if prev.provider == body.provider {
+                        if let Some(serde_json::Value::String(enc)) = prev.config.get(name) {
+                            if let Ok(plain) = rustapi_media::secret::decrypt(key, enc) {
+                                obj.insert(name.to_string(), serde_json::Value::String(plain));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let provider = rustapi_media::build(&body.provider, &cfg)
+        .map_err(|e| ApiError(Error::Unsupported(e.to_string())))?;
+    provider.test().await
+        .map_err(|e| ApiError(Error::Conflict(format!("connection test failed: {e}"))))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ---- STUBS replaced in task 14 ----
 async fn list_assets() -> Result<Json<serde_json::Value>, ApiError> { Ok(Json(serde_json::json!([]))) }
 async fn upload_asset() -> Result<StatusCode, ApiError> { Ok(StatusCode::NOT_IMPLEMENTED) }
 async fn get_asset() -> Result<StatusCode, ApiError> { Ok(StatusCode::NOT_IMPLEMENTED) }
