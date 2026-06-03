@@ -12,7 +12,7 @@ use axum::Router;
 /// Unauthenticated auth routes (setup, login).
 pub fn public_router() -> Router<AppState> {
     Router::new()
-        .route("/auth/setup", post(handlers::setup))
+        .route("/auth/setup", get(handlers::setup_status).post(handlers::setup))
         .route("/auth/login", post(handlers::login))
 }
 

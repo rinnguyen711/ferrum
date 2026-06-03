@@ -23,6 +23,11 @@ pub struct UserView {
     pub roles: Vec<String>,
 }
 
+#[derive(Serialize)]
+pub struct SetupStatus {
+    pub setup_required: bool,
+}
+
 fn validate_password(pw: &str) -> Result<(), ApiError> {
     if pw.len() < 8 {
         return Err(ApiError(Error::Validation(ValidationErrors::field(
@@ -97,6 +102,14 @@ pub async fn login(
 pub async fn me(Extension(principal): Extension<Principal>) -> Json<UserView> {
     let Principal::User { id, email, roles } = principal;
     Json(UserView { id, email, roles })
+}
+
+/// GET /auth/setup — public. Reports whether first-run setup is still open.
+pub async fn setup_status(State(state): State<AppState>) -> Result<Json<SetupStatus>, ApiError> {
+    let exists = users::any_users(&state.pool).await.map_err(internal)?;
+    Ok(Json(SetupStatus {
+        setup_required: !exists,
+    }))
 }
 
 /// A precomputed Argon2id hash used for constant-ish timing on the
