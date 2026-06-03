@@ -823,3 +823,8 @@ select.rs-input { appearance: none; background-image: url("data:image/svg+xml,%3
 .rs-input--sm { height: 30px; padding: 0 8px; font-size: 12.5px; }
 .rs-asset-detail { display: block; }
 .rs-asset-detail-preview { height: 220px; width: 100%; border-radius: var(--r-md); }
+
+/* Media settings */
+.rs-settings-card { max-width: 560px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+.rs-field-error { display: block; margin-top: 4px; font-size: 12px; color: var(--danger, #c0392b); }
+.rs-settings-ok { margin-top: 4px; padding: 8px 12px; border-radius: 8px; font-size: 13px; color: #1a7f4b; background: color-mix(in srgb, #1a7f4b 12%, transparent); }
