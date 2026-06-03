@@ -38,15 +38,13 @@ pub async fn setup(
     State(state): State<AppState>,
     Json(body): Json<Credentials>,
 ) -> Result<(StatusCode, Json<UserView>), ApiError> {
-    if users::count(&state.pool).await.map_err(internal)? > 0 {
-        return Err(ApiError(Error::Conflict("setup already completed".into())));
-    }
     validate_password(&body.password)?;
     let hash = password::hash(&body.password).map_err(anyhow_internal)?;
     let roles = vec!["admin".to_string()];
-    let user = users::insert(&state.pool, &body.email, &hash, &roles)
+    let user = users::insert_first_admin(&state.pool, &body.email, &hash, &roles)
         .await
-        .map_err(map_insert_err)?;
+        .map_err(map_insert_err)?
+        .ok_or_else(|| ApiError(Error::Conflict("setup already completed".into())))?;
     Ok((
         StatusCode::CREATED,
         Json(UserView {

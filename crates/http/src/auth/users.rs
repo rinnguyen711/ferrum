@@ -11,12 +11,33 @@ pub struct UserRow {
     pub roles: Vec<String>,
 }
 
-/// Count users. Used by the self-closing setup endpoint.
-pub async fn count(pool: &PgPool) -> Result<i64, sqlx::Error> {
-    let row: (i64,) = sqlx::query_as("SELECT count(*) FROM _users")
-        .fetch_one(pool)
-        .await?;
-    Ok(row.0)
+/// Atomically create the first admin: inserts only when the table is empty.
+/// Returns `Ok(None)` when a user already exists (setup is closed). The
+/// `WHERE NOT EXISTS` guard runs in the same statement as the insert, so two
+/// concurrent first-run requests cannot both succeed (the second sees the
+/// first's row and inserts zero rows).
+pub async fn insert_first_admin(
+    pool: &PgPool,
+    email: &str,
+    password_hash: &str,
+    roles: &[String],
+) -> Result<Option<UserRow>, sqlx::Error> {
+    let row = sqlx::query_as::<_, (Uuid, String, String, Vec<String>)>(
+        "INSERT INTO _users (email, password_hash, roles) \
+         SELECT $1, $2, $3 WHERE NOT EXISTS (SELECT 1 FROM _users) \
+         RETURNING id, email, password_hash, roles",
+    )
+    .bind(email)
+    .bind(password_hash)
+    .bind(roles)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|(id, email, password_hash, roles)| UserRow {
+        id,
+        email,
+        password_hash,
+        roles,
+    }))
 }
 
 /// Look up by case-insensitive email. `None` if absent.
@@ -34,30 +55,5 @@ pub async fn find_by_email(pool: &PgPool, email: &str) -> Result<Option<UserRow>
             password_hash,
             roles,
         })
-    })
-}
-
-/// Insert a new user. Returns the created row. Caller pre-hashes the password.
-pub async fn insert(
-    pool: &PgPool,
-    email: &str,
-    password_hash: &str,
-    roles: &[String],
-) -> Result<UserRow, sqlx::Error> {
-    let (id, email, password_hash, roles) =
-        sqlx::query_as::<_, (Uuid, String, String, Vec<String>)>(
-            "INSERT INTO _users (email, password_hash, roles) VALUES ($1, $2, $3) \
-             RETURNING id, email, password_hash, roles",
-        )
-        .bind(email)
-        .bind(password_hash)
-        .bind(roles)
-        .fetch_one(pool)
-        .await?;
-    Ok(UserRow {
-        id,
-        email,
-        password_hash,
-        roles,
     })
 }

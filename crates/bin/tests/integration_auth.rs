@@ -18,6 +18,40 @@ async fn setup_is_self_closing() {
 }
 
 #[tokio::test]
+async fn concurrent_setup_creates_one_admin() {
+    let app = TestApp::spawn().await;
+    // spawn() already created the first admin. Fire several concurrent setups
+    // with distinct emails; all must 409 (the atomic insert lets none through).
+    let mut handles = Vec::new();
+    for i in 0..5 {
+        let client = app.client.clone();
+        let url = app.url("/auth/setup");
+        handles.push(tokio::spawn(async move {
+            client
+                .post(url)
+                .json(&serde_json::json!({
+                    "email": format!("race{i}@example.test"),
+                    "password": "race-password-123"
+                }))
+                .send()
+                .await
+                .unwrap()
+                .status()
+                .as_u16()
+        }));
+    }
+    for h in handles {
+        assert_eq!(h.await.unwrap(), 409);
+    }
+    // Exactly one user total (the spawn() admin).
+    let (n,): (i64,) = sqlx::query_as("SELECT count(*) FROM _users")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    assert_eq!(n, 1);
+}
+
+#[tokio::test]
 async fn login_good_credentials() {
     let app = TestApp::spawn().await;
     let resp = app
