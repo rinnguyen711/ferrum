@@ -1,13 +1,18 @@
-import { apiFetch } from "./client";
+import { apiFetch, apiUpload, fetchBlob } from "./client";
 import type {
   ContentType,
   Entry,
   Health,
   ListResponse,
   LoginResponse,
+  MediaAsset,
+  MediaFolder,
   NewContentType,
+  NewFolder,
   NewUser,
+  PatchAsset,
   PatchContentType,
+  PatchFolder,
   PatchUser,
   SetupStatus,
   User,
@@ -114,4 +119,50 @@ export function updateUser(id: string, body: PatchUser): Promise<User> {
 
 export function deleteUser(id: string): Promise<void> {
   return apiFetch<void>(`/admin/users/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function listFolders(opts: { parentId?: string | null; all?: boolean } = {}): Promise<MediaFolder[]> {
+  if (opts.all) return apiFetch<MediaFolder[]>("/admin/media/folders?scope=all");
+  const q = opts.parentId != null ? `?parent_id=${encodeURIComponent(opts.parentId)}` : "";
+  return apiFetch<MediaFolder[]>(`/admin/media/folders${q}`);
+}
+
+export function createFolder(body: NewFolder): Promise<MediaFolder> {
+  return apiFetch<MediaFolder>("/admin/media/folders", { method: "POST", body });
+}
+
+export function updateFolder(id: string, body: PatchFolder): Promise<MediaFolder> {
+  return apiFetch<MediaFolder>(`/admin/media/folders/${id}`, { method: "PATCH", body });
+}
+
+export function deleteFolder(id: string): Promise<void> {
+  return apiFetch<void>(`/admin/media/folders/${id}`, { method: "DELETE" });
+}
+
+export function listAssets(folderId?: string | null): Promise<MediaAsset[]> {
+  const q = folderId != null ? `?folder_id=${encodeURIComponent(folderId)}` : "";
+  return apiFetch<MediaAsset[]>(`/admin/media/assets${q}`);
+}
+
+export function getAsset(id: string): Promise<MediaAsset> {
+  return apiFetch<MediaAsset>(`/admin/media/assets/${id}`);
+}
+
+export function updateAsset(id: string, body: PatchAsset): Promise<MediaAsset> {
+  return apiFetch<MediaAsset>(`/admin/media/assets/${id}`, { method: "PATCH", body });
+}
+
+export function deleteAsset(id: string): Promise<void> {
+  return apiFetch<void>(`/admin/media/assets/${id}`, { method: "DELETE" });
+}
+
+export function uploadAsset(file: File, folderId?: string | null): Promise<MediaAsset> {
+  const form = new FormData();
+  form.append("file", file);
+  if (folderId != null) form.append("folder_id", folderId);
+  return apiUpload<MediaAsset>("/admin/media/assets", form);
+}
+
+export function fetchAssetBlob(id: string): Promise<Blob> {
+  return fetchBlob(`/admin/media/assets/${id}/raw`);
 }

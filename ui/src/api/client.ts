@@ -94,3 +94,58 @@ export async function apiFetch<T>(path: string, opts: FetchOpts = {}): Promise<T
 
   return payload as T;
 }
+
+/** POST multipart FormData. Browser sets Content-Type (with boundary). */
+export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
+  const token = getToken();
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  let resp: Response;
+  try {
+    resp = await fetch(path, { method: "POST", headers, body: form });
+  } catch {
+    throw new ApiError(0, "network", "Can't reach the API.");
+  }
+
+  if (resp.status === 401) {
+    if (onAuthError) onAuthError();
+    throw new AuthError("Invalid or missing credentials.");
+  }
+  if (resp.status === 204) return undefined as T;
+
+  let payload: unknown = null;
+  const text = await resp.text();
+  if (text) { try { payload = JSON.parse(text); } catch { payload = null; } }
+
+  if (!resp.ok) {
+    type WireField = { field: string; reason?: string; message?: string };
+    const env = (payload as { error?: { code?: string; message?: string; details?: { fields?: WireField[] } } } | null)?.error;
+    const code = env?.code ?? "error";
+    const message = env?.message ?? `Request failed (${resp.status}).`;
+    const fieldErrors: FieldError[] = (env?.details?.fields ?? []).map((f) => ({
+      field: f.field, message: f.reason ?? f.message,
+    }));
+    throw new ApiError(resp.status, code, message, fieldErrors);
+  }
+  return payload as T;
+}
+
+/** Authed GET returning the raw bytes as a Blob (for thumbnails/preview). */
+export async function fetchBlob(path: string): Promise<Blob> {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  let resp: Response;
+  try {
+    resp = await fetch(path, { headers });
+  } catch {
+    throw new ApiError(0, "network", "Can't reach the API.");
+  }
+  if (resp.status === 401) {
+    if (onAuthError) onAuthError();
+    throw new AuthError("Invalid or missing credentials.");
+  }
+  if (!resp.ok) throw new ApiError(resp.status, "error", `Request failed (${resp.status}).`);
+  return resp.blob();
+}
