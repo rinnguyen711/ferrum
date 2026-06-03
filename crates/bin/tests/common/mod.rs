@@ -1,7 +1,7 @@
 //! Shared integration-test plumbing. Spins a real Postgres via testcontainers
 //! and the rustapi router in-process, hitting it via reqwest.
 
-use rustapi_http::{build_router, AlwaysAllow, AppConfig, AppState, NoopSink};
+use rustapi_http::{build_router, AppConfig, AppState, NoopSink, RoleAuthz};
 use rustapi_schema::{SchemaRegistry, SchemaService, MIGRATOR};
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -10,7 +10,11 @@ use testcontainers::ContainerAsync;
 use testcontainers_modules::postgres::Postgres as PgImage;
 
 #[allow(dead_code)]
-pub const ADMIN_KEY: &str = "test-admin-key-with-32-characters!!";
+pub const JWT_SECRET: &str = "test-jwt-secret-with-32-characters!!";
+#[allow(dead_code)]
+pub const TEST_EMAIL: &str = "admin@example.test";
+#[allow(dead_code)]
+pub const TEST_PASSWORD: &str = "admin-password-123";
 
 #[allow(dead_code)]
 pub struct TestApp {
@@ -20,6 +24,8 @@ pub struct TestApp {
     /// The same SchemaService (and registry) the in-process router uses, so a
     /// test can mutate schema state and have the router observe it.
     pub schemas: SchemaService,
+    /// Bearer token for the seeded admin user (set by `spawn`).
+    pub token: String,
     _pg: ContainerAsync<PgImage>,
     _shutdown: tokio::sync::oneshot::Sender<()>,
 }
@@ -46,10 +52,11 @@ impl TestApp {
         let state = AppState {
             pool: pool.clone(),
             schemas: schemas.clone(),
-            authz: Arc::new(AlwaysAllow),
+            authz: Arc::new(RoleAuthz),
             events: Arc::new(NoopSink),
             config: AppConfig {
-                admin_key: ADMIN_KEY.into(),
+                jwt_secret: JWT_SECRET.into(),
+                jwt_ttl_secs: 3600,
                 page_size_max: 100,
             },
         };
@@ -66,11 +73,39 @@ impl TestApp {
             }
         });
 
+        let base_url = format!("http://{addr}");
+        let client = reqwest::Client::new();
+
+        // First-run setup → creates the admin user.
+        let resp = client
+            .post(format!("{base_url}/auth/setup"))
+            .json(&serde_json::json!({ "email": TEST_EMAIL, "password": TEST_PASSWORD }))
+            .send()
+            .await
+            .expect("setup request");
+        assert_eq!(resp.status(), 201, "setup should create first admin");
+
+        // Login → bearer token.
+        let login: serde_json::Value = client
+            .post(format!("{base_url}/auth/login"))
+            .json(&serde_json::json!({ "email": TEST_EMAIL, "password": TEST_PASSWORD }))
+            .send()
+            .await
+            .expect("login request")
+            .json()
+            .await
+            .expect("login json");
+        let token = login["token"]
+            .as_str()
+            .expect("token in login response")
+            .to_string();
+
         Self {
-            base_url: format!("http://{addr}"),
+            base_url,
             pool,
-            client: reqwest::Client::new(),
+            client,
             schemas,
+            token,
             _pg: pg,
             _shutdown: tx,
         }
@@ -80,7 +115,9 @@ impl TestApp {
         format!("{}{}", self.base_url, path)
     }
 
+    /// Attach the seeded admin's bearer token. (Method name kept as `admin`
+    /// so existing call sites need no change.)
     pub fn admin(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-        builder.header("x-api-key", ADMIN_KEY)
+        builder.header("authorization", format!("Bearer {}", self.token))
     }
 }
