@@ -10,6 +10,7 @@ function sectionFromPath(pathname: string): Section {
   if (pathname.startsWith("/content")) return "content";
   if (pathname.startsWith("/builder")) return "builder";
   if (pathname.startsWith("/users")) return "users";
+  if (pathname.startsWith("/roles")) return "users";
   if (pathname.startsWith("/settings")) return "settings";
   return "dashboard";
 }
@@ -30,7 +31,8 @@ export function Layout({
   const editorMatch = useMatch("/content/:type/:id");
   const userNewMatch = useMatch("/users/new");
   const userEditMatch = useMatch("/users/:id");
-  const showEditorBare = Boolean(editorMatch || userNewMatch || userEditMatch);
+  const roleDetailMatch = useMatch("/roles/:key");
+  const showEditorBare = Boolean(editorMatch || userNewMatch || userEditMatch || roleDetailMatch);
 
   const navigate = useNavigate();
   const email = getClaims()?.email ?? null;

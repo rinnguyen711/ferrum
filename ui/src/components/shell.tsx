@@ -56,18 +56,13 @@ export function StatusBadge({ status }: { status: Status }) {
 function RailLogo() {
   return (
     <div className="rs-logo" title="Rustapi">
-      <svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-        <path
-          d="M12 2.2 21 7v10l-9 4.8L3 17V7l9-4.8Z"
-          stroke="currentColor"
-          strokeWidth={1.6}
-          strokeLinejoin="round"
-        />
-        <path
-          d="M9 16V8.2h3.6c1.6 0 2.6.9 2.6 2.3 0 1.1-.6 1.9-1.6 2.2L15.4 16h-1.9l-1.5-2.9H10.7V16H9Zm1.7-4.2h1.7c.8 0 1.3-.4 1.3-1.1 0-.7-.5-1.1-1.3-1.1H10.7v2.2Z"
-          fill="currentColor"
-        />
-      </svg>
+      <img
+        src={`${import.meta.env.BASE_URL}logo.png`}
+        alt="Rustapi"
+        width={26}
+        height={26}
+        style={{ display: "block" }}
+      />
     </div>
   );
 }
@@ -214,6 +209,7 @@ function UsersPanel() {
   const location = useLocation();
   const builder = useBuilderDraft();
   const onUsers = location.pathname.startsWith("/users");
+  const onRoles = location.pathname.startsWith("/roles");
   return (
     <aside className="rs-panel">
       <div className="rs-panel-head">
@@ -230,7 +226,13 @@ function UsersPanel() {
           >
             Users
           </button>
-          {["Roles", "Audit logs", "Single sign-on"].map((it) => (
+          <button
+            className={"rs-panel-item" + (onRoles ? " is-active" : "")}
+            onClick={() => builder.guardedNavigate("/roles")}
+          >
+            Roles
+          </button>
+          {["Audit logs", "Single sign-on"].map((it) => (
             <button key={it} className="rs-panel-item" disabled title="Coming soon">
               {it}
             </button>

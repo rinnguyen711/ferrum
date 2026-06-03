@@ -17,6 +17,8 @@ import { Login } from "./screens/Login";
 import { MediaLibrary } from "./screens/MediaLibrary";
 import { Users } from "./screens/Users";
 import { UserEditor } from "./screens/UserEditor";
+import { Roles } from "./screens/Roles";
+import { RoleDetail } from "./screens/RoleDetail";
 import { getToken, clearToken } from "./auth";
 import { setAuthErrorHandler } from "./api/client";
 
@@ -104,6 +106,8 @@ export default function App() {
           <Route path="users" element={<Users />} />
           <Route path="users/new" element={<UserEditor />} />
           <Route path="users/:id" element={<UserEditor />} />
+          <Route path="roles" element={<Roles />} />
+          <Route path="roles/:key" element={<RoleDetail />} />
           <Route path="media" element={<MediaLibrary />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
