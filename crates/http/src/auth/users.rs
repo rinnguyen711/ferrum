@@ -11,6 +11,14 @@ pub struct UserRow {
     pub roles: Vec<String>,
 }
 
+/// True if any user exists. Backs the public setup-status endpoint.
+pub async fn any_users(pool: &PgPool) -> Result<bool, sqlx::Error> {
+    let (exists,): (bool,) = sqlx::query_as("SELECT EXISTS (SELECT 1 FROM _users)")
+        .fetch_one(pool)
+        .await?;
+    Ok(exists)
+}
+
 /// Atomically create the first admin: inserts only when the table is empty.
 /// Returns `Ok(None)` when a user already exists (setup is closed). The
 /// `WHERE NOT EXISTS` guard runs in the same statement as the insert, so two
