@@ -75,15 +75,18 @@ function RailLogo() {
 export function Sidebar({ section: _section }: { section: Section }) {
   const location = useLocation();
   const builder = useBuilderDraft();
+  const isAdmin = (getClaims()?.roles ?? []).includes("admin");
   const items: { to: string; label: string; icon: IconKey; end?: boolean }[] = [
     { to: "/", label: "Home", icon: "home", end: true },
     { to: "/content", label: "Content Manager", icon: "doc" },
     { to: "/builder", label: "Content-Type Builder", icon: "layers" },
     { to: "/media", label: "Media Library", icon: "image" },
+    ...(isAdmin
+      ? [{ to: "/users", label: "Users & Permissions", icon: "user" as IconKey }]
+      : []),
   ];
   const isActive = (to: string, end?: boolean) =>
     end ? location.pathname === to : location.pathname.startsWith(to);
-  const isAdmin = (getClaims()?.roles ?? []).includes("admin");
   return (
     <nav className="rs-rail">
       <RailLogo />
@@ -103,15 +106,6 @@ export function Sidebar({ section: _section }: { section: Section }) {
         })}
       </div>
       <div className="rs-rail-foot">
-        {isAdmin && (
-          <button
-            data-tip="Users"
-            className={"rs-rail-btn" + (location.pathname.startsWith("/users") ? " is-active" : "")}
-            onClick={() => builder.guardedNavigate("/users")}
-          >
-            <Icons.user size={20} />
-          </button>
-        )}
         <button
           data-tip="Settings"
           className={"rs-rail-btn" + (location.pathname.startsWith("/settings") ? " is-active" : "")}
@@ -172,6 +166,10 @@ export function SecondaryPanel({
     return <TypePanel base={base} isBuilder={isBuilder} collection={collection} />;
   }
 
+  if (section === "users") {
+    return <UsersPanel />;
+  }
+
   if (section === "settings") {
     const groups = [
       { label: "Global settings", items: ["Overview", "API tokens", "Webhooks", "Internationalization"] },
@@ -208,6 +206,39 @@ export function SecondaryPanel({
     );
   }
   return null;
+}
+
+/** Secondary panel for the Users & Permissions section. Users is live; the
+ * rest are placeholders for upcoming slices (roles, audit, SSO). */
+function UsersPanel() {
+  const location = useLocation();
+  const builder = useBuilderDraft();
+  const onUsers = location.pathname.startsWith("/users");
+  return (
+    <aside className="rs-panel">
+      <div className="rs-panel-head">
+        <h2>Users &amp; Permissions</h2>
+      </div>
+      <div className="rs-panel-scroll">
+        <div className="rs-panel-group">
+          <div className="rs-panel-grouphead">
+            <span>Access</span>
+          </div>
+          <button
+            className={"rs-panel-item" + (onUsers ? " is-active" : "")}
+            onClick={() => builder.guardedNavigate("/users")}
+          >
+            Users
+          </button>
+          {["Roles", "Audit logs", "Single sign-on"].map((it) => (
+            <button key={it} className="rs-panel-item" disabled title="Coming soon">
+              {it}
+            </button>
+          ))}
+        </div>
+      </div>
+    </aside>
+  );
 }
 
 function TypePanel({

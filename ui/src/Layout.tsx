@@ -3,12 +3,13 @@ import { Sidebar, SecondaryPanel, Topbar } from "./components/shell";
 import { BuilderDraftProvider } from "./builder/BuilderDraftContext";
 import { getClaims, clearToken } from "./auth";
 
-export type Section = "dashboard" | "content" | "builder" | "settings" | "media";
+export type Section = "dashboard" | "content" | "builder" | "settings" | "media" | "users";
 
 function sectionFromPath(pathname: string): Section {
   if (pathname.startsWith("/media")) return "media";
   if (pathname.startsWith("/content")) return "content";
   if (pathname.startsWith("/builder")) return "builder";
+  if (pathname.startsWith("/users")) return "users";
   if (pathname.startsWith("/settings")) return "settings";
   return "dashboard";
 }
@@ -42,6 +43,7 @@ export function Layout({
   else if (section === "builder") crumbs = ["Content-Type Builder", collection];
   else if (section === "settings") crumbs = ["Settings"];
   else if (section === "media") crumbs = ["Media Library"];
+  else if (section === "users") crumbs = ["Users & Permissions"];
 
   return (
     <BuilderDraftProvider>
