@@ -121,6 +121,18 @@ export const Icons = {
   moon: (p: IconProps) => (
     <Ic {...p} d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />
   ),
+  folder: (p: IconProps) => (
+    <Ic {...p} d={<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/>} />
+  ),
+  folderPlus: (p: IconProps) => (
+    <Ic {...p} d={<g><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/><path d="M12 11v4M10 13h4"/></g>} />
+  ),
+  folderInput: (p: IconProps) => (
+    <Ic {...p} d={<g><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/><path d="M12 11v5M9.5 13.5 12 16l2.5-2.5"/></g>} />
+  ),
+  upload: (p: IconProps) => (
+    <Ic {...p} d={<g><path d="M12 16V4M8 8l4-4 4 4"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></g>} />
+  ),
 } as const;
 
 export type IconKey = keyof typeof Icons;
