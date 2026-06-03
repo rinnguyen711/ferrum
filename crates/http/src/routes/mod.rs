@@ -8,6 +8,7 @@ use std::path::Path;
 pub mod content;
 pub mod health;
 pub mod schema;
+pub mod users;
 
 pub fn build_router(state: AppState) -> Router {
     let public = Router::new()
@@ -17,6 +18,7 @@ pub fn build_router(state: AppState) -> Router {
     let protected = Router::new()
         .merge(schema::router())
         .merge(content::router())
+        .merge(users::router())
         .merge(auth::protected_router())
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
