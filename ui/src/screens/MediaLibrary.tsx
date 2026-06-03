@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Icons } from "../components/icons";
 import {
   listFolders, createFolder, updateFolder, deleteFolder,
@@ -27,6 +28,7 @@ export function MediaLibrary() {
   const [detail, setDetail] = useState<MediaAsset | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const navigate = useNavigate();
   const dragIds = useRef<string[]>([]);
 
   const reloadFolders = useCallback(async () => {
@@ -142,6 +144,7 @@ export function MediaLibrary() {
           <p className="rs-cm-sub">{assets.length} assets · {folders.length} folders · {totalMb} MB</p>
         </div>
         <div className="rs-editor-actions">
+          <button className="rs-btn rs-btn--ghost" title="Media storage settings" onClick={() => navigate("/settings/media")} type="button"><Icons.gear size={16} /> Settings</button>
           <button className="rs-btn rs-btn--ghost" onClick={() => setModal("folder")} type="button"><Icons.folderPlus size={16} /> Add new folder</button>
           <button className="rs-btn rs-btn--primary" onClick={() => setModal("upload")} type="button"><Icons.upload size={16} /> Add new assets</button>
         </div>
