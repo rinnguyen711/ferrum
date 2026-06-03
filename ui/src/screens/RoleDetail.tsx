@@ -50,7 +50,13 @@ export function RoleDetail() {
           <Icons.arrowLeft size={18} />
         </button>
         <div className="rs-editor-titlewrap">
-          <h1>{role.name}</h1>
+          <h1>
+            <span className="rs-role-name">
+              <span className="rs-rolebar-dot" style={{ ["--chip" as string]: role.color }} />
+              {role.name}
+              <span className="rs-role-system">System</span>
+            </span>
+          </h1>
         </div>
       </div>
 
