@@ -78,12 +78,12 @@ export function Sidebar({ section: _section }: { section: Section }) {
   const isAdmin = (getClaims()?.roles ?? []).includes("admin");
   const items: { to: string; label: string; icon: IconKey; end?: boolean }[] = [
     { to: "/", label: "Home", icon: "home", end: true },
-    { to: "/content", label: "Content Manager", icon: "doc" },
-    { to: "/builder", label: "Content-Type Builder", icon: "layers" },
-    { to: "/media", label: "Media Library", icon: "image" },
     ...(isAdmin
       ? [{ to: "/users", label: "Users & Permissions", icon: "user" as IconKey }]
       : []),
+    { to: "/content", label: "Content Manager", icon: "doc" },
+    { to: "/builder", label: "Content-Type Builder", icon: "layers" },
+    { to: "/media", label: "Media Library", icon: "image" },
   ];
   const isActive = (to: string, end?: boolean) =>
     end ? location.pathname === to : location.pathname.startsWith(to);

@@ -28,7 +28,9 @@ export function Layout({
   const collection = params.type ?? "";
 
   const editorMatch = useMatch("/content/:type/:id");
-  const showEditorBare = Boolean(editorMatch);
+  const userNewMatch = useMatch("/users/new");
+  const userEditMatch = useMatch("/users/:id");
+  const showEditorBare = Boolean(editorMatch || userNewMatch || userEditMatch);
 
   const navigate = useNavigate();
   const email = getClaims()?.email ?? null;
