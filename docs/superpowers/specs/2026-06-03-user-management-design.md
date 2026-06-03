@@ -43,9 +43,9 @@ check. `password_hash` is never returned.
 
 | Method | Path | Body | Success |
 |---|---|---|---|
-| GET | `/admin/users` | — | `200 [{id, email, roles, created_at}]` |
-| POST | `/admin/users` | `{email, password, roles}` | `201 {id, email, roles, created_at}` |
-| PATCH | `/admin/users/:id` | `{email?, roles?, password?}` | `200 {id, email, roles, created_at}` |
+| GET | `/admin/users` | — | `200 [{id, email, roles}]` |
+| POST | `/admin/users` | `{email, password, roles}` | `201 {id, email, roles}` |
+| PATCH | `/admin/users/:id` | `{email?, roles?, password?}` | `200 {id, email, roles}` |
 | DELETE | `/admin/users/:id` | — | `204` |
 
 Rules:
@@ -91,7 +91,9 @@ Ported from `design/rustapi/users.jsx` into real React/TS:
 
 **`screens/Users.tsx` (list):**
 - Table from `GET /admin/users`. Columns: ID, User (avatar + email), Role
-  (chips from `roles[]`), Created (`relTime(created_at)`).
+  (chips from `roles[]`). (A Created column is deferred — `created_at` exists in
+  the DB but is not surfaced this slice to keep the list focused on identity +
+  roles.)
 - Real: client-side search by email, role-filter chips, click row → editor,
   "Add user" button → `/users/new`.
 - Placeholder (`data-placeholder`, disabled, "Coming soon"): Status / 2FA /
