@@ -1,6 +1,7 @@
-import { Outlet, useLocation, useMatch, useParams } from "react-router-dom";
+import { Outlet, useLocation, useMatch, useNavigate, useParams } from "react-router-dom";
 import { Sidebar, SecondaryPanel, Topbar } from "./components/shell";
 import { BuilderDraftProvider } from "./builder/BuilderDraftContext";
+import { getClaims, clearToken } from "./auth";
 
 export type Section = "dashboard" | "content" | "builder" | "settings" | "media";
 
@@ -28,6 +29,13 @@ export function Layout({
   const editorMatch = useMatch("/content/:type/:id");
   const showEditorBare = Boolean(editorMatch);
 
+  const navigate = useNavigate();
+  const email = getClaims()?.email ?? null;
+  const onLogout = () => {
+    clearToken();
+    navigate("/login", { replace: true });
+  };
+
   let crumbs: string[] | undefined;
   if (section === "dashboard") crumbs = ["Home"];
   else if (section === "content") crumbs = ["Content Manager", collection];
@@ -42,7 +50,7 @@ export function Layout({
         <SecondaryPanel section={section} collection={collection} />
         <div className="rs-content">
           {!showEditorBare && (
-            <Topbar crumbs={crumbs} dark={dark} onToggleDark={onToggleDark} />
+            <Topbar crumbs={crumbs} dark={dark} onToggleDark={onToggleDark} email={email} onLogout={onLogout} />
           )}
           <div className={"rs-scroll" + (showEditorBare ? " rs-scroll--flush" : "")}>
             <Outlet />

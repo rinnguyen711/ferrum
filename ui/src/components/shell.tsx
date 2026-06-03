@@ -355,12 +355,16 @@ export function Topbar({
   right,
   dark,
   onToggleDark,
+  email,
+  onLogout,
 }: {
   title?: string;
   crumbs?: string[];
   right?: ReactNode;
   dark: boolean;
   onToggleDark: () => void;
+  email?: string | null;
+  onLogout?: () => void;
 }) {
   return (
     <header className="rs-topbar">
@@ -390,12 +394,24 @@ export function Topbar({
           <span className="rs-bell-dot" />
         </button>
         <div className="rs-topbar-user">
-          <Avatar name="Admin" initials="AD" color="#52525B" size={28} />
+          <Avatar
+            name={email ?? "Admin"}
+            initials={(email ?? "AD").slice(0, 2).toUpperCase()}
+            color="#52525B"
+            size={28}
+          />
           <div className="rs-topbar-user-meta">
-            <strong>Admin</strong>
-            <span>API key</span>
+            <strong>{email ?? "Admin"}</strong>
+            <span>Signed in</span>
           </div>
-          <Icons.chevDown size={15} />
+          <button
+            className="rs-icon-btn"
+            data-tip="Sign out"
+            onClick={onLogout}
+            aria-label="Sign out"
+          >
+            <Icons.arrowLeft size={18} />
+          </button>
         </div>
       </div>
     </header>
