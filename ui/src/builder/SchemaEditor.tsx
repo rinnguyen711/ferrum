@@ -155,7 +155,6 @@ export function SchemaEditor() {
         </div>
       )}
 
-      <h2 className="rs-cm-sub" style={{ marginTop: 20 }}>Fields</h2>
       <div className="rs-schema">
         <div className="rs-schema-head"><span>Field</span><span>Type</span><span></span></div>
         {draft.fields.map((f) => (
