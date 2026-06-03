@@ -231,3 +231,34 @@ pub async fn delete_asset(pool: &PgPool, id: Uuid) -> Result<bool, sqlx::Error> 
         .await?;
     Ok(res.rows_affected() > 0)
 }
+
+#[derive(Debug, Clone)]
+pub struct SettingsRow {
+    pub provider: String,
+    pub config: serde_json::Value, // secret fields stored encrypted
+}
+
+/// Read the singleton settings row, if it exists.
+pub async fn get_settings(pool: &PgPool) -> Result<Option<SettingsRow>, sqlx::Error> {
+    let row = sqlx::query_as::<_, (String, serde_json::Value)>(
+        "SELECT provider, config FROM _media_settings WHERE id = TRUE",
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|(provider, config)| SettingsRow { provider, config }))
+}
+
+/// Upsert the singleton settings row.
+pub async fn put_settings(pool: &PgPool, provider: &str, config: &serde_json::Value) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO _media_settings (id, provider, config, updated_at) \
+         VALUES (TRUE, $1, $2, now()) \
+         ON CONFLICT (id) DO UPDATE SET provider = EXCLUDED.provider, \
+            config = EXCLUDED.config, updated_at = now()",
+    )
+    .bind(provider)
+    .bind(config)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
