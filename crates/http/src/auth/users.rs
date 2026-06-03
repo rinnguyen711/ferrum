@@ -19,6 +19,75 @@ pub async fn any_users(pool: &PgPool) -> Result<bool, sqlx::Error> {
     Ok(exists)
 }
 
+/// All users, newest first.
+pub async fn list(pool: &PgPool) -> Result<Vec<UserRow>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, (Uuid, String, String, Vec<String>)>(
+        "SELECT id, email, password_hash, roles FROM _users ORDER BY created_at DESC",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(id, email, password_hash, roles)| UserRow { id, email, password_hash, roles })
+        .collect())
+}
+
+/// Insert a user (admin-created). Distinct from `insert_first_admin`, which is
+/// guarded for the empty-table setup flow.
+pub async fn create(
+    pool: &PgPool,
+    email: &str,
+    password_hash: &str,
+    roles: &[String],
+) -> Result<UserRow, sqlx::Error> {
+    let (id, email, password_hash, roles) = sqlx::query_as::<_, (Uuid, String, String, Vec<String>)>(
+        "INSERT INTO _users (email, password_hash, roles) VALUES ($1, $2, $3) \
+         RETURNING id, email, password_hash, roles",
+    )
+    .bind(email)
+    .bind(password_hash)
+    .bind(roles)
+    .fetch_one(pool)
+    .await?;
+    Ok(UserRow { id, email, password_hash, roles })
+}
+
+/// Update selected fields. `None` arguments are left unchanged. Returns the
+/// updated row, or `None` if no user has that id. `updated_at` bumped.
+pub async fn update(
+    pool: &PgPool,
+    id: Uuid,
+    email: Option<&str>,
+    password_hash: Option<&str>,
+    roles: Option<&[String]>,
+) -> Result<Option<UserRow>, sqlx::Error> {
+    let row = sqlx::query_as::<_, (Uuid, String, String, Vec<String>)>(
+        "UPDATE _users SET \
+           email = COALESCE($2, email), \
+           password_hash = COALESCE($3, password_hash), \
+           roles = COALESCE($4, roles), \
+           updated_at = now() \
+         WHERE id = $1 \
+         RETURNING id, email, password_hash, roles",
+    )
+    .bind(id)
+    .bind(email)
+    .bind(password_hash)
+    .bind(roles)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|(id, email, password_hash, roles)| UserRow { id, email, password_hash, roles }))
+}
+
+/// Delete by id. Returns true if a row was removed.
+pub async fn delete(pool: &PgPool, id: Uuid) -> Result<bool, sqlx::Error> {
+    let res = sqlx::query("DELETE FROM _users WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(res.rows_affected() > 0)
+}
+
 /// Atomically create the first admin: inserts only when the table is empty.
 /// Returns `Ok(None)` when a user already exists (setup is closed). The
 /// `WHERE NOT EXISTS` guard runs in the same statement as the insert, so two
