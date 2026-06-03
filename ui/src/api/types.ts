@@ -164,3 +164,22 @@ export interface PatchAsset {
   caption?: string;
   folder_id?: string | null;
 }
+
+export interface MediaProviderField {
+  name: string;
+  label: string;
+  type: string; // "string"
+  required: boolean;
+  secret: boolean;
+}
+
+export interface MediaProviderDescriptor {
+  id: string;
+  label: string;
+  fields: MediaProviderField[];
+}
+
+export interface MediaSettings {
+  provider: string;
+  config: Record<string, string>;
+}
