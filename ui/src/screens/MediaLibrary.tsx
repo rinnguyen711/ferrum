@@ -148,11 +148,15 @@ export function MediaLibrary() {
       </div>
 
       <div className="rs-media-bc">
-        <button className={path.length === 0 ? "rs-media-bc-here" : ""} onClick={() => setCur(null)} type="button">Media Library</button>
+        {path.length === 0
+          ? <span className="rs-media-bc-here">Media Library</span>
+          : <button onClick={() => setCur(null)} type="button">Media Library</button>}
         {path.map((f, i) => (
           <span key={f.id} style={{ display: "contents" }}>
             <span className="rs-media-bc-sep">/</span>
-            <button className={i === path.length - 1 ? "rs-media-bc-here" : ""} onClick={() => setCur(f.id)} type="button">{f.name}</button>
+            {i === path.length - 1
+              ? <span className="rs-media-bc-here">{f.name}</span>
+              : <button onClick={() => setCur(f.id)} type="button">{f.name}</button>}
           </span>
         ))}
       </div>
