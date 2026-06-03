@@ -818,3 +818,7 @@ select.rs-input { appearance: none; background-image: url("data:image/svg+xml,%3
 .rs-media-empty h3 { font-size: 15px; font-weight: 650; color: var(--text); }
 .rs-media-empty p { font-size: 13px; max-width: 340px; }
 .rs-media-empty .rs-btn { margin-top: 10px; }
+
+.rs-input--sm { height: 30px; padding: 0 8px; font-size: 12.5px; }
+.rs-asset-detail { display: block; }
+.rs-asset-detail-preview { height: 220px; width: 100%; border-radius: var(--r-md); }
