@@ -8,6 +8,7 @@ Headless CMS framework in Rust. Axum + sqlx backend, React + TS admin UI.
 - `crates/sql` — Postgres storage layer (sqlx)
 - `crates/schema` — content-type registry
 - `crates/http` — axum router, HTTP surface
+- `crates/media` — pluggable media storage (local + S3 providers)
 - `crates/bin` — server binary
 - `ui/` — React + TS admin UI (Vite)
 
@@ -28,6 +29,29 @@ docker compose up --build
 
 The demo seeds default **Article**, **Author**, and **Category** types with
 sample data on first boot (empty DB only). Disable with `RUSTAPI_SEED=false`.
+
+### Media storage
+
+The Media Library defaults to **local filesystem** storage under `./media-data`
+— no configuration needed. To use S3 (or an S3-compatible service) set:
+
+```sh
+export RUSTAPI_MEDIA_PROVIDER=s3
+export RUSTAPI_S3_BUCKET=my-bucket
+export RUSTAPI_S3_REGION=us-east-1
+export RUSTAPI_S3_ENDPOINT=https://...   # optional, for MinIO/R2/Spaces
+export RUSTAPI_S3_ACCESS_KEY=...
+export RUSTAPI_S3_SECRET_KEY=...
+```
+
+Alternatively configure the provider at runtime via `PUT /admin/media/settings`.
+Storing provider secrets in the database requires a 32-byte hex encryption key:
+
+```sh
+export RUSTAPI_SECRET_KEY=$(openssl rand -hex 32)
+```
+
+Env configuration always overrides database settings.
 
 ### First-run setup
 
