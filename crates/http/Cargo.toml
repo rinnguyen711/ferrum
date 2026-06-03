@@ -30,6 +30,7 @@ jsonwebtoken = { workspace = true }
 sha2 = { workspace = true }
 infer = { workspace = true }
 imagesize = { workspace = true }
+bytes = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

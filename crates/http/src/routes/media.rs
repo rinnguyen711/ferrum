@@ -16,6 +16,14 @@ use uuid::Uuid;
 // Task 13 imports
 use rustapi_media::ProviderDescriptor;
 
+// Task 14 imports
+use axum::body::Body;
+use axum::extract::Multipart;
+use axum::http::header;
+use axum::response::{IntoResponse, Response};
+use bytes::Bytes;
+use sha2::{Digest, Sha256};
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/admin/media/providers", get(list_providers))
@@ -77,6 +85,14 @@ async fn create_folder(
     ensure(&state, &principal, Action::ContentWrite).await?;
     if body.name.trim().is_empty() {
         return Err(ApiError(Error::Validation(rustapi_core::ValidationErrors::field("name", "required"))));
+    }
+    // PostgreSQL UNIQUE (parent_id, name) treats NULLs as distinct, so root-level
+    // duplicates are not caught by the DB constraint. Check explicitly.
+    if body.parent_id.is_none() {
+        let siblings = store::list_folders(&state.pool, None).await.map_err(internal)?;
+        if siblings.iter().any(|f| f.name == body.name.trim()) {
+            return Err(ApiError(Error::Conflict("a folder with that name already exists here".into())));
+        }
     }
     let row = store::create_folder(&state.pool, body.parent_id, body.name.trim())
         .await
@@ -268,10 +284,191 @@ async fn test_settings(
     Ok(StatusCode::NO_CONTENT)
 }
 
-// ---- STUBS replaced in task 14 ----
-async fn list_assets() -> Result<Json<serde_json::Value>, ApiError> { Ok(Json(serde_json::json!([]))) }
-async fn upload_asset() -> Result<StatusCode, ApiError> { Ok(StatusCode::NOT_IMPLEMENTED) }
-async fn get_asset() -> Result<StatusCode, ApiError> { Ok(StatusCode::NOT_IMPLEMENTED) }
-async fn update_asset() -> Result<StatusCode, ApiError> { Ok(StatusCode::NOT_IMPLEMENTED) }
-async fn delete_asset() -> Result<StatusCode, ApiError> { Ok(StatusCode::NOT_IMPLEMENTED) }
-async fn get_asset_raw() -> Result<StatusCode, ApiError> { Ok(StatusCode::NOT_IMPLEMENTED) }
+// ---- Task 14: asset handlers ----
+
+#[derive(Serialize)]
+struct AssetView {
+    id: Uuid,
+    folder_id: Option<Uuid>,
+    file_name: String,
+    alt_text: Option<String>,
+    caption: Option<String>,
+    mime_type: String,
+    size_bytes: i64,
+    width: Option<i32>,
+    height: Option<i32>,
+    original_filename: String,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+impl From<store::AssetRow> for AssetView {
+    fn from(a: store::AssetRow) -> Self {
+        AssetView {
+            id: a.id, folder_id: a.folder_id, file_name: a.file_name, alt_text: a.alt_text,
+            caption: a.caption, mime_type: a.mime_type, size_bytes: a.size_bytes,
+            width: a.width, height: a.height, original_filename: a.original_filename,
+            created_at: a.created_at, updated_at: a.updated_at,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct AssetQuery { folder_id: Option<Uuid> }
+
+async fn list_assets(
+    State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
+    Query(q): Query<AssetQuery>,
+) -> Result<Json<Vec<AssetView>>, ApiError> {
+    ensure(&state, &principal, Action::ContentRead).await?;
+    let rows = store::list_assets(&state.pool, q.folder_id).await.map_err(internal)?;
+    Ok(Json(rows.into_iter().map(AssetView::from).collect()))
+}
+
+async fn upload_asset(
+    State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
+    mut multipart: Multipart,
+) -> Result<(StatusCode, Json<AssetView>), ApiError> {
+    ensure(&state, &principal, Action::ContentWrite).await?;
+
+    let mut folder_id: Option<Uuid> = None;
+    let mut file_bytes: Option<Bytes> = None;
+    let mut original_filename = String::from("upload");
+
+    while let Some(field) = multipart.next_field().await.map_err(|e| {
+        ApiError(Error::Unsupported(format!("bad multipart: {e}")))
+    })? {
+        match field.name() {
+            Some("folder_id") => {
+                let txt = field.text().await.map_err(|e| ApiError(Error::Unsupported(e.to_string())))?;
+                if !txt.is_empty() {
+                    folder_id = Some(Uuid::parse_str(&txt).map_err(|_| {
+                        ApiError(Error::Validation(rustapi_core::ValidationErrors::field("folder_id", "invalid uuid")))
+                    })?);
+                }
+            }
+            Some("file") => {
+                if let Some(fname) = field.file_name() { original_filename = fname.to_string(); }
+                let data = field.bytes().await.map_err(|e| ApiError(Error::Unsupported(e.to_string())))?;
+                file_bytes = Some(data);
+            }
+            _ => { let _ = field.bytes().await; }
+        }
+    }
+
+    let bytes = file_bytes.ok_or_else(|| {
+        ApiError(Error::Validation(rustapi_core::ValidationErrors::field("file", "required")))
+    })?;
+
+    let mime_type = infer::get(&bytes).map(|t| t.mime_type().to_string())
+        .unwrap_or_else(|| "application/octet-stream".to_string());
+    let checksum = {
+        let mut h = Sha256::new();
+        h.update(&bytes);
+        format!("{:x}", h.finalize())
+    };
+    let (width, height) = match imagesize::blob_size(&bytes) {
+        Ok(d) => (Some(d.width as i32), Some(d.height as i32)),
+        Err(_) => (None, None),
+    };
+
+    let id = Uuid::new_v4();
+    let storage_key = format!("{id}/{original_filename}");
+
+    let provider = state.storage.read().await.clone();
+    provider.put(&storage_key, bytes.clone(), &mime_type).await
+        .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!("storage put: {e}"))))?;
+
+    let provider_id = current_provider_id(&state).await;
+
+    let row = store::create_asset(&state.pool, store::NewAsset {
+        folder_id,
+        provider: &provider_id,
+        storage_key: &storage_key,
+        file_name: &original_filename,
+        mime_type: &mime_type,
+        size_bytes: bytes.len() as i64,
+        width,
+        height,
+        original_filename: &original_filename,
+        checksum: Some(&checksum),
+    }).await.map_err(map_folder_err)?;
+
+    Ok((StatusCode::CREATED, Json(row.into())))
+}
+
+/// Active provider id: env override → DB settings → "local" default.
+async fn current_provider_id(state: &AppState) -> String {
+    if let Ok(p) = std::env::var("RUSTAPI_MEDIA_PROVIDER") { return p; }
+    if let Ok(Some(row)) = store::get_settings(&state.pool).await { return row.provider; }
+    "local".to_string()
+}
+
+async fn get_asset(
+    State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<AssetView>, ApiError> {
+    ensure(&state, &principal, Action::ContentRead).await?;
+    let row = store::get_asset(&state.pool, id).await.map_err(internal)?
+        .ok_or(ApiError(Error::NotFound))?;
+    Ok(Json(row.into()))
+}
+
+#[derive(Deserialize)]
+struct UpdateAssetBody {
+    file_name: Option<String>,
+    alt_text: Option<String>,
+    caption: Option<String>,
+    #[serde(default, deserialize_with = "double_option")]
+    folder_id: Option<Option<Uuid>>,
+}
+
+async fn update_asset(
+    State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
+    Path(id): Path<Uuid>,
+    Json(body): Json<UpdateAssetBody>,
+) -> Result<Json<AssetView>, ApiError> {
+    ensure(&state, &principal, Action::ContentWrite).await?;
+    let row = store::update_asset(
+        &state.pool, id,
+        body.file_name.as_deref(), body.alt_text.as_deref(),
+        body.caption.as_deref(), body.folder_id,
+    ).await.map_err(internal)?.ok_or(ApiError(Error::NotFound))?;
+    Ok(Json(row.into()))
+}
+
+async fn delete_asset(
+    State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, ApiError> {
+    ensure(&state, &principal, Action::ContentWrite).await?;
+    let row = store::get_asset(&state.pool, id).await.map_err(internal)?
+        .ok_or(ApiError(Error::NotFound))?;
+    let provider = state.storage.read().await.clone();
+    let _ = provider.delete(&row.storage_key).await;
+    store::delete_asset(&state.pool, id).await.map_err(internal)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn get_asset_raw(
+    State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, ApiError> {
+    ensure(&state, &principal, Action::ContentRead).await?;
+    let row = store::get_asset(&state.pool, id).await.map_err(internal)?
+        .ok_or(ApiError(Error::NotFound))?;
+    let provider = state.storage.read().await.clone();
+    let bytes = provider.get(&row.storage_key).await.map_err(|e| match e {
+        rustapi_media::StorageError::NotFound => ApiError(Error::NotFound),
+        other => ApiError(Error::Internal(anyhow::anyhow!("storage get: {other}"))),
+    })?;
+    Ok((
+        [(header::CONTENT_TYPE, row.mime_type)],
+        Body::from(bytes),
+    ).into_response())
+}
