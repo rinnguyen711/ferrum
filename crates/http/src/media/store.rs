@@ -100,3 +100,134 @@ pub async fn delete_folder(pool: &PgPool, id: Uuid) -> Result<bool, sqlx::Error>
         .await?;
     Ok(res.rows_affected() > 0)
 }
+
+#[derive(Debug, Clone)]
+pub struct AssetRow {
+    pub id: Uuid,
+    pub folder_id: Option<Uuid>,
+    pub provider: String,
+    pub storage_key: String,
+    pub file_name: String,
+    pub alt_text: Option<String>,
+    pub caption: Option<String>,
+    pub mime_type: String,
+    pub size_bytes: i64,
+    pub width: Option<i32>,
+    pub height: Option<i32>,
+    pub original_filename: String,
+    pub checksum: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+type AssetTuple = (
+    Uuid, Option<Uuid>, String, String, String, Option<String>, Option<String>,
+    String, i64, Option<i32>, Option<i32>, String, Option<String>,
+    DateTime<Utc>, DateTime<Utc>,
+);
+
+fn asset_from(t: AssetTuple) -> AssetRow {
+    AssetRow {
+        id: t.0, folder_id: t.1, provider: t.2, storage_key: t.3, file_name: t.4,
+        alt_text: t.5, caption: t.6, mime_type: t.7, size_bytes: t.8, width: t.9,
+        height: t.10, original_filename: t.11, checksum: t.12, created_at: t.13, updated_at: t.14,
+    }
+}
+
+const ASSET_COLS: &str = "id, folder_id, provider, storage_key, file_name, alt_text, caption, \
+    mime_type, size_bytes, width, height, original_filename, checksum, created_at, updated_at";
+
+pub async fn list_assets(pool: &PgPool, folder_id: Option<Uuid>) -> Result<Vec<AssetRow>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, AssetTuple>(&format!(
+        "SELECT {ASSET_COLS} FROM _media_assets \
+         WHERE folder_id IS NOT DISTINCT FROM $1 ORDER BY created_at DESC"
+    ))
+    .bind(folder_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(asset_from).collect())
+}
+
+pub async fn get_asset(pool: &PgPool, id: Uuid) -> Result<Option<AssetRow>, sqlx::Error> {
+    let t = sqlx::query_as::<_, AssetTuple>(&format!(
+        "SELECT {ASSET_COLS} FROM _media_assets WHERE id = $1"
+    ))
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(t.map(asset_from))
+}
+
+/// Parameters for inserting a freshly uploaded asset.
+pub struct NewAsset<'a> {
+    pub folder_id: Option<Uuid>,
+    pub provider: &'a str,
+    pub storage_key: &'a str,
+    pub file_name: &'a str,
+    pub mime_type: &'a str,
+    pub size_bytes: i64,
+    pub width: Option<i32>,
+    pub height: Option<i32>,
+    pub original_filename: &'a str,
+    pub checksum: Option<&'a str>,
+}
+
+pub async fn create_asset(pool: &PgPool, a: NewAsset<'_>) -> Result<AssetRow, sqlx::Error> {
+    let t = sqlx::query_as::<_, AssetTuple>(&format!(
+        "INSERT INTO _media_assets \
+            (folder_id, provider, storage_key, file_name, mime_type, size_bytes, \
+             width, height, original_filename, checksum) \
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING {ASSET_COLS}"
+    ))
+    .bind(a.folder_id)
+    .bind(a.provider)
+    .bind(a.storage_key)
+    .bind(a.file_name)
+    .bind(a.mime_type)
+    .bind(a.size_bytes)
+    .bind(a.width)
+    .bind(a.height)
+    .bind(a.original_filename)
+    .bind(a.checksum)
+    .fetch_one(pool)
+    .await?;
+    Ok(asset_from(t))
+}
+
+/// Update editable metadata + optional move. `None` leaves a field unchanged.
+pub async fn update_asset(
+    pool: &PgPool,
+    id: Uuid,
+    file_name: Option<&str>,
+    alt_text: Option<&str>,
+    caption: Option<&str>,
+    folder_id: Option<Option<Uuid>>,
+) -> Result<Option<AssetRow>, sqlx::Error> {
+    let t = sqlx::query_as::<_, AssetTuple>(&format!(
+        "UPDATE _media_assets SET \
+            file_name = COALESCE($2, file_name), \
+            alt_text  = COALESCE($3, alt_text), \
+            caption   = COALESCE($4, caption), \
+            folder_id = CASE WHEN $5 THEN $6 ELSE folder_id END, \
+            updated_at = now() \
+         WHERE id = $1 RETURNING {ASSET_COLS}"
+    ))
+    .bind(id)
+    .bind(file_name)
+    .bind(alt_text)
+    .bind(caption)
+    .bind(folder_id.is_some())
+    .bind(folder_id.flatten())
+    .fetch_optional(pool)
+    .await?;
+    Ok(t.map(asset_from))
+}
+
+/// Delete the row. Byte deletion happens in the handler via the provider.
+pub async fn delete_asset(pool: &PgPool, id: Uuid) -> Result<bool, sqlx::Error> {
+    let res = sqlx::query("DELETE FROM _media_assets WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(res.rows_affected() > 0)
+}
