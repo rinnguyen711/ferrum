@@ -7,6 +7,8 @@ import type {
   LoginResponse,
   MediaAsset,
   MediaFolder,
+  MediaProviderDescriptor,
+  MediaSettings,
   NewContentType,
   NewFolder,
   NewUser,
@@ -165,4 +167,20 @@ export function uploadAsset(file: File, folderId?: string | null): Promise<Media
 
 export function fetchAssetBlob(id: string): Promise<Blob> {
   return fetchBlob(`/admin/media/assets/${id}/raw`);
+}
+
+export function listMediaProviders(): Promise<MediaProviderDescriptor[]> {
+  return apiFetch<MediaProviderDescriptor[]>("/admin/media/providers");
+}
+
+export function getMediaSettings(): Promise<MediaSettings | null> {
+  return apiFetch<MediaSettings | null>("/admin/media/settings");
+}
+
+export function putMediaSettings(body: MediaSettings): Promise<void> {
+  return apiFetch<void>("/admin/media/settings", { method: "PUT", body });
+}
+
+export function testMediaSettings(body: MediaSettings): Promise<void> {
+  return apiFetch<void>("/admin/media/settings/test", { method: "POST", body });
 }
