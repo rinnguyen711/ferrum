@@ -18,6 +18,21 @@ async fn setup_is_self_closing() {
 }
 
 #[tokio::test]
+async fn setup_status_flips_after_setup() {
+    // spawn() runs setup once, so by the time we get the app, setup is closed.
+    let app = TestApp::spawn().await;
+    let resp = app
+        .client
+        .get(app.url("/auth/setup"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["setup_required"], false);
+}
+
+#[tokio::test]
 async fn concurrent_setup_creates_one_admin() {
     let app = TestApp::spawn().await;
     // spawn() already created the first admin. Fire several concurrent setups
