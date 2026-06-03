@@ -1,10 +1,11 @@
 use anyhow::{Context, Result};
 use rustapi::config::Config;
 use rustapi::seed;
-use rustapi_http::{build_router, mount_studio, AppConfig, AppState, NoopSink, RoleAuthz};
+use rustapi_http::{build_router, mount_studio, resolve_provider, secret_key_from_env, AppConfig, AppState, NoopSink, RoleAuthz};
 use rustapi_schema::{SchemaRegistry, SchemaService, MIGRATOR};
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tracing_subscriber::{prelude::*, EnvFilter};
 
 #[tokio::main]
@@ -34,6 +35,9 @@ async fn main() -> Result<()> {
         .await
         .context("seed default content")?;
 
+    let secret_key = secret_key_from_env();
+    let storage = Arc::new(RwLock::new(resolve_provider(&pool, secret_key).await));
+
     let state = AppState {
         pool,
         schemas,
@@ -44,6 +48,8 @@ async fn main() -> Result<()> {
             jwt_ttl_secs: cfg.jwt_ttl_secs,
             page_size_max: cfg.page_size_max,
         },
+        storage,
+        secret_key,
     };
 
     let mut app = build_router(state);

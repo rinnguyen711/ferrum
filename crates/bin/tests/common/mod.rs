@@ -1,13 +1,14 @@
 //! Shared integration-test plumbing. Spins a real Postgres via testcontainers
 //! and the rustapi router in-process, hitting it via reqwest.
 
-use rustapi_http::{build_router, AppConfig, AppState, NoopSink, RoleAuthz};
+use rustapi_http::{build_router, resolve_provider, secret_key_from_env, AppConfig, AppState, NoopSink, RoleAuthz};
 use rustapi_schema::{SchemaRegistry, SchemaService, MIGRATOR};
 use sqlx::PgPool;
 use std::sync::Arc;
 use testcontainers::runners::AsyncRunner;
 use testcontainers::ContainerAsync;
 use testcontainers_modules::postgres::Postgres as PgImage;
+use tokio::sync::RwLock;
 
 #[allow(dead_code)]
 pub const JWT_SECRET: &str = "test-jwt-secret-with-32-characters!!";
@@ -49,6 +50,12 @@ impl TestApp {
         registry.reload_from_db(&pool).await.expect("hydrate");
         let schemas = SchemaService::new(pool.clone(), registry.clone());
 
+        let media_dir = std::env::temp_dir().join(format!("rustapi-media-test-{}", uuid::Uuid::new_v4()));
+        std::env::set_var("RUSTAPI_MEDIA_BASE_DIR", media_dir.to_string_lossy().to_string());
+        std::env::set_var("RUSTAPI_MEDIA_PROVIDER", "local");
+        let secret_key = secret_key_from_env();
+        let storage = Arc::new(RwLock::new(resolve_provider(&pool, secret_key).await));
+
         let state = AppState {
             pool: pool.clone(),
             schemas: schemas.clone(),
@@ -59,6 +66,8 @@ impl TestApp {
                 jwt_ttl_secs: 3600,
                 page_size_max: 100,
             },
+            storage,
+            secret_key,
         };
 
         let app = build_router(state);
