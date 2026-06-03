@@ -18,6 +18,8 @@ pub enum Action {
     SchemaWrite,
     ContentRead,
     ContentWrite,
+    UserRead,
+    UserWrite,
 }
 
 impl Principal {
@@ -48,6 +50,20 @@ mod tests {
     fn admin_allows_everything() {
         for a in [Action::SchemaRead, Action::SchemaWrite, Action::ContentRead, Action::ContentWrite] {
             assert!(role_allows("admin", a), "admin should allow {a:?}");
+        }
+    }
+
+    #[test]
+    fn admin_allows_user_actions() {
+        assert!(role_allows("admin", Action::UserRead));
+        assert!(role_allows("admin", Action::UserWrite));
+    }
+
+    #[test]
+    fn non_admin_denied_user_actions() {
+        for role in ["editor", "viewer", "ghost"] {
+            assert!(!role_allows(role, Action::UserRead), "{role} UserRead");
+            assert!(!role_allows(role, Action::UserWrite), "{role} UserWrite");
         }
     }
 
