@@ -1,4 +1,5 @@
-use crate::middleware::auth::require_admin_key;
+use crate::auth;
+use crate::middleware::auth::require_auth;
 use crate::state::AppState;
 use axum::routing::get;
 use axum::Router;
@@ -9,17 +10,20 @@ pub mod health;
 pub mod schema;
 
 pub fn build_router(state: AppState) -> Router {
-    let public = Router::new().route("/healthz", get(health::healthz));
+    let public = Router::new()
+        .route("/healthz", get(health::healthz))
+        .merge(auth::public_router());
 
-    let admin = Router::new()
+    let protected = Router::new()
         .merge(schema::router())
         .merge(content::router())
+        .merge(auth::protected_router())
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
-            require_admin_key,
+            require_auth,
         ));
 
-    public.merge(admin).with_state(state)
+    public.merge(protected).with_state(state)
 }
 
 /// Mount a built admin UI at `/studio`. Falls back to `index.html` for any

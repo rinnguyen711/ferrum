@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use rustapi::config::Config;
 use rustapi::seed;
-use rustapi_http::{build_router, mount_studio, AlwaysAllow, AppConfig, AppState, NoopSink};
+use rustapi_http::{build_router, mount_studio, AppConfig, AppState, NoopSink, RoleAuthz};
 use rustapi_schema::{SchemaRegistry, SchemaService, MIGRATOR};
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
@@ -37,10 +37,11 @@ async fn main() -> Result<()> {
     let state = AppState {
         pool,
         schemas,
-        authz: Arc::new(AlwaysAllow),
+        authz: Arc::new(RoleAuthz),
         events: Arc::new(NoopSink),
         config: AppConfig {
-            admin_key: cfg.admin_key.clone(),
+            jwt_secret: cfg.jwt_secret.clone(),
+            jwt_ttl_secs: cfg.jwt_ttl_secs,
             page_size_max: cfg.page_size_max,
         },
     };

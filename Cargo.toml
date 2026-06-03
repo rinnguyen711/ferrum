@@ -43,6 +43,10 @@ tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 chrono = { version = "0.4", default-features = false, features = ["serde", "clock"] }
 uuid = { version = "1", features = ["serde", "v4"] }
 
+# Auth
+argon2 = "0.5"
+jsonwebtoken = "9"
+
 # Tests
 tokio-test = "0.4"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }

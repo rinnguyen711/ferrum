@@ -24,6 +24,8 @@ async-trait = "0.1"
 anyhow.workspace = true
 regex = "1"
 url = "2"
+argon2 = { workspace = true }
+jsonwebtoken = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
