@@ -9,6 +9,7 @@ license.workspace = true
 rustapi-core = { path = "../core" }
 rustapi-sql = { path = "../sql" }
 rustapi-schema = { path = "../schema" }
+rustapi-media = { path = "../media" }
 axum.workspace = true
 tower.workspace = true
 tower-http.workspace = true
@@ -26,6 +27,9 @@ regex = "1"
 url = "2"
 argon2 = { workspace = true }
 jsonwebtoken = { workspace = true }
+sha2 = { workspace = true }
+infer = { workspace = true }
+imagesize = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

@@ -2,9 +2,11 @@
 
 use async_trait::async_trait;
 use rustapi_core::{role_allows, Action, Event, Principal};
+use rustapi_media::StorageProvider;
 use rustapi_schema::SchemaService;
 use sqlx::PgPool;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 #[async_trait]
 pub trait Authz: Send + Sync + 'static {
@@ -60,6 +62,11 @@ pub struct AppState {
     pub authz: Arc<dyn Authz>,
     pub events: Arc<dyn EventSink>,
     pub config: AppConfig,
+    /// Active media storage provider, hot-swappable when settings change.
+    pub storage: Arc<RwLock<Arc<dyn StorageProvider>>>,
+    /// 32-byte key for encrypting secret provider-config fields. `None`
+    /// disables saving providers that declare secret fields.
+    pub secret_key: Option<[u8; 32]>,
 }
 
 #[cfg(test)]
