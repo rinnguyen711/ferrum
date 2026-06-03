@@ -124,3 +124,43 @@ export interface PatchUser {
   password?: string;
   roles?: string[];
 }
+
+export interface MediaFolder {
+  id: string;
+  parent_id: string | null;
+  name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MediaAsset {
+  id: string;
+  folder_id: string | null;
+  file_name: string;
+  alt_text: string | null;
+  caption: string | null;
+  mime_type: string;
+  size_bytes: number;
+  width: number | null;
+  height: number | null;
+  original_filename: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NewFolder {
+  name: string;
+  parent_id?: string | null;
+}
+
+export interface PatchFolder {
+  name?: string;
+  parent_id?: string | null;
+}
+
+export interface PatchAsset {
+  file_name?: string;
+  alt_text?: string;
+  caption?: string;
+  folder_id?: string | null;
+}
