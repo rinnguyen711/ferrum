@@ -1,4 +1,4 @@
-import { getKey } from "../auth";
+import { getToken } from "../auth";
 
 /** Per-field validation message, parsed from `details.fields[]`. */
 export interface FieldError {
@@ -37,14 +37,14 @@ export function setAuthErrorHandler(fn: () => void): void {
 interface FetchOpts {
   method?: string;
   body?: unknown;
-  /** When set, sends this key instead of the stored one (login probe). */
-  key?: string;
+  /** When set, sends this token instead of the stored one. */
+  token?: string;
 }
 
 export async function apiFetch<T>(path: string, opts: FetchOpts = {}): Promise<T> {
-  const key = opts.key ?? getKey();
+  const token = opts.token ?? getToken();
   const headers: Record<string, string> = { Accept: "application/json" };
-  if (key) headers["x-api-key"] = key;
+  if (token) headers["Authorization"] = `Bearer ${token}`;
   if (opts.body !== undefined) headers["Content-Type"] = "application/json";
 
   let resp: Response;
@@ -59,9 +59,9 @@ export async function apiFetch<T>(path: string, opts: FetchOpts = {}): Promise<T
   }
 
   if (resp.status === 401) {
-    const err = new AuthError("Invalid or missing admin key.");
-    // Only fire the global handler for stored-key requests, not login probes.
-    if (opts.key === undefined && onAuthError) onAuthError();
+    const err = new AuthError("Invalid or missing credentials.");
+    // Only fire the global handler for stored-token requests, not explicit ones.
+    if (opts.token === undefined && onAuthError) onAuthError();
     throw err;
   }
 

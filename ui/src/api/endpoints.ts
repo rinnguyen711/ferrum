@@ -1,5 +1,14 @@
 import { apiFetch } from "./client";
-import type { ContentType, Entry, Health, ListResponse, NewContentType, PatchContentType } from "./types";
+import type {
+  ContentType,
+  Entry,
+  Health,
+  ListResponse,
+  LoginResponse,
+  NewContentType,
+  PatchContentType,
+  SetupStatus,
+} from "./types";
 
 export function listContentTypes(): Promise<ContentType[]> {
   return apiFetch<ContentType[]>("/admin/content-types");
@@ -73,13 +82,17 @@ export function getHealth(): Promise<Health> {
   return apiFetch<Health>("/healthz");
 }
 
-/** Probe the gated content-types route with a candidate key. */
-export async function checkAuth(key: string): Promise<boolean> {
-  try {
-    await apiFetch<ContentType[]>("/admin/content-types", { key });
-    return true;
-  } catch (e) {
-    if (e instanceof Error && e.name === "AuthError") return false;
-    throw e; // network / 5xx — let caller show "can't reach API"
-  }
+/** First-run check: does the system still need an admin created? */
+export function fetchSetupStatus(): Promise<SetupStatus> {
+  return apiFetch<SetupStatus>("/auth/setup");
+}
+
+/** Create the first admin. Only succeeds on an empty system (else 409). */
+export function setup(email: string, password: string): Promise<void> {
+  return apiFetch<void>("/auth/setup", { method: "POST", body: { email, password } });
+}
+
+/** Exchange credentials for a JWT. */
+export function login(email: string, password: string): Promise<LoginResponse> {
+  return apiFetch<LoginResponse>("/auth/login", { method: "POST", body: { email, password } });
 }

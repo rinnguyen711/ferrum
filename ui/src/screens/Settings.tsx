@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { Icons } from "../components/icons";
-import { clearKey } from "../auth";
+import { clearToken } from "../auth";
 
 const TOKENS = [
   { name: "Production read-only", type: "Read-only", last: "11m ago", key: "rst_live_a91f…c4e2" },
@@ -11,7 +11,7 @@ const TOKENS = [
 export function Settings() {
   const navigate = useNavigate();
   const signOut = () => {
-    clearKey();
+    clearToken();
     navigate("/login", { replace: true });
   };
   return (

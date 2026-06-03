@@ -15,7 +15,7 @@ import { ContentList } from "./screens/ContentList";
 import { EntryEditor } from "./screens/EntryEditor";
 import { Login } from "./screens/Login";
 import { MediaLibrary } from "./screens/MediaLibrary";
-import { getKey, clearKey } from "./auth";
+import { getToken, clearToken } from "./auth";
 import { setAuthErrorHandler } from "./api/client";
 
 const ACCENT = "#D14D2B";
@@ -42,7 +42,7 @@ function PickType({ kind }: { kind: "content" | "builder" }) {
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const location = useLocation();
-  if (!getKey()) {
+  if (!getToken()) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
   return <>{children}</>;
@@ -53,7 +53,7 @@ function AuthErrorBridge() {
   const navigate = useNavigate();
   useEffect(() => {
     setAuthErrorHandler(() => {
-      clearKey();
+      clearToken();
       navigate("/login", { replace: true });
     });
   }, [navigate]);

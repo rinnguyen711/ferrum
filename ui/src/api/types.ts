@@ -97,3 +97,12 @@ export function enumValues(f: Field): string[] {
   const v = (f.kind_meta as Partial<EnumMeta>).values;
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
 }
+
+export interface LoginResponse {
+  token: string;
+  expires_at: number;
+}
+
+export interface SetupStatus {
+  setup_required: boolean;
+}
