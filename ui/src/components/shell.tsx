@@ -6,6 +6,7 @@ import type { Health, PatchContentType } from "../api/types";
 import { useResource } from "../hooks/useResource";
 import type { Section } from "../Layout";
 import { useBuilderDraft } from "../builder/BuilderDraftContext";
+import { getClaims } from "../auth";
 import { diffToPatch } from "../builder/draftModel";
 import { CreateTypeModal } from "../builder/CreateTypeModal";
 import { SaveConfirmModal } from "../builder/SaveConfirmModal";
@@ -82,6 +83,7 @@ export function Sidebar({ section: _section }: { section: Section }) {
   ];
   const isActive = (to: string, end?: boolean) =>
     end ? location.pathname === to : location.pathname.startsWith(to);
+  const isAdmin = (getClaims()?.roles ?? []).includes("admin");
   return (
     <nav className="rs-rail">
       <RailLogo />
@@ -101,6 +103,15 @@ export function Sidebar({ section: _section }: { section: Section }) {
         })}
       </div>
       <div className="rs-rail-foot">
+        {isAdmin && (
+          <button
+            data-tip="Users"
+            className={"rs-rail-btn" + (location.pathname.startsWith("/users") ? " is-active" : "")}
+            onClick={() => builder.guardedNavigate("/users")}
+          >
+            <Icons.user size={20} />
+          </button>
+        )}
         <button
           data-tip="Settings"
           className={"rs-rail-btn" + (location.pathname.startsWith("/settings") ? " is-active" : "")}

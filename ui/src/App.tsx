@@ -15,6 +15,8 @@ import { ContentList } from "./screens/ContentList";
 import { EntryEditor } from "./screens/EntryEditor";
 import { Login } from "./screens/Login";
 import { MediaLibrary } from "./screens/MediaLibrary";
+import { Users } from "./screens/Users";
+import { UserEditor } from "./screens/UserEditor";
 import { getToken, clearToken } from "./auth";
 import { setAuthErrorHandler } from "./api/client";
 
@@ -99,6 +101,9 @@ export default function App() {
           <Route path="builder/new" element={<SchemaEditor />} />
           <Route path="builder/:type" element={<SchemaEditor />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="users" element={<Users />} />
+          <Route path="users/new" element={<UserEditor />} />
+          <Route path="users/:id" element={<UserEditor />} />
           <Route path="media" element={<MediaLibrary />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
