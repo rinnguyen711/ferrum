@@ -106,7 +106,7 @@ pub fn static_paths() -> Value {
             "get": { "tags": ["media"], "summary": "Get media settings",
                 "security": secured, "responses": { "200": { "description": "Settings" } } },
             "put": { "tags": ["media"], "summary": "Update media settings",
-                "security": secured, "responses": { "200": { "description": "Updated" } } }
+                "security": secured, "responses": { "204": { "description": "Updated" } } }
         },
         "/admin/media/settings/test": {
             "post": { "tags": ["media"], "summary": "Test provider settings",
