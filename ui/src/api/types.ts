@@ -10,6 +10,7 @@ export type FieldKind =
   | "datetime"
   | "uuid"
   | "relation"
+  | "media"
   | "enum"
   | "json"
   | "email"
@@ -96,6 +97,17 @@ export function enumValues(f: Field): string[] {
   if (f.kind !== "enum") return [];
   const v = (f.kind_meta as Partial<EnumMeta>).values;
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+}
+
+// Media kind_meta shape (when kind === "media").
+export interface MediaMeta {
+  multiple: boolean;
+}
+
+export function mediaMeta(f: Field): MediaMeta | null {
+  if (f.kind !== "media") return null;
+  const m = f.kind_meta as Partial<MediaMeta>;
+  return { multiple: m.multiple === true };
 }
 
 export interface LoginResponse {

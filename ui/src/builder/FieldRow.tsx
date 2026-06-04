@@ -14,6 +14,7 @@ const KIND_ICON: Record<FieldKind, keyof typeof Icons> = {
   datetime: "calendar",
   uuid: "hash",
   relation: "relation",
+  media: "image",
   enum: "layers",
   json: "doc",
   email: "type",
