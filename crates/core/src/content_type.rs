@@ -316,6 +316,7 @@ impl PatchContentType {
             && self.add_fields.is_empty()
             && self.drop_fields.is_empty()
             && self.extend_enum_values.is_empty()
+            && self.options.is_none()
         {
             return Err(PatchError::NoOp);
         }
@@ -444,6 +445,19 @@ mod patch_tests {
     fn noop_rejected() {
         let p = PatchContentType { display_name: None, add_fields: vec![], drop_fields: vec![], extend_enum_values: vec![], options: None };
         assert_eq!(p.validate(&existing()).unwrap_err(), PatchError::NoOp);
+    }
+
+    #[test]
+    fn options_only_patch_is_not_noop() {
+        use serde_json::json;
+        let p = PatchContentType {
+            display_name: None,
+            add_fields: vec![],
+            drop_fields: vec![],
+            extend_enum_values: vec![],
+            options: Some(json!({"draft_publish": true})),
+        };
+        assert!(p.validate(&existing()).is_ok());
     }
 
     #[test]
