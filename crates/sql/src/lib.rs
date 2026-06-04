@@ -11,9 +11,9 @@ pub use ddl::{
     drop_column, drop_join_table, drop_media_join_table, drop_table, DdlError,
 };
 pub use dml::{
-    count, delete, delete_links, insert, insert_links, render_where,
-    select_by_id, select_list, update, DmlError, SqlAndBinds,
+    count, delete, delete_links, delete_media_links, insert, insert_links, insert_media_links,
+    render_where, select_by_id, select_list, update, DmlError, SqlAndBinds,
 };
 pub use filter::{op_allows_kind, Condition, Filter, FilterValue, Op};
-pub use ident::{join_table_name, quote_ident, table_name, IdentError};
+pub use ident::{join_table_name, media_join_table_name, quote_ident, table_name, IdentError};
 pub use sort::{Sort, SortDir};

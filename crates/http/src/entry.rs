@@ -33,9 +33,33 @@ pub struct LinkPlan {
     pub present: bool,
 }
 
+/// One pending existence check for a single-media field value. Target is always
+/// `_media_assets`, so (unlike RelationCheck) there is no `target` field.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaCheck {
+    pub field: String,
+    pub id: Uuid,
+}
+
+/// A pending ordered replace-set for a multiple-media field. `ids` is in gallery
+/// order (deduped); empty means "clear all". `present` is always true when emitted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaLinkPlan {
+    pub field: String,
+    pub ids: Vec<Uuid>,
+    pub present: bool,
+}
+
 /// Return type of `body_to_binds`: column binds, relation existence checks,
-/// and many-to-many link plans.
-pub type BodyBinds = (BTreeMap<String, BoundValue>, Vec<RelationCheck>, Vec<LinkPlan>);
+/// many-to-many link plans, single-media existence checks, and multiple-media
+/// link plans.
+pub type BodyBinds = (
+    BTreeMap<String, BoundValue>,
+    Vec<RelationCheck>,
+    Vec<LinkPlan>,
+    Vec<MediaCheck>,
+    Vec<MediaLinkPlan>,
+);
 
 pub fn body_to_binds(
     ct: &ContentType,
@@ -59,6 +83,8 @@ pub fn body_to_binds(
     let mut out = BTreeMap::new();
     let mut checks: Vec<RelationCheck> = Vec::new();
     let mut links: Vec<LinkPlan> = Vec::new();
+    let mut media_checks: Vec<MediaCheck> = Vec::new();
+    let mut media_links: Vec<MediaLinkPlan> = Vec::new();
     for f in &ct.fields {
         match body.get(&f.name) {
             Some(v) => {
@@ -73,6 +99,17 @@ pub fn body_to_binds(
                         links.push(coerce_m2m(f, &meta.target, v)?);
                     } else {
                         coerce_relation(f, v, &mut out, &mut checks)?;
+                    }
+                    continue;
+                }
+                if f.kind == FieldKind::Media {
+                    let meta = f.media_meta().ok_or_else(|| {
+                        Error::Validation(ValidationErrors::field(&f.name, "missing media kind_meta"))
+                    })?;
+                    if meta.multiple {
+                        media_links.push(coerce_media_multi(f, v)?);
+                    } else {
+                        coerce_media_single(f, v, &mut out, &mut media_checks)?;
                     }
                     continue;
                 }
@@ -115,7 +152,7 @@ pub fn body_to_binds(
             }
         }
     }
-    Ok((out, checks, links))
+    Ok((out, checks, links, media_checks, media_links))
 }
 
 /// Coerce a JSON value (uuid string | null) for a `FieldKind::Relation` field.
@@ -183,6 +220,59 @@ fn coerce_m2m(f: &Field, target: &str, v: &Value) -> Result<LinkPlan, Error> {
         ids,
         present: true,
     })
+}
+
+/// Coerce a single-media value (uuid string | null). Pushes a typed Uuid bind
+/// under `f.name` (DML maps to `<name>_id`) and registers an existence check.
+fn coerce_media_single(
+    f: &Field,
+    v: &Value,
+    out: &mut BTreeMap<String, BoundValue>,
+    checks: &mut Vec<MediaCheck>,
+) -> Result<(), Error> {
+    match v {
+        Value::Null => {
+            out.insert(f.name.clone(), BoundValue::Null(FieldKind::Uuid));
+        }
+        Value::String(s) => {
+            let id = Uuid::parse_str(s).map_err(|_| {
+                Error::Validation(ValidationErrors::field(&f.name, "invalid uuid"))
+            })?;
+            out.insert(f.name.clone(), BoundValue::Uuid(id));
+            checks.push(MediaCheck { field: f.name.clone(), id });
+        }
+        _ => {
+            return Err(Error::Validation(ValidationErrors::field(
+                &f.name,
+                "media value must be a uuid string or null",
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Parse a multiple-media value (array of uuid strings, order preserved, deduped).
+/// Empty array is a valid "clear all".
+fn coerce_media_multi(f: &Field, v: &Value) -> Result<MediaLinkPlan, Error> {
+    let arr = v.as_array().ok_or_else(|| {
+        Error::Validation(ValidationErrors::field(
+            &f.name,
+            "multiple media value must be an array of uuid strings",
+        ))
+    })?;
+    let mut ids = Vec::with_capacity(arr.len());
+    let mut seen = std::collections::HashSet::new();
+    for item in arr {
+        let s = item.as_str().ok_or_else(|| {
+            Error::Validation(ValidationErrors::field(&f.name, "media ids must be strings"))
+        })?;
+        let id = Uuid::parse_str(s)
+            .map_err(|_| Error::Validation(ValidationErrors::field(&f.name, "invalid uuid")))?;
+        if seen.insert(id) {
+            ids.push(id);
+        }
+    }
+    Ok(MediaLinkPlan { field: f.name.clone(), ids, present: true })
 }
 
 pub fn row_to_json(ct: &ContentType, row: &PgRow) -> Result<Value, Error> {
@@ -264,6 +354,11 @@ fn decode_field(row: &PgRow, f: &Field) -> Result<Value, Error> {
             let v: Option<Uuid> = row.try_get(f.name.as_str()).map_err(decode)?;
             Ok(v.map(|u| Value::String(u.to_string())).unwrap_or(Value::Null))
         }
+        FieldKind::Media => {
+            let col = f.physical_column();
+            let v: Option<Uuid> = row.try_get(col.as_str()).map_err(decode)?;
+            Ok(v.map(|u| Value::String(u.to_string())).unwrap_or(Value::Null))
+        }
         _ => Ok(Value::Null),
     }
 }
@@ -320,7 +415,7 @@ mod tests {
         .as_object()
         .unwrap()
         .clone();
-        let (out, checks, _links) = body_to_binds(&ct(), body, true).unwrap();
+        let (out, checks, _links, _mc, _ml) = body_to_binds(&ct(), body, true).unwrap();
         assert_eq!(out.get("title").unwrap(), &BoundValue::Str("hi".into()));
         assert_eq!(out.get("count").unwrap(), &BoundValue::I64(7));
         assert!(checks.is_empty());
@@ -394,7 +489,7 @@ mod tests {
                 .as_object()
                 .unwrap()
                 .clone();
-        let (out, checks, _links) = body_to_binds(&ct_with_relation(), body, true).unwrap();
+        let (out, checks, _links, _mc, _ml) = body_to_binds(&ct_with_relation(), body, true).unwrap();
         assert_eq!(out.get("author").unwrap(), &BoundValue::Uuid(id));
         assert_eq!(checks.len(), 1);
         assert_eq!(checks[0].field, "author");
@@ -410,7 +505,7 @@ mod tests {
                 .as_object()
                 .unwrap()
                 .clone();
-        let (out, checks, _links) = body_to_binds(&ct_with_relation(), body, true).unwrap();
+        let (out, checks, _links, _mc, _ml) = body_to_binds(&ct_with_relation(), body, true).unwrap();
         assert_eq!(
             out.get("author").unwrap(),
             &BoundValue::Null(FieldKind::Uuid)
@@ -500,7 +595,7 @@ mod tests {
         .as_object()
         .unwrap()
         .clone();
-        let (out, _checks, links) = body_to_binds(&ct_with_m2m(), body, true).unwrap();
+        let (out, _checks, links, _mc, _ml) = body_to_binds(&ct_with_m2m(), body, true).unwrap();
         assert!(!out.contains_key("tags"));
         assert!(out.contains_key("title"));
         assert_eq!(links.len(), 1);
@@ -517,7 +612,7 @@ mod tests {
             .as_object()
             .unwrap()
             .clone();
-        let (_out, _checks, links) = body_to_binds(&ct_with_m2m(), body, true).unwrap();
+        let (_out, _checks, links, _mc, _ml) = body_to_binds(&ct_with_m2m(), body, true).unwrap();
         assert_eq!(links.len(), 1);
         assert!(links[0].ids.is_empty());
         assert!(links[0].present);
@@ -530,7 +625,7 @@ mod tests {
             .as_object()
             .unwrap()
             .clone();
-        let (_out, _checks, links) = body_to_binds(&ct_with_m2m(), body, true).unwrap();
+        let (_out, _checks, links, _mc, _ml) = body_to_binds(&ct_with_m2m(), body, true).unwrap();
         assert!(links.is_empty());
     }
 
@@ -571,7 +666,77 @@ mod tests {
                 .as_object()
                 .unwrap()
                 .clone();
-        let (_out, _checks, links) = body_to_binds(&ct_with_m2m(), body, true).unwrap();
+        let (_out, _checks, links, _mc, _ml) = body_to_binds(&ct_with_m2m(), body, true).unwrap();
         assert_eq!(links[0].ids, vec![a]);
+    }
+
+    fn ct_with_media() -> ContentType {
+        ContentType {
+            id: Uuid::nil(),
+            name: "post".into(),
+            display_name: "Post".into(),
+            fields: vec![
+                Field { name: "hero".into(), kind: FieldKind::Media, required: false, unique: false, default: json!(null), max_length: None, kind_meta: json!({"multiple": false}) },
+                Field { name: "gallery".into(), kind: FieldKind::Media, required: false, unique: false, default: json!(null), max_length: None, kind_meta: json!({"multiple": true}) },
+            ],
+            created_at: Utc::now(), updated_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn media_single_uuid_coerces_and_registers_check() {
+        let id = Uuid::new_v4();
+        let body = serde_json::from_value::<Value>(json!({"hero": id.to_string()})).unwrap().as_object().unwrap().clone();
+        let (out, _checks, _links, media_checks, media_links) = body_to_binds(&ct_with_media(), body, true).unwrap();
+        assert_eq!(out.get("hero").unwrap(), &BoundValue::Uuid(id));
+        assert_eq!(media_checks.len(), 1);
+        assert_eq!(media_checks[0].field, "hero");
+        assert_eq!(media_checks[0].id, id);
+        assert!(media_links.is_empty());
+    }
+
+    #[test]
+    fn media_single_null_writes_typed_null_no_check() {
+        let body = serde_json::from_value::<Value>(json!({"hero": Value::Null})).unwrap().as_object().unwrap().clone();
+        let (out, _c, _l, media_checks, _ml) = body_to_binds(&ct_with_media(), body, true).unwrap();
+        assert_eq!(out.get("hero").unwrap(), &BoundValue::Null(FieldKind::Uuid));
+        assert!(media_checks.is_empty());
+    }
+
+    #[test]
+    fn media_single_bad_uuid_rejected() {
+        let body = serde_json::from_value::<Value>(json!({"hero": "nope"})).unwrap().as_object().unwrap().clone();
+        assert!(matches!(body_to_binds(&ct_with_media(), body, true), Err(Error::Validation(_))));
+    }
+
+    #[test]
+    fn media_multi_array_becomes_ordered_link_plan() {
+        let a = Uuid::new_v4();
+        let b = Uuid::new_v4();
+        let body = serde_json::from_value::<Value>(json!({"gallery": [a.to_string(), b.to_string()]})).unwrap().as_object().unwrap().clone();
+        let (out, _c, _l, _mc, media_links) = body_to_binds(&ct_with_media(), body, true).unwrap();
+        assert!(!out.contains_key("gallery"));
+        assert_eq!(media_links.len(), 1);
+        assert_eq!(media_links[0].field, "gallery");
+        assert_eq!(media_links[0].ids, vec![a, b]);
+        assert!(media_links[0].present);
+    }
+
+    #[test]
+    fn media_multi_empty_array_is_clear() {
+        let body = serde_json::from_value::<Value>(json!({"gallery": []})).unwrap().as_object().unwrap().clone();
+        let (_o, _c, _l, _mc, media_links) = body_to_binds(&ct_with_media(), body, true).unwrap();
+        assert_eq!(media_links.len(), 1);
+        assert!(media_links[0].ids.is_empty());
+        assert!(media_links[0].present);
+    }
+
+    #[test]
+    fn media_multi_dedups_preserving_order() {
+        let a = Uuid::new_v4();
+        let b = Uuid::new_v4();
+        let body = serde_json::from_value::<Value>(json!({"gallery": [a.to_string(), b.to_string(), a.to_string()]})).unwrap().as_object().unwrap().clone();
+        let (_o, _c, _l, _mc, media_links) = body_to_binds(&ct_with_media(), body, true).unwrap();
+        assert_eq!(media_links[0].ids, vec![a, b]);
     }
 }
