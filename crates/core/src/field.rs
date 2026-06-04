@@ -305,6 +305,14 @@ mod tests {
     }
 
     #[test]
+    fn coerce_media_is_type_mismatch() {
+        assert_eq!(
+            BoundValue::from_json(FieldKind::Media, &serde_json::json!("550e8400-e29b-41d4-a716-446655440000")).unwrap_err(),
+            CoerceError::TypeMismatch
+        );
+    }
+
+    #[test]
     fn validate_enum_ok() {
         let f = Field {
             name: "status".into(),
@@ -754,11 +762,9 @@ impl Field {
     }
 
     /// Resolve the physical SQL column name for this field. Primitives use the
-    /// declared name; relation fields suffix `_id`.
+    /// declared name; relation and media fields suffix `_id`.
     pub fn physical_column(&self) -> String {
-        if self.kind == FieldKind::Relation {
-            format!("{}_id", self.name)
-        } else if self.kind == FieldKind::Media {
+        if matches!(self.kind, FieldKind::Relation | FieldKind::Media) {
             format!("{}_id", self.name)
         } else {
             self.name.clone()
