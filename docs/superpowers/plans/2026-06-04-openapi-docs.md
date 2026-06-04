@@ -105,9 +105,14 @@ use serde_json::{json, Value};
 /// Build a JSON Schema fragment for a single field's value type.
 pub fn field_to_schema(field: &Field) -> Value {
     let mut schema = match field.kind {
-        FieldKind::String | FieldKind::Text => {
+        FieldKind::String => {
             json!({ "type": "string", "maxLength": field.effective_max_length() })
         }
+        // Text is unbounded Postgres `text`; only surface a maxLength the user set.
+        FieldKind::Text => match field.max_length {
+            Some(n) => json!({ "type": "string", "maxLength": n }),
+            None => json!({ "type": "string" }),
+        },
         FieldKind::Integer => json!({ "type": "integer", "format": "int64" }),
         FieldKind::Float => json!({ "type": "number", "format": "double" }),
         FieldKind::Boolean => json!({ "type": "boolean" }),
@@ -119,8 +124,14 @@ pub fn field_to_schema(field: &Field) -> Value {
             json!({ "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" })
         }
         FieldKind::Enum => {
+            // Empty `enum` is invalid JSON Schema; fall back to a bare string
+            // if enum_meta is missing/corrupt.
             let values = field.enum_meta().map(|m| m.values).unwrap_or_default();
-            json!({ "type": "string", "enum": values })
+            if values.is_empty() {
+                json!({ "type": "string" })
+            } else {
+                json!({ "type": "string", "enum": values })
+            }
         }
         FieldKind::Json => json!({}),
         FieldKind::Relation => {
@@ -328,7 +339,7 @@ pub fn content_type_paths(ct: &ContentType) -> Value {
     let (resp_name, req_name) = schema_names(&ct.name);
     let resp_ref = format!("#/components/schemas/{resp_name}");
     let req_ref = format!("#/components/schemas/{req_name}");
-    let tag = ct.name.clone();
+    let tag = ct.display_name.clone();
     let secured = json!([{ "bearerAuth": [] }]);
     let errs = json!({
         "401": { "$ref": "#/components/responses/Unauthorized" },
@@ -351,13 +362,16 @@ pub fn content_type_paths(ct: &ContentType) -> Value {
                 "description": "List of entries",
                 "content": { "application/json": { "schema": {
                     "type": "object",
+                    "required": ["data", "meta"],
                     "properties": {
                         "data": { "type": "array", "items": { "$ref": resp_ref } },
-                        "meta": { "type": "object", "properties": {
-                            "page": { "type": "integer" },
-                            "pageSize": { "type": "integer" },
-                            "total": { "type": "integer" }
-                        }}
+                        "meta": { "type": "object",
+                            "required": ["page", "pageSize", "total"],
+                            "properties": {
+                                "page": { "type": "integer" },
+                                "pageSize": { "type": "integer" },
+                                "total": { "type": "integer" }
+                            }}
                     }
                 }}}
             }
@@ -634,7 +648,7 @@ pub fn static_paths() -> Value {
             "get": { "tags": ["media"], "summary": "Get media settings",
                 "security": secured, "responses": { "200": { "description": "Settings" } } },
             "put": { "tags": ["media"], "summary": "Update media settings",
-                "security": secured, "responses": { "200": { "description": "Updated" } } }
+                "security": secured, "responses": { "204": { "description": "Updated" } } }
         },
         "/admin/media/settings/test": {
             "post": { "tags": ["media"], "summary": "Test provider settings",
@@ -943,7 +957,9 @@ pub fn router() -> Router<AppState> {
         .route("/docs", get(docs_ui))
 }
 
-const SWAGGER_UI_HTML: &str = r#"<!DOCTYPE html>
+// Note: r##"..."## delimiter — the HTML contains `"#swagger-ui"` which would
+// prematurely close a plain r#"..."# raw string.
+const SWAGGER_UI_HTML: &str = r##"<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -963,7 +979,7 @@ const SWAGGER_UI_HTML: &str = r#"<!DOCTYPE html>
     };
   </script>
 </body>
-</html>"#;
+</html>"##;
 ```
 
 - [ ] **Step 2: Verify the crate compiles**
