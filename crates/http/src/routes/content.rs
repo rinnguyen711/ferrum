@@ -74,6 +74,7 @@ async fn list(
     if let Some(raw) = populate_param.as_deref() {
         apply_populate(&state, &ct, raw, &mut maps).await?;
     }
+    crate::media_embed::apply_media_embed(&state.pool, &ct, &mut maps).await.map_err(ApiError)?;
 
     let data: Vec<Value> = maps.into_iter().map(Value::Object).collect();
 
@@ -100,9 +101,11 @@ async fn create(
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     ensure(&state, &principal, Action::ContentWrite, &ct_name).await?;
     let ct = state.schemas.registry().get(&ct_name).await.ok_or(ApiError(Error::NotFound))?;
-    let (binds_map, checks, links) = body_to_binds(&ct, body, true)?;
+    let (binds_map, checks, links, media_checks, media_links) = body_to_binds(&ct, body, true)?;
     verify_relation_targets_exist(&state, &checks).await?;
     verify_link_targets_exist(&state, &links).await?;
+    verify_media_targets_exist(&state, &media_checks).await?;
+    verify_media_link_targets_exist(&state, &media_links).await?;
 
     let (sql, binds) = rustapi_sql::insert(&ct, &binds_map)
         .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
@@ -118,6 +121,7 @@ async fn create(
         .ok_or_else(|| ApiError(Error::Internal(anyhow::anyhow!("insert returned no id"))))?;
 
     write_links(&mut tx, &ct.name, &links, new_id).await?;
+    write_media_links(&mut tx, &ct.name, &media_links, new_id).await?;
     tx.commit().await.map_err(db)?;
 
     state.events.emit(Event::EntryCreated { content_type: ct.name.clone(), id: new_id }).await;
@@ -148,6 +152,11 @@ async fn get_one(
         apply_populate(&state, &ct, raw, &mut one).await?;
         map = one.pop().unwrap_or_default();
     }
+    {
+        let mut one = vec![std::mem::take(&mut map)];
+        crate::media_embed::apply_media_embed(&state.pool, &ct, &mut one).await.map_err(ApiError)?;
+        map = one.pop().unwrap_or_default();
+    }
     Ok(Json(Value::Object(map)))
 }
 
@@ -159,9 +168,11 @@ async fn update(
 ) -> Result<Json<Value>, ApiError> {
     ensure(&state, &principal, Action::ContentWrite, &ct_name).await?;
     let ct = state.schemas.registry().get(&ct_name).await.ok_or(ApiError(Error::NotFound))?;
-    let (mut binds_map, checks, links) = body_to_binds(&ct, body, true)?;
+    let (mut binds_map, checks, links, media_checks, media_links) = body_to_binds(&ct, body, true)?;
     verify_relation_targets_exist(&state, &checks).await?;
     verify_link_targets_exist(&state, &links).await?;
+    verify_media_targets_exist(&state, &media_checks).await?;
+    verify_media_link_targets_exist(&state, &media_links).await?;
 
     // PUT is full-replace per spec §6.2: fields absent from the body that are
     // not required get explicitly nulled. Required-with-no-default would have
@@ -169,15 +180,17 @@ async fn update(
     // value (we can't infer the default safely from the wire-encoded SQL
     // literal, so we omit and let the column keep its current value — same
     // shape as if the client had POSTed the entry without that field). For
-    // relation fields the typed null is FieldKind::Uuid (matches the FK col).
+    // relation and media fields the typed null is FieldKind::Uuid (matches the FK col).
     for f in &ct.fields {
-        // Many-to-many fields have no column on this table; skip them here.
-        // Their links are handled by write_links below.
+        // Many-to-many and multiple-media fields have no column on this table;
+        // skip them here. Their links are handled by write_links/write_media_links below.
         if !f.is_stored_column() {
             continue;
         }
         if !binds_map.contains_key(&f.name) && !f.required {
-            let null_kind = if f.kind == rustapi_core::FieldKind::Relation {
+            let null_kind = if f.kind == rustapi_core::FieldKind::Relation
+                || f.kind == rustapi_core::FieldKind::Media
+            {
                 rustapi_core::FieldKind::Uuid
             } else {
                 f.kind
@@ -200,6 +213,7 @@ async fn update(
         None => return Err(ApiError(Error::NotFound)), // tx rolls back on drop
     };
     write_links(&mut tx, &ct.name, &links, id).await?;
+    write_media_links(&mut tx, &ct.name, &media_links, id).await?;
     tx.commit().await.map_err(db)?;
 
     state.events.emit(Event::EntryUpdated { content_type: ct.name.clone(), id }).await;
@@ -470,6 +484,74 @@ async fn write_links(
             .execute(&mut **tx)
             .await
             .map_err(db)?;
+    }
+    Ok(())
+}
+
+/// Existence pre-check for single-media ids. All target `_media_assets`, so one
+/// batched SELECT covers every check. Returns 422 naming the first field with a
+/// missing id (payload order).
+async fn verify_media_targets_exist(state: &AppState, checks: &[crate::entry::MediaCheck]) -> Result<(), ApiError> {
+    if checks.is_empty() { return Ok(()); }
+    let ids: Vec<Uuid> = checks.iter().map(|c| c.id).collect();
+    let rows = sqlx::query("SELECT id FROM \"_media_assets\" WHERE id = ANY($1)").bind(&ids).fetch_all(&state.pool).await.map_err(db)?;
+    let mut found = std::collections::HashSet::new();
+    for r in &rows {
+        let id: Uuid = r.try_get("id").map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e))))?;
+        found.insert(id);
+    }
+    let mut current_field: Option<&str> = None;
+    let mut missing: Vec<String> = Vec::new();
+    for c in checks {
+        if !found.contains(&c.id) {
+            match current_field {
+                None => { current_field = Some(&c.field); missing.push(c.id.to_string()); }
+                Some(name) if name == c.field => missing.push(c.id.to_string()),
+                Some(_) => break,
+            }
+        }
+    }
+    if let Some(field) = current_field {
+        return Err(ApiError(Error::Validation(ValidationErrors::relation_target_missing(field, missing))));
+    }
+    Ok(())
+}
+
+/// Existence pre-check for multiple-media ids, per field.
+async fn verify_media_link_targets_exist(state: &AppState, links: &[crate::entry::MediaLinkPlan]) -> Result<(), ApiError> {
+    for plan in links {
+        if plan.ids.is_empty() { continue; }
+        let rows = sqlx::query("SELECT id FROM \"_media_assets\" WHERE id = ANY($1)").bind(&plan.ids).fetch_all(&state.pool).await.map_err(db)?;
+        let mut found = std::collections::HashSet::new();
+        for r in &rows {
+            let id: Uuid = r.try_get("id").map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e))))?;
+            found.insert(id);
+        }
+        let missing: Vec<String> = plan.ids.iter().filter(|id| !found.contains(id)).map(|id| id.to_string()).collect();
+        if !missing.is_empty() {
+            return Err(ApiError(Error::Validation(ValidationErrors::relation_target_missing(&plan.field, missing))));
+        }
+    }
+    Ok(())
+}
+
+/// Apply each multiple-media replace-set inside the txn: clear the gallery, then
+/// insert the supplied asset ids in order (position via ORDINALITY).
+async fn write_media_links(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    owner_type: &str,
+    links: &[crate::entry::MediaLinkPlan],
+    owner_id: Uuid,
+) -> Result<(), ApiError> {
+    for plan in links {
+        if !plan.present { continue; }
+        let (del_sql, _) = rustapi_sql::delete_media_links(owner_type, &plan.field, owner_id)
+            .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
+        sqlx::query(&del_sql).bind(owner_id).execute(&mut **tx).await.map_err(db)?;
+        if plan.ids.is_empty() { continue; }
+        let (ins_sql, _) = rustapi_sql::insert_media_links(owner_type, &plan.field, owner_id)
+            .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
+        sqlx::query(&ins_sql).bind(owner_id).bind(&plan.ids).execute(&mut **tx).await.map_err(db)?;
     }
     Ok(())
 }

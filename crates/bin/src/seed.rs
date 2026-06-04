@@ -90,7 +90,7 @@ fn article_type() -> NewContentType {
 async fn insert_entry(pool: &PgPool, ct: &ContentType, body: Map<String, Value>) -> Result<Uuid> {
     // Seed types use only many_to_one relations, so the m2m link plan is
     // always empty here.
-    let (binds, _checks, _links) = body_to_binds(ct, body, true)
+    let (binds, _checks, _links, _mc, _ml) = body_to_binds(ct, body, true)
         .map_err(|e| anyhow::anyhow!("seed body_to_binds: {e}"))?;
     let (sql, bind_vals) = rustapi_sql::insert(ct, &binds)
         .map_err(|e| anyhow::anyhow!("seed insert sql: {e}"))?;
