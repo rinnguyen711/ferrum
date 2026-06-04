@@ -6,11 +6,14 @@ import {
   createEntry,
   getContentType,
   getEntry,
+  listAssets,
   listEntries,
   updateEntry,
 } from "../api/endpoints";
-import type { Entry, Field } from "../api/types";
-import { enumValues, relationMeta } from "../api/types";
+import { AssetPicker } from "./media/AssetPicker";
+import { AssetThumb } from "./media/AssetThumb";
+import type { Entry, Field, MediaAsset } from "../api/types";
+import { enumValues, mediaMeta, relationMeta } from "../api/types";
 import { relationLabel } from "../util";
 import { ApiError } from "../api/client";
 
@@ -59,6 +62,12 @@ export function EntryEditor() {
     const body: Record<string, unknown> = {};
     for (const f of ct.fields) {
       const v = form[f.name];
+      if (f.kind === "media") {
+        if (Array.isArray(v)) { body[f.name] = v; }            // multiple: always send (even [])
+        else if (v == null || v === "") { /* single unset: omit */ }
+        else { body[f.name] = v; }                              // single: id string
+        continue;
+      }
       if (v === "" || v === undefined) continue;
       if (f.kind === "integer" || f.kind === "float") {
         body[f.name] = Number(v);
@@ -226,6 +235,8 @@ function FieldInput({
       );
     case "relation":
       return <RelationSelect field={field} value={str} onChange={onChange} />;
+    case "media":
+      return <MediaField field={field} value={value} onChange={onChange} />;
     default:
       return (
         <input className="rs-input" value={str} onChange={(e) => onChange(e.target.value)} />
@@ -261,5 +272,99 @@ function RelationSelect({
         </option>
       ))}
     </select>
+  );
+}
+
+function MediaField({
+  field,
+  value,
+  onChange,
+}: {
+  field: Field;
+  value: unknown;
+  onChange: (v: unknown) => void;
+}) {
+  const multiple = mediaMeta(field)?.multiple ?? false;
+  const [open, setOpen] = useState(false);
+  const [assets, setAssets] = useState<MediaAsset[]>([]);
+
+  // Seed from embedded read shape: object | array<object> | id | id[] | "".
+  useEffect(() => {
+    let cancelled = false;
+    const seed = async () => {
+      if (value === "" || value == null) { setAssets([]); return; }
+      const items = Array.isArray(value) ? value : [value];
+      const objects = items.filter(
+        (x): x is MediaAsset => typeof x === "object" && x !== null && "id" in (x as object),
+      );
+      if (objects.length === items.length) { setAssets(objects); return; }
+      const ids = items
+        .map((x) => (typeof x === "string" ? x : (x as MediaAsset)?.id))
+        .filter(Boolean) as string[];
+      try {
+        const all = await listAssets(null);
+        if (cancelled) return;
+        const byId = new Map(all.map((a) => [a.id, a]));
+        setAssets(ids.map((id) => byId.get(id)).filter((a): a is MediaAsset => !!a));
+      } catch {
+        if (!cancelled) setAssets([]);
+      }
+    };
+    seed();
+    return () => { cancelled = true; };
+  }, [value]);
+
+  const emit = (next: MediaAsset[]) => {
+    setAssets(next);
+    onChange(multiple ? next.map((a) => a.id) : (next[0]?.id ?? null));
+  };
+
+  const onPick = (picked: MediaAsset[]) => {
+    setOpen(false);
+    if (multiple) {
+      const existing = new Set(assets.map((a) => a.id));
+      emit([...assets, ...picked.filter((p) => !existing.has(p.id))]);
+    } else {
+      emit(picked.slice(0, 1));
+    }
+  };
+
+  const remove = (id: string) => emit(assets.filter((a) => a.id !== id));
+  const move = (i: number, dir: -1 | 1) => {
+    const j = i + dir;
+    if (j < 0 || j >= assets.length) return;
+    const next = assets.slice();
+    [next[i], next[j]] = [next[j], next[i]];
+    emit(next);
+  };
+
+  return (
+    <div className="rs-media-field">
+      {assets.length === 0 ? (
+        <div className="rs-media-field-empty">No asset selected.</div>
+      ) : (
+        <div className="rs-media-field-strip">
+          {assets.map((a, i) => (
+            <div className="rs-media-field-item" key={a.id}>
+              <AssetThumb asset={a} />
+              <span className="rs-media-field-name" title={a.file_name}>{a.file_name}</span>
+              <div className="rs-media-field-actions">
+                {multiple && (
+                  <>
+                    <button type="button" className="rs-link-btn" disabled={i === 0} onClick={() => move(i, -1)}>↑</button>
+                    <button type="button" className="rs-link-btn" disabled={i === assets.length - 1} onClick={() => move(i, 1)}>↓</button>
+                  </>
+                )}
+                <button type="button" className="rs-link-btn rs-danger" onClick={() => remove(a.id)}>Remove</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <button type="button" className="rs-btn rs-btn--ghost" onClick={() => setOpen(true)}>
+        <Icons.image size={15} /> {multiple ? "Add assets" : assets.length ? "Replace asset" : "Choose asset"}
+      </button>
+      {open && <AssetPicker multiple={multiple} onClose={() => setOpen(false)} onPick={onPick} />}
+    </div>
   );
 }
