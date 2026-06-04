@@ -16,6 +16,12 @@ pub struct Config {
     /// When true (default), an empty DB is seeded with default content types
     /// and sample data at startup. Set RUSTAPI_SEED=false to disable.
     pub seed: bool,
+    /// When false, /openapi.json and /docs are not mounted.
+    pub docs_enabled: bool,
+    /// Reported as OpenAPI info.version.
+    pub api_version: String,
+    /// Reported as OpenAPI servers[0].url.
+    pub public_base_url: String,
 }
 
 impl Config {
@@ -43,6 +49,15 @@ impl Config {
             .filter(|s| !s.is_empty())
             .map(|s| !matches!(s.as_str(), "0" | "false" | "no"))
             .unwrap_or(true);
+        let docs_enabled = std::env::var("RUSTAPI_DOCS_ENABLED")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .map(|s| !matches!(s.as_str(), "0" | "false" | "no"))
+            .unwrap_or(true);
+        let api_version =
+            std::env::var("RUSTAPI_API_VERSION").unwrap_or_else(|_| "0.1.0".into());
+        let public_base_url =
+            std::env::var("RUSTAPI_PUBLIC_URL").unwrap_or_else(|_| "/".into());
         Ok(Self {
             database_url,
             jwt_secret,
@@ -52,6 +67,9 @@ impl Config {
             page_size_max,
             studio_dir,
             seed,
+            docs_enabled,
+            api_version,
+            public_base_url,
         })
     }
 }

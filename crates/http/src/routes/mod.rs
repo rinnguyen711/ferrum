@@ -1,5 +1,6 @@
 use crate::auth;
 use crate::middleware::auth::require_auth;
+use crate::openapi;
 use crate::state::AppState;
 use axum::routing::get;
 use axum::Router;
@@ -12,9 +13,13 @@ pub mod schema;
 pub mod users;
 
 pub fn build_router(state: AppState) -> Router {
-    let public = Router::new()
+    let mut public = Router::new()
         .route("/healthz", get(health::healthz))
         .merge(auth::public_router());
+
+    if state.config.docs_enabled {
+        public = public.merge(openapi::router());
+    }
 
     let protected = Router::new()
         .merge(schema::router())
