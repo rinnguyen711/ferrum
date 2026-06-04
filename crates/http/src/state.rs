@@ -53,6 +53,12 @@ pub struct AppConfig {
     /// Access-token lifetime in seconds.
     pub jwt_ttl_secs: i64,
     pub page_size_max: u32,
+    /// When false, `/openapi.json` and `/docs` are not mounted (prod opt-out).
+    pub docs_enabled: bool,
+    /// Reported as `info.version` in the OpenAPI doc.
+    pub api_version: String,
+    /// Reported as the single `servers[0].url` in the OpenAPI doc.
+    pub public_base_url: String,
 }
 
 #[derive(Clone)]
