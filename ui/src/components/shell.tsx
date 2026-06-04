@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Icons, type IconKey } from "./icons";
 import { getHealth, listContentTypes } from "../api/endpoints";
 import type { Health, PatchContentType } from "../api/types";
@@ -166,41 +166,75 @@ export function SecondaryPanel({
   }
 
   if (section === "settings") {
-    const groups = [
-      { label: "Global settings", items: ["Overview", "API tokens", "Webhooks", "Internationalization"] },
-      { label: "Administration", items: ["Users", "Roles", "Audit logs", "Single sign-on"] },
-    ];
-    return (
-      <aside className="rs-panel">
-        <div className="rs-panel-head">
-          <h2>Settings</h2>
-        </div>
-        <div className="rs-panel-scroll">
-          {groups.map((g) => (
-            <div className="rs-panel-group" key={g.label}>
-              <div className="rs-panel-grouphead">
-                <span>{g.label}</span>
-              </div>
-              {g.items.map((it) => {
-                const enabled = g.label === "Global settings" && it === "API tokens";
-                return (
-                  <button
-                    key={it}
-                    disabled={!enabled}
-                    title={enabled ? undefined : "Coming soon"}
-                    className={"rs-panel-item" + (enabled ? " is-active" : "")}
-                  >
-                    {it}
-                  </button>
-                );
-              })}
-            </div>
-          ))}
-        </div>
-      </aside>
-    );
+    return <SettingsPanel />;
   }
   return null;
+}
+
+/** Secondary panel for Settings. Items with a `to` are live; the rest are
+ * placeholders pending their screens. */
+function SettingsPanel() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  type Item = { label: string; to?: string };
+  const groups: { label: string; items: Item[] }[] = [
+    {
+      label: "Global settings",
+      items: [
+        { label: "Overview" },
+        { label: "API tokens", to: "/settings" },
+        { label: "Media storage", to: "/settings/media" },
+        { label: "Webhooks" },
+        { label: "Internationalization" },
+      ],
+    },
+    {
+      label: "Administration",
+      items: [
+        { label: "Users" },
+        { label: "Roles" },
+        { label: "Audit logs" },
+        { label: "Single sign-on" },
+      ],
+    },
+  ];
+
+  const isActive = (to?: string) =>
+    to === "/settings"
+      ? location.pathname === "/settings"
+      : !!to && location.pathname === to;
+
+  return (
+    <aside className="rs-panel">
+      <div className="rs-panel-head">
+        <h2>Settings</h2>
+      </div>
+      <div className="rs-panel-scroll">
+        {groups.map((g) => (
+          <div className="rs-panel-group" key={g.label}>
+            <div className="rs-panel-grouphead">
+              <span>{g.label}</span>
+            </div>
+            {g.items.map((it) => {
+              const enabled = !!it.to;
+              return (
+                <button
+                  key={it.label}
+                  disabled={!enabled}
+                  title={enabled ? undefined : "Coming soon"}
+                  className={"rs-panel-item" + (isActive(it.to) ? " is-active" : "")}
+                  onClick={enabled ? () => navigate(it.to!) : undefined}
+                >
+                  {it.label}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </aside>
+  );
 }
 
 /** Secondary panel for the Users & Permissions section. Users is live; the
