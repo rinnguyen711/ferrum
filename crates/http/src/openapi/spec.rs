@@ -2,7 +2,7 @@
 
 use crate::openapi::{schema, static_paths};
 use crate::state::AppState;
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 
 /// Build the OpenAPI document. Pure assembly over already-loaded registry
 /// data plus config; performs the async registry read but no other I/O.
@@ -11,29 +11,31 @@ pub async fn build(state: &AppState) -> Value {
 
     // paths = static block + per-content-type dynamic block.
     let mut paths = static_paths::static_paths();
-    let paths_map = paths.as_object_mut().expect("static_paths is an object");
-
-    // components = static components; schemas get extended per content type.
     let mut components = static_paths::static_components();
-    let schemas_map = components["schemas"]
-        .as_object_mut()
-        .expect("components.schemas is an object")
-        .clone();
-    let mut schemas_map: Map<String, Value> = schemas_map;
 
-    for ct in state.schemas.registry().list().await {
-        if let Value::Object(ct_paths) = schema::content_type_paths(&ct) {
-            for (k, v) in ct_paths {
-                paths_map.insert(k, v);
+    // Borrow both target maps mutably for the merge. Dynamic content-type
+    // path keys are always `/api/{name}` / `/api/{name}/{id}`; the `/api/`
+    // prefix plus ident validation (names can't contain `/`) means they
+    // never collide with the static paths inserted above.
+    {
+        let paths_map = paths.as_object_mut().expect("static_paths is an object");
+        let schemas_map = components["schemas"]
+            .as_object_mut()
+            .expect("components.schemas is an object");
+
+        for ct in state.schemas.registry().list().await {
+            if let Value::Object(ct_paths) = schema::content_type_paths(&ct) {
+                for (k, v) in ct_paths {
+                    paths_map.insert(k, v);
+                }
             }
-        }
-        if let Value::Object(ct_schemas) = schema::content_type_schemas(&ct) {
-            for (k, v) in ct_schemas {
-                schemas_map.insert(k, v);
+            if let Value::Object(ct_schemas) = schema::content_type_schemas(&ct) {
+                for (k, v) in ct_schemas {
+                    schemas_map.insert(k, v);
+                }
             }
         }
     }
-    components["schemas"] = Value::Object(schemas_map);
 
     json!({
         "openapi": "3.1.0",
