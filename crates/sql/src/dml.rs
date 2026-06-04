@@ -126,6 +126,28 @@ pub fn delete_links(
     Ok((sql, owner_id))
 }
 
+/// `INSERT INTO j_media_<ct>_<field> (<ct>_id, asset_id, position)` — replace-set
+/// insert of a gallery in array order. `position` comes from `WITH ORDINALITY`
+/// (1-based). Caller binds `$1` = owner id, `$2` = `uuid[]` of asset ids in order.
+pub fn insert_media_links(ct: &str, field: &str, owner_id: Uuid) -> Result<(String, Uuid), DmlError> {
+    let jt = crate::ident::media_join_table_name(ct, field)?;
+    let owner_col = quote_ident(&format!("{ct}_id"))?;
+    let sql = format!(
+        "INSERT INTO {jt} ({owner_col}, \"asset_id\", \"position\") \
+SELECT $1::uuid, x.asset, x.ord::int FROM UNNEST($2::uuid[]) WITH ORDINALITY AS x(asset, ord)"
+    );
+    Ok((sql, owner_id))
+}
+
+/// `DELETE FROM j_media_<ct>_<field> WHERE <ct>_id = $1::uuid` — clears a gallery
+/// ahead of a replace-set re-insert. Caller binds `$1` = owner id.
+pub fn delete_media_links(ct: &str, field: &str, owner_id: Uuid) -> Result<(String, Uuid), DmlError> {
+    let jt = crate::ident::media_join_table_name(ct, field)?;
+    let owner_col = quote_ident(&format!("{ct}_id"))?;
+    let sql = format!("DELETE FROM {jt} WHERE {owner_col} = $1::uuid");
+    Ok((sql, owner_id))
+}
+
 /// `SELECT * FROM ct_<name> WHERE id=$1`
 pub fn select_by_id(ct_name: &str, id: Uuid) -> Result<SqlAndBinds, DmlError> {
     let table = table_name(ct_name)?;
@@ -409,6 +431,26 @@ SELECT $1::uuid, x FROM UNNEST($2::uuid[]) AS x ON CONFLICT DO NOTHING"
         let (sql, bind) = delete_links("post", "tags", owner).unwrap();
         assert_eq!(sql, "DELETE FROM \"j_post_tags\" WHERE \"post_id\" = $1::uuid");
         assert_eq!(bind, owner);
+    }
+
+    #[test]
+    fn insert_media_links_emits_positioned_unnest() {
+        let id = Uuid::nil();
+        let (sql, owner) = super::insert_media_links("post", "gallery", id).unwrap();
+        assert_eq!(owner, id);
+        assert_eq!(
+            sql,
+            "INSERT INTO \"j_media_post_gallery\" (\"post_id\", \"asset_id\", \"position\") \
+SELECT $1::uuid, x.asset, x.ord::int FROM UNNEST($2::uuid[]) WITH ORDINALITY AS x(asset, ord)"
+        );
+    }
+
+    #[test]
+    fn delete_media_links_clears_owner() {
+        let id = Uuid::nil();
+        let (sql, owner) = super::delete_media_links("post", "gallery", id).unwrap();
+        assert_eq!(owner, id);
+        assert_eq!(sql, "DELETE FROM \"j_media_post_gallery\" WHERE \"post_id\" = $1::uuid");
     }
 }
 
