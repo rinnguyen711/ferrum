@@ -123,3 +123,20 @@ curl -X POST http://localhost:8080/api/post \
   -H "content-type: application/json" \
   -d '{"title":"Hello"}'
 ```
+
+## API documentation
+
+The server generates an OpenAPI 3.1 spec from the live content-type registry,
+so the dynamic `/api/{type}` endpoints always reflect your current schema.
+
+- `GET /openapi.json` — the generated spec.
+- `GET /docs` — Swagger UI, browsable in any browser.
+
+Both are **public by default**. The spec exposes every content type's name and
+field structure, so disable them in production if your schema is sensitive.
+
+```sh
+export RUSTAPI_DOCS_ENABLED=false        # default true; false → /openapi.json and /docs return 404
+export RUSTAPI_API_VERSION=1.2.3         # default 0.1.0; reported as OpenAPI info.version
+export RUSTAPI_PUBLIC_URL=https://api.example.com   # default "/"; reported as OpenAPI servers[0].url
+```
