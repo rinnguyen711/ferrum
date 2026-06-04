@@ -91,7 +91,7 @@ export function AssetPicker({
                 return (
                   <div className={"rs-media-card" + (sel ? " is-selected" : "")} key={m.id} onClick={() => toggle(m)}>
                     {multiple && (
-                      <div className="rs-media-check" onClick={(e) => { e.stopPropagation(); toggle(m); }}>
+                      <div className="rs-media-check" onClick={(e) => e.stopPropagation()}>
                         <Checkbox checked={sel} onChange={() => toggle(m)} />
                       </div>
                     )}
