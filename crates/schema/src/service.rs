@@ -77,6 +77,11 @@ impl SchemaService {
                     exec_create_join_table(&mut tx, &ct.name, &f.name, &meta.target).await?;
                 }
             }
+            if let Some(m) = f.media_meta() {
+                if m.multiple {
+                    exec_create_media_join_table(&mut tx, &ct.name, &f.name).await?;
+                }
+            }
         }
 
         tx.commit().await.map_err(internal)?;
@@ -115,8 +120,16 @@ impl SchemaService {
                 .and_then(|f| f.relation_meta())
                 .map(|m| m.cardinality == Cardinality::ManyToMany)
                 .unwrap_or(false);
+            let is_multi_media = dropped
+                .and_then(|f| f.media_meta())
+                .map(|m| m.multiple)
+                .unwrap_or(false);
             if is_m2m {
                 let sql = rustapi_sql::drop_join_table(name, drop_name)
+                    .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
+                sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
+            } else if is_multi_media {
+                let sql = rustapi_sql::drop_media_join_table(name, drop_name)
                     .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
                 sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
             } else {
@@ -129,6 +142,12 @@ impl SchemaService {
             if let Some(meta) = f.relation_meta() {
                 if meta.cardinality == Cardinality::ManyToMany {
                     exec_create_join_table(&mut tx, name, &f.name, &meta.target).await?;
+                    continue;
+                }
+            }
+            if let Some(m) = f.media_meta() {
+                if m.multiple {
+                    exec_create_media_join_table(&mut tx, name, &f.name).await?;
                     continue;
                 }
             }
@@ -344,6 +363,20 @@ async fn exec_create_join_table(
     target: &str,
 ) -> Result<(), Error> {
     let (jt, idx) = rustapi_sql::create_join_table(owner, field, target)
+        .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
+    sqlx::query(&jt).execute(&mut **tx).await.map_err(map_db_err)?;
+    sqlx::query(&idx).execute(&mut **tx).await.map_err(map_db_err)?;
+    Ok(())
+}
+
+/// Create a multiple-media join table (table + index) inside an existing
+/// transaction. Used by both `create` and `patch` add-paths.
+async fn exec_create_media_join_table(
+    tx: &mut Transaction<'_, Postgres>,
+    ct: &str,
+    field: &str,
+) -> Result<(), Error> {
+    let (jt, idx) = rustapi_sql::create_media_join_table(ct, field)
         .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
     sqlx::query(&jt).execute(&mut **tx).await.map_err(map_db_err)?;
     sqlx::query(&idx).execute(&mut **tx).await.map_err(map_db_err)?;
