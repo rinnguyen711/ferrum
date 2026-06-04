@@ -127,7 +127,7 @@ pub fn content_type_paths(ct: &ContentType) -> Value {
     let (resp_name, req_name) = schema_names(&ct.name);
     let resp_ref = format!("#/components/schemas/{resp_name}");
     let req_ref = format!("#/components/schemas/{req_name}");
-    let tag = ct.name.clone();
+    let tag = ct.display_name.clone();
     let secured = json!([{ "bearerAuth": [] }]);
     let errs = json!({
         "401": { "$ref": "#/components/responses/Unauthorized" },
@@ -150,9 +150,10 @@ pub fn content_type_paths(ct: &ContentType) -> Value {
                 "description": "List of entries",
                 "content": { "application/json": { "schema": {
                     "type": "object",
+                    "required": ["data", "meta"],
                     "properties": {
                         "data": { "type": "array", "items": { "$ref": resp_ref } },
-                        "meta": { "type": "object", "properties": {
+                        "meta": { "type": "object", "required": ["page", "pageSize", "total"], "properties": {
                             "page": { "type": "integer" },
                             "pageSize": { "type": "integer" },
                             "total": { "type": "integer" }
@@ -386,5 +387,10 @@ mod tests {
         assert!(p["/api/article/{id}"]["get"].is_object());
         assert!(p["/api/article/{id}"]["put"].is_object());
         assert!(p["/api/article/{id}"]["delete"].is_object());
+
+        let env = &p["/api/article"]["get"]["responses"]["200"]["content"]["application/json"]["schema"];
+        assert_eq!(env["required"], serde_json::json!(["data", "meta"]));
+        assert_eq!(env["properties"]["meta"]["required"], serde_json::json!(["page", "pageSize", "total"]));
+        assert_eq!(p["/api/article"]["get"]["tags"], serde_json::json!(["Article"]));
     }
 }
