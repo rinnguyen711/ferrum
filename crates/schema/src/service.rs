@@ -41,6 +41,7 @@ impl SchemaService {
             name: payload.name.clone(),
             display_name: payload.display_name.clone(),
             fields: payload.fields.clone(),
+            options: payload.options.clone(),
             created_at: now,
             updated_at: now,
         };
@@ -204,6 +205,7 @@ impl SchemaService {
             name: existing.name.clone(),
             display_name: new_display,
             fields: new_fields,
+            options: payload.options.unwrap_or_else(|| existing.options.clone()),
             created_at: existing.created_at,
             updated_at: now,
         };
@@ -404,6 +406,7 @@ mod tests {
                 max_length: None,
                 kind_meta: json!({}),
             }],
+            options: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -494,6 +497,7 @@ mod tests {
             name: "post".into(),
             display_name: "Post".into(),
             fields: vec![relation_field("author", "user", Some("posts"))],
+            options: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         })
