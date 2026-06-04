@@ -30,6 +30,10 @@ pub enum FieldKind {
     Url,
     /// Phase 2.5: text validated against a kebab slug regex at write time.
     Slug,
+    /// Phase 2.6: references one or many Media Library assets (`_media_assets`).
+    /// Configuration lives in `Field.kind_meta`; see `MediaMeta`. Single media is
+    /// a nullable FK column; multiple media lives in an ordered join table.
+    Media,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -70,6 +74,7 @@ impl BoundValue {
                 .map(BoundValue::Uuid)
                 .map_err(|_| CoerceError::BadUuid),
             (FieldKind::Relation, _) => Err(CoerceError::TypeMismatch),
+            (FieldKind::Media, _) => Err(CoerceError::TypeMismatch),
             (FieldKind::Json, v) => Ok(BoundValue::Json(v.clone())),
             (FieldKind::Email, V::String(s)) => {
                 if crate::validators::is_valid_email(s) {
@@ -569,6 +574,28 @@ impl EnumMeta {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct MediaMeta {
+    pub multiple: bool,
+}
+
+impl MediaMeta {
+    pub fn from_value(v: &serde_json::Value) -> Result<Self, FieldError> {
+        let obj = v.as_object().ok_or(FieldError::MediaMetaShape)?;
+        for key in obj.keys() {
+            if key != "multiple" {
+                return Err(FieldError::MediaMetaShape);
+            }
+        }
+        let multiple = match obj.get("multiple") {
+            None => false,
+            Some(serde_json::Value::Bool(b)) => *b,
+            Some(_) => return Err(FieldError::MediaMetaShape),
+        };
+        Ok(Self { multiple })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Field {
     pub name: String,
@@ -629,6 +656,14 @@ pub enum FieldError {
     JsonUniqueUnsupported,
     #[error("many_to_many relation field cannot be required")]
     ManyToManyCannotBeRequired,
+    #[error("media kind_meta must be {{}} or {{multiple: bool}}")]
+    MediaMetaShape,
+    #[error("media field cannot be unique")]
+    MediaFieldUniqueUnsupported,
+    #[error("media field cannot have a default")]
+    MediaFieldDefaultUnsupported,
+    #[error("media field cannot be required")]
+    MediaFieldRequiredUnsupported,
 }
 
 impl Field {
@@ -677,6 +712,19 @@ impl Field {
             // "no default" sentinel here — accept anything else verbatim).
             return Ok(());
         }
+        if self.kind == FieldKind::Media {
+            if self.unique {
+                return Err(FieldError::MediaFieldUniqueUnsupported);
+            }
+            if !self.default.is_null() {
+                return Err(FieldError::MediaFieldDefaultUnsupported);
+            }
+            if self.required {
+                return Err(FieldError::MediaFieldRequiredUnsupported);
+            }
+            MediaMeta::from_value(&self.kind_meta)?;
+            return Ok(());
+        }
         if matches!(
             self.kind,
             FieldKind::Email | FieldKind::Url | FieldKind::Slug
@@ -710,6 +758,8 @@ impl Field {
     pub fn physical_column(&self) -> String {
         if self.kind == FieldKind::Relation {
             format!("{}_id", self.name)
+        } else if self.kind == FieldKind::Media {
+            format!("{}_id", self.name)
         } else {
             self.name.clone()
         }
@@ -723,6 +773,9 @@ impl Field {
                 .relation_meta()
                 .map(|m| m.cardinality != Cardinality::ManyToMany)
                 .unwrap_or(false);
+        }
+        if self.kind == FieldKind::Media {
+            return self.media_meta().map(|m| !m.multiple).unwrap_or(true);
         }
         true
     }
@@ -739,6 +792,14 @@ impl Field {
     pub fn enum_meta(&self) -> Option<EnumMeta> {
         if self.kind == FieldKind::Enum {
             EnumMeta::from_value(&self.kind_meta).ok()
+        } else {
+            None
+        }
+    }
+
+    pub fn media_meta(&self) -> Option<MediaMeta> {
+        if self.kind == FieldKind::Media {
+            MediaMeta::from_value(&self.kind_meta).ok()
         } else {
             None
         }
@@ -1064,5 +1125,109 @@ mod enum_meta_tests {
             EnumMeta::from_value(&json!({"values": ["a"], "extra": 1})).unwrap_err(),
             FieldError::EnumMetaShape
         );
+    }
+}
+
+#[cfg(test)]
+mod media_meta_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn parse_empty_defaults_single() {
+        let m = MediaMeta::from_value(&json!({})).unwrap();
+        assert!(!m.multiple);
+    }
+
+    #[test]
+    fn parse_multiple_true() {
+        let m = MediaMeta::from_value(&json!({"multiple": true})).unwrap();
+        assert!(m.multiple);
+    }
+
+    #[test]
+    fn reject_non_bool_multiple() {
+        assert_eq!(
+            MediaMeta::from_value(&json!({"multiple": "yes"})).unwrap_err(),
+            FieldError::MediaMetaShape
+        );
+    }
+
+    #[test]
+    fn reject_extra_keys() {
+        assert_eq!(
+            MediaMeta::from_value(&json!({"multiple": true, "x": 1})).unwrap_err(),
+            FieldError::MediaMetaShape
+        );
+    }
+}
+
+#[cfg(test)]
+mod media_field_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn media(multiple: bool) -> Field {
+        Field {
+            name: "hero".into(),
+            kind: FieldKind::Media,
+            required: false,
+            unique: false,
+            default: serde_json::Value::Null,
+            max_length: None,
+            kind_meta: json!({"multiple": multiple}),
+        }
+    }
+
+    #[test]
+    fn single_media_ok() { assert!(media(false).validate().is_ok()); }
+
+    #[test]
+    fn multi_media_ok() { assert!(media(true).validate().is_ok()); }
+
+    #[test]
+    fn empty_kind_meta_ok() {
+        let mut f = media(false);
+        f.kind_meta = json!({});
+        assert!(f.validate().is_ok());
+    }
+
+    #[test]
+    fn rejects_unique() {
+        let mut f = media(false);
+        f.unique = true;
+        assert_eq!(f.validate().unwrap_err(), FieldError::MediaFieldUniqueUnsupported);
+    }
+
+    #[test]
+    fn rejects_default() {
+        let mut f = media(false);
+        f.default = json!("550e8400-e29b-41d4-a716-446655440000");
+        assert_eq!(f.validate().unwrap_err(), FieldError::MediaFieldDefaultUnsupported);
+    }
+
+    #[test]
+    fn rejects_required_single() {
+        let mut f = media(false);
+        f.required = true;
+        assert_eq!(f.validate().unwrap_err(), FieldError::MediaFieldRequiredUnsupported);
+    }
+
+    #[test]
+    fn rejects_required_multiple() {
+        let mut f = media(true);
+        f.required = true;
+        assert_eq!(f.validate().unwrap_err(), FieldError::MediaFieldRequiredUnsupported);
+    }
+
+    #[test]
+    fn physical_column_single_suffixes_id() {
+        assert_eq!(media(false).physical_column(), "hero_id");
+    }
+
+    #[test]
+    fn is_stored_column_matrix() {
+        assert!(media(false).is_stored_column());
+        assert!(!media(true).is_stored_column());
     }
 }
