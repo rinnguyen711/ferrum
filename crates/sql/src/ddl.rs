@@ -111,6 +111,32 @@ pub fn drop_join_table(owner: &str, field: &str) -> Result<String, DdlError> {
     Ok(format!("DROP TABLE {jt}"))
 }
 
+/// Build the `CREATE TABLE` + `CREATE INDEX` statements for an ordered
+/// multiple-media join table `j_media_<ct>_<field>`. Returns
+/// `(create_table_sql, create_index_sql)`. The owner FK is `<ct>_id` (cascades
+/// when the entry is deleted); `asset_id` references `_media_assets` and
+/// cascades when the asset is deleted. `position` orders the gallery.
+pub fn create_media_join_table(ct: &str, field: &str) -> Result<(String, String), DdlError> {
+    let jt = crate::ident::media_join_table_name(ct, field)?;
+    let owner_tbl = table_name(ct)?;
+    let owner_col = quote_ident(&format!("{ct}_id"))?;
+    let create = format!(
+        "CREATE TABLE {jt} (\
+{owner_col} uuid NOT NULL REFERENCES {owner_tbl}(\"id\") ON DELETE CASCADE, \
+\"asset_id\" uuid NOT NULL REFERENCES \"_media_assets\"(\"id\") ON DELETE CASCADE, \
+\"position\" int NOT NULL, \
+PRIMARY KEY ({owner_col}, \"asset_id\"))"
+    );
+    let index = format!("CREATE INDEX ON {jt} ({owner_col}, \"position\")");
+    Ok((create, index))
+}
+
+/// `DROP TABLE <media join table for ct.field>`.
+pub fn drop_media_join_table(ct: &str, field: &str) -> Result<String, DdlError> {
+    let jt = crate::ident::media_join_table_name(ct, field)?;
+    Ok(format!("DROP TABLE {jt}"))
+}
+
 fn column_def(ct_name: &str, f: &Field) -> Result<String, DdlError> {
     if f.kind == FieldKind::Relation {
         return relation_column_def(f);
@@ -576,6 +602,31 @@ PRIMARY KEY (\"post_id\", \"tag_id\"))"
         assert_eq!(
             sql,
             "ALTER TABLE \"ct_post\" ADD COLUMN \"hero_id\" uuid REFERENCES \"_media_assets\"(\"id\") ON DELETE SET NULL"
+        );
+    }
+
+    #[test]
+    fn create_media_join_table_emits_ordered_table_and_index() {
+        let (create, index) = create_media_join_table("post", "gallery").unwrap();
+        assert_eq!(
+            create,
+            "CREATE TABLE \"j_media_post_gallery\" (\
+\"post_id\" uuid NOT NULL REFERENCES \"ct_post\"(\"id\") ON DELETE CASCADE, \
+\"asset_id\" uuid NOT NULL REFERENCES \"_media_assets\"(\"id\") ON DELETE CASCADE, \
+\"position\" int NOT NULL, \
+PRIMARY KEY (\"post_id\", \"asset_id\"))"
+        );
+        assert_eq!(
+            index,
+            "CREATE INDEX ON \"j_media_post_gallery\" (\"post_id\", \"position\")"
+        );
+    }
+
+    #[test]
+    fn drop_media_join_table_works() {
+        assert_eq!(
+            drop_media_join_table("post", "gallery").unwrap(),
+            "DROP TABLE \"j_media_post_gallery\""
         );
     }
 }
