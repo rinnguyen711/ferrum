@@ -22,6 +22,8 @@ import { RoleDetail } from "./screens/RoleDetail";
 import { MediaSettings } from "./screens/MediaSettings";
 import { getToken, clearToken } from "./auth";
 import { setAuthErrorHandler } from "./api/client";
+import { useResource } from "./hooks/useResource";
+import { listContentTypes } from "./api/endpoints";
 
 const ACCENT = "#D14D2B";
 const DENSITY = "comfortable";
@@ -38,11 +40,21 @@ function loadDark(): boolean {
   }
 }
 
-/** Landing for bare /content and /builder: the type chooser lives in the
- * SecondaryPanel, so the main area just prompts the user to pick one. */
+/** Landing for bare /content and /builder: redirect to the first content type
+ * (matching the SecondaryPanel order). Falls back to a prompt when there are
+ * no types yet, and shows nothing while the list is loading. */
 function PickType({ kind }: { kind: "content" | "builder" }) {
+  const base = kind === "builder" ? "/builder" : "/content";
+  const { data, loading, error } = useResource(() => listContentTypes(), [base]);
+
+  if (data && data.length > 0) {
+    return <Navigate to={`${base}/${data[0].name}`} replace />;
+  }
+  if (loading) return <div className="rs-empty">Loading…</div>;
+
   const verb = kind === "builder" ? "inspect its schema" : "browse its entries";
-  return <div className="rs-empty">Select a content type to {verb}.</div>;
+  if (error) return <div className="rs-empty">Select a content type to {verb}.</div>;
+  return <div className="rs-empty">No content types yet.</div>;
 }
 
 function RequireAuth({ children }: { children: ReactNode }) {
