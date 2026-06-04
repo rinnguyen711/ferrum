@@ -29,6 +29,29 @@ pub fn join_table_name(owner: &str, field: &str) -> Result<String, IdentError> {
         return Err(IdentError(field.to_string()));
     }
     let readable = format!("j_{owner}_{field}");
+    deterministic_join_name(readable)
+}
+
+/// Deterministic join-table name for an ordered multiple-media field on
+/// `ct.<field>`. Normally `j_media_<ct>_<field>`. When that would exceed the
+/// Postgres 63-char identifier limit, uses the same FNV-1a hash truncation as
+/// `join_table_name`.
+pub fn media_join_table_name(ct: &str, field: &str) -> Result<String, IdentError> {
+    if !is_valid_ident(ct) {
+        return Err(IdentError(ct.to_string()));
+    }
+    if !is_valid_ident(field) {
+        return Err(IdentError(field.to_string()));
+    }
+    let readable = format!("j_media_{ct}_{field}");
+    deterministic_join_name(readable)
+}
+
+/// Apply the 63-char Postgres identifier limit to a pre-built readable join
+/// table name. Fast path: return it as-is when it fits. Slow path: truncate
+/// and append a 32-bit FNV-1a hash of the full name so the result is unique
+/// and stable across builds.
+fn deterministic_join_name(readable: String) -> Result<String, IdentError> {
     if readable.len() <= 63 {
         return quote_ident(&readable);
     }
@@ -115,5 +138,29 @@ mod tests {
     fn join_table_rejects_bad_idents() {
         assert!(join_table_name("Bad", "tags").is_err());
         assert!(join_table_name("post", "Bad Field").is_err());
+    }
+
+    #[test]
+    fn media_join_table_name_builds() {
+        assert_eq!(
+            super::media_join_table_name("post", "gallery").unwrap(),
+            "\"j_media_post_gallery\""
+        );
+    }
+
+    #[test]
+    fn media_join_table_name_rejects_bad_ident() {
+        assert!(super::media_join_table_name("Bad", "gallery").is_err());
+        assert!(super::media_join_table_name("post", "Bad").is_err());
+    }
+
+    #[test]
+    fn media_join_table_name_long_is_hashed_under_limit() {
+        let q = super::media_join_table_name(&"a".repeat(40), &"b".repeat(40)).unwrap();
+        let raw = q.trim_matches('"');
+        assert!(raw.len() <= 63, "ident too long: {}", raw.len());
+        assert!(raw.starts_with("j_media_"));
+        // stable across calls
+        assert_eq!(super::media_join_table_name(&"a".repeat(40), &"b".repeat(40)).unwrap(), q);
     }
 }
