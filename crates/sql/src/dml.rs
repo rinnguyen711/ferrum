@@ -227,6 +227,7 @@ mod tests {
             name: "post".into(),
             display_name: "Post".into(),
             fields,
+            options: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
