@@ -12,6 +12,8 @@ pub struct ContentType {
     pub name: String,
     pub display_name: String,
     pub fields: Vec<Field>,
+    #[serde(default)]
+    pub options: serde_json::Value,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -21,6 +23,8 @@ pub struct NewContentType {
     pub name: String,
     pub display_name: String,
     pub fields: Vec<Field>,
+    #[serde(default)]
+    pub options: serde_json::Value,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq)]
@@ -43,7 +47,28 @@ pub enum ContentTypeError {
     ColumnCollision(String),
 }
 
+impl ContentType {
+    /// Whether Draft & Publish is enabled. Absent/invalid `options` → false.
+    pub fn draft_publish(&self) -> bool {
+        self.options
+            .get("draft_publish")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    }
+}
+
 impl NewContentType {
+    /// Resolve effective options for create: `draft_publish` defaults to true
+    /// when the client omitted it. Returns a normalized jsonb object.
+    pub fn resolved_options(&self) -> serde_json::Value {
+        let dp = self
+            .options
+            .get("draft_publish")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        serde_json::json!({ "draft_publish": dp })
+    }
+
     pub fn validate(&self) -> Result<(), ContentTypeError> {
         if !is_valid_ident(&self.name) {
             return Err(ContentTypeError::BadName);
@@ -79,7 +104,9 @@ impl NewContentType {
 mod tests {
     use super::*;
     use crate::field::FieldKind;
+    use chrono::Utc;
     use serde_json::json;
+    use uuid::Uuid;
 
     fn field(name: &str) -> Field {
         Field {
@@ -98,6 +125,7 @@ mod tests {
             name: name.into(),
             display_name: "Display".into(),
             fields,
+            options: json!({}),
         }
     }
 
@@ -215,6 +243,23 @@ mod tests {
         };
         assert!(nct("post", vec![field("title"), relation]).validate().is_ok());
     }
+
+    #[test]
+    fn draft_publish_defaults_and_reads() {
+        use serde_json::json;
+        let mut ct = ContentType {
+            id: Uuid::nil(),
+            name: "post".into(),
+            display_name: "Post".into(),
+            fields: vec![field("title")],
+            options: json!({}),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        assert!(!ct.draft_publish());
+        ct.options = json!({ "draft_publish": true });
+        assert!(ct.draft_publish());
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -233,6 +278,8 @@ pub struct PatchContentType {
     pub drop_fields: Vec<String>,
     #[serde(default)]
     pub extend_enum_values: Vec<EnumExtension>,
+    #[serde(default)]
+    pub options: Option<serde_json::Value>,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq)]
@@ -387,6 +434,7 @@ mod patch_tests {
                 max_length: None,
                 kind_meta: json!({}),
             }],
+            options: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -394,7 +442,7 @@ mod patch_tests {
 
     #[test]
     fn noop_rejected() {
-        let p = PatchContentType { display_name: None, add_fields: vec![], drop_fields: vec![], extend_enum_values: vec![] };
+        let p = PatchContentType { display_name: None, add_fields: vec![], drop_fields: vec![], extend_enum_values: vec![], options: None };
         assert_eq!(p.validate(&existing()).unwrap_err(), PatchError::NoOp);
     }
 
@@ -405,6 +453,7 @@ mod patch_tests {
             add_fields: vec![],
             drop_fields: vec!["missing".into()],
             extend_enum_values: vec![],
+            options: None,
         };
         assert!(matches!(p.validate(&existing()).unwrap_err(), PatchError::UnknownDropField(_)));
     }
@@ -416,6 +465,7 @@ mod patch_tests {
             add_fields: vec![],
             drop_fields: vec!["id".into()],
             extend_enum_values: vec![],
+            options: None,
         };
         assert!(matches!(p.validate(&existing()).unwrap_err(), PatchError::DropSystemField(_)));
     }
@@ -435,6 +485,7 @@ mod patch_tests {
             }],
             drop_fields: vec![],
             extend_enum_values: vec![],
+            options: None,
         };
         assert!(matches!(p.validate(&existing()).unwrap_err(), PatchError::DuplicateAddField(_)));
     }
@@ -455,6 +506,7 @@ mod patch_tests {
             }],
             drop_fields: vec!["title".into()],
             extend_enum_values: vec![],
+            options: None,
         };
         assert!(matches!(
             p.validate(&existing()).unwrap_err(),
@@ -491,6 +543,7 @@ mod patch_tests {
             }],
             drop_fields: vec![],
             extend_enum_values: vec![],
+            options: None,
         };
         let err = p.validate(&existing_with_author_id).unwrap_err();
         assert_eq!(err, PatchError::ColumnCollision("author_id".into()));
@@ -511,6 +564,7 @@ mod patch_tests {
                 max_length: None,
                 kind_meta: json!({"values": ["draft", "published"]}),
             }],
+            options: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -522,6 +576,7 @@ mod patch_tests {
                 field: "status".into(),
                 append: vec!["archived".into()],
             }],
+            options: None,
         };
         assert!(p.validate(&existing).is_ok());
     }
@@ -541,6 +596,7 @@ mod patch_tests {
                 max_length: None,
                 kind_meta: json!({"values": ["draft", "published"]}),
             }],
+            options: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -552,6 +608,7 @@ mod patch_tests {
                 field: "missing".into(),
                 append: vec!["archived".into()],
             }],
+            options: None,
         };
         let err = p.validate(&existing).unwrap_err();
         assert!(format!("{err:?}").contains("EnumExtendUnknownField"));
@@ -572,6 +629,7 @@ mod patch_tests {
                 max_length: None,
                 kind_meta: json!({}),
             }],
+            options: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -583,6 +641,7 @@ mod patch_tests {
                 field: "title".into(),
                 append: vec!["archived".into()],
             }],
+            options: None,
         };
         let err = p.validate(&existing).unwrap_err();
         assert!(format!("{err:?}").contains("EnumExtendNotEnum"));
@@ -603,6 +662,7 @@ mod patch_tests {
                 max_length: None,
                 kind_meta: json!({"values": ["draft", "published"]}),
             }],
+            options: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -614,6 +674,7 @@ mod patch_tests {
                 field: "status".into(),
                 append: vec!["draft".into()],
             }],
+            options: None,
         };
         let err = p.validate(&existing).unwrap_err();
         assert!(format!("{err:?}").contains("EnumValueDuplicate"));
@@ -634,6 +695,7 @@ mod patch_tests {
                 max_length: None,
                 kind_meta: json!({"values": ["draft", "published"]}),
             }],
+            options: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -645,6 +707,7 @@ mod patch_tests {
                 field: "status".into(),
                 append: vec![],
             }],
+            options: None,
         };
         let err = p.validate(&existing).unwrap_err();
         assert!(format!("{err:?}").contains("EnumValuesEmpty"));
@@ -665,6 +728,7 @@ mod patch_tests {
                 max_length: None,
                 kind_meta: json!({"values": ["draft", "published"]}),
             }],
+            options: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -676,6 +740,7 @@ mod patch_tests {
                 field: "status".into(),
                 append: vec!["archived".into()],
             }],
+            options: None,
         };
         let err = p.validate(&existing).unwrap_err();
         assert!(format!("{err:?}").contains("EnumExtendConflictWithAddDrop"));
@@ -709,6 +774,7 @@ mod patch_tests {
             }],
             drop_fields: vec!["author_id".into()],
             extend_enum_values: vec![],
+            options: None,
         };
         assert!(p.validate(&existing_with_author_id).is_ok());
     }

@@ -3,7 +3,7 @@
 use std::sync::OnceLock;
 
 pub const RESERVED_FIELD_NAMES: &[&str] = &[
-    "id", "created_at", "updated_at",
+    "id", "created_at", "updated_at", "published_at",
     "select", "from", "where", "table", "order", "group", "having",
     "user", "null", "true", "false", "default", "primary", "foreign", "index",
 ];
@@ -45,5 +45,10 @@ mod tests {
         assert!(is_reserved("id"));
         assert!(is_reserved("select"));
         assert!(!is_reserved("title"));
+    }
+
+    #[test]
+    fn published_at_is_reserved() {
+        assert!(is_reserved("published_at"));
     }
 }
