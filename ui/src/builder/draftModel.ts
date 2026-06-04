@@ -1,11 +1,11 @@
 import type {
   ContentType, Field, FieldKind, NewContentType, PatchContentType, EnumExtension,
 } from "../api/types";
-import { enumValues, relationMeta } from "../api/types";
+import { enumValues, relationMeta, mediaMeta } from "../api/types";
 
 export const KINDS: FieldKind[] = [
   "string", "text", "integer", "float", "boolean", "datetime",
-  "relation", "enum", "json", "email", "url", "slug",
+  "relation", "media", "enum", "json", "email", "url", "slug",
 ];
 
 export type Cardinality = "many_to_one" | "one_to_one" | "many_to_many";
@@ -20,6 +20,7 @@ export interface DraftField {
   target: string;                // kind === "relation"
   inverse: string;               // kind === "relation" (optional)
   cardinality: Cardinality;      // kind === "relation"
+  mediaMultiple: boolean;        // kind === "media"
   defaultValue: string;          // raw text; "" → null on the wire
   isPrivate: boolean;            // UI-only — not yet persisted by the server
   origin: "existing" | "new";
@@ -44,6 +45,7 @@ export function blankField(): DraftField {
     target: "",
     inverse: "",
     cardinality: "many_to_one",
+    mediaMultiple: false,
     defaultValue: "",
     isPrivate: false,
     origin: "new",
@@ -80,6 +82,7 @@ export function seedFromContentType(ct: ContentType): Draft {
       target: rel?.target ?? "",
       inverse: rel?.inverse ?? "",
       cardinality: (rel?.cardinality as Cardinality) ?? "many_to_one",
+      mediaMultiple: mediaMeta(f)?.multiple ?? false,
       defaultValue: defaultToText(f.default),
       isPrivate: false,
       origin: "existing",
@@ -127,6 +130,8 @@ function draftFieldToField(d: DraftField): Field {
     };
   } else if (d.kind === "enum") {
     kind_meta = { values: d.enumValues };
+  } else if (d.kind === "media") {
+    kind_meta = { multiple: d.mediaMultiple };
   }
   return {
     name: d.name,
