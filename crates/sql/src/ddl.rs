@@ -115,6 +115,12 @@ fn column_def(ct_name: &str, f: &Field) -> Result<String, DdlError> {
     if f.kind == FieldKind::Relation {
         return relation_column_def(f);
     }
+    if f.kind == FieldKind::Media {
+        let col = quote_ident(&f.physical_column())?;
+        return Ok(format!(
+            "{col} uuid REFERENCES \"_media_assets\"(\"id\") ON DELETE SET NULL"
+        ));
+    }
     if f.kind == FieldKind::Enum {
         let meta = f.enum_meta().ok_or_else(|| {
             IdentError("enum field missing/invalid kind_meta".into())
@@ -540,5 +546,36 @@ PRIMARY KEY (\"post_id\", \"tag_id\"))"
         let mut f = field("tags", FieldKind::Relation);
         f.kind_meta = json!({"target":"tag","cardinality":"many_to_many"});
         assert!(add_column("post", &f).is_err());
+    }
+
+    #[test]
+    fn create_table_emits_media_single_fk_set_null() {
+        let mut f = field("hero", FieldKind::Media);
+        f.kind_meta = json!({"multiple": false});
+        let sql = create_table(&ct(vec![f])).unwrap();
+        assert!(
+            sql.contains("\"hero_id\" uuid REFERENCES \"_media_assets\"(\"id\") ON DELETE SET NULL"),
+            "got: {sql}"
+        );
+        assert!(!sql.contains("\"hero_id\" uuid NOT NULL"), "got: {sql}");
+    }
+
+    #[test]
+    fn create_table_skips_multiple_media_column() {
+        let mut f = field("gallery", FieldKind::Media);
+        f.kind_meta = json!({"multiple": true});
+        let sql = create_table(&ct(vec![f])).unwrap();
+        assert!(!sql.contains("gallery"), "got: {sql}");
+    }
+
+    #[test]
+    fn add_column_emits_media_single_fk() {
+        let mut f = field("hero", FieldKind::Media);
+        f.kind_meta = json!({"multiple": false});
+        let sql = add_column("post", &f).unwrap();
+        assert_eq!(
+            sql,
+            "ALTER TABLE \"ct_post\" ADD COLUMN \"hero_id\" uuid REFERENCES \"_media_assets\"(\"id\") ON DELETE SET NULL"
+        );
     }
 }
