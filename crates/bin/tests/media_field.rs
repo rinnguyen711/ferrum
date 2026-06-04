@@ -144,6 +144,113 @@ async fn media_single_and_multi_round_trip() {
 // Test 2: validation rejects missing asset; explicit empty-array clears gallery
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Test 3: PATCH adds single + multiple media fields; drop removes join table
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn patch_adds_and_drops_media_fields() {
+    let app = TestApp::spawn().await;
+
+    // Step 1: Create content type `note` with only a string field.
+    let resp = app
+        .admin(app.client.post(app.url("/admin/content-types")))
+        .json(&json!({
+            "name": "note",
+            "display_name": "Note",
+            "fields": [{"name": "title", "kind": "string"}]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "content-type create failed: {}", resp.text().await.unwrap());
+
+    // Step 2: PATCH to add single-media `cover` and multiple-media `album`.
+    let resp = app
+        .admin(app.client.patch(app.url("/admin/content-types/note")))
+        .json(&json!({
+            "add_fields": [
+                {"name": "cover", "kind": "media", "kind_meta": {"multiple": false}},
+                {"name": "album", "kind": "media", "kind_meta": {"multiple": true}}
+            ]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "PATCH add media fields failed: {}", resp.text().await.unwrap());
+
+    // Step 3: Upload two assets.
+    let a1 = upload_asset(&app, "cover.png").await;
+    let a2 = upload_asset(&app, "album-1.png").await;
+
+    // Step 4: Create an entry using both new media fields.
+    let resp = app
+        .admin(app.client.post(app.url("/api/note")))
+        .json(&json!({
+            "title": "t",
+            "cover": a1,
+            "album": [a1, a2]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "entry create failed: {}", resp.text().await.unwrap());
+    let created: Value = resp.json().await.unwrap();
+    let entry_id = created["id"].as_str().unwrap().to_string();
+
+    // Step 5: GET the entry — verify both fields are embedded.
+    let resp = app
+        .admin(app.client.get(app.url(&format!("/api/note/{entry_id}"))))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "entry GET failed: {}", resp.text().await.unwrap());
+    let body: Value = resp.json().await.unwrap();
+
+    assert!(
+        body["cover"].is_object(),
+        "expected cover to be an object, got: {}",
+        body["cover"]
+    );
+    assert_eq!(body["cover"]["id"], a1, "cover id mismatch");
+
+    let album = body["album"].as_array().expect("album should be an array");
+    assert_eq!(album.len(), 2, "expected album length 2, got {}", album.len());
+    assert_eq!(album[0]["id"], a1, "album[0] id mismatch");
+    assert_eq!(album[1]["id"], a2, "album[1] id mismatch");
+
+    // Step 6: PATCH to drop the `album` field (drops the join table).
+    let resp = app
+        .admin(app.client.patch(app.url("/admin/content-types/note")))
+        .json(&json!({
+            "drop_fields": ["album"]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "PATCH drop album failed: {}", resp.text().await.unwrap());
+
+    // Step 7: GET again — album key should be gone; cover still present.
+    let resp = app
+        .admin(app.client.get(app.url(&format!("/api/note/{entry_id}"))))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "entry re-GET failed: {}", resp.text().await.unwrap());
+    let body: Value = resp.json().await.unwrap();
+
+    assert!(
+        !body.as_object().unwrap().contains_key("album"),
+        "album key should not appear after field drop, body: {body}"
+    );
+    assert!(
+        body["cover"].is_object(),
+        "cover should still be an object after album drop, got: {}",
+        body["cover"]
+    );
+    assert_eq!(body["cover"]["id"], a1, "cover id mismatch after album drop");
+}
+
 #[tokio::test]
 async fn media_field_rejects_missing_asset_and_clears() {
     let app = TestApp::spawn().await;
