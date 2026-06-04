@@ -34,6 +34,10 @@ pub struct TestApp {
 #[allow(dead_code)]
 impl TestApp {
     pub async fn spawn() -> Self {
+        Self::spawn_with_docs(true).await
+    }
+
+    pub async fn spawn_with_docs(docs_enabled: bool) -> Self {
         let pg = PgImage::default().start().await.expect("pg start");
         let port = pg.get_host_port_ipv4(5432).await.expect("pg port");
         let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
@@ -65,7 +69,7 @@ impl TestApp {
                 jwt_secret: JWT_SECRET.into(),
                 jwt_ttl_secs: 3600,
                 page_size_max: 100,
-                docs_enabled: true,
+                docs_enabled,
                 api_version: "test".into(),
                 public_base_url: "/".into(),
             },
