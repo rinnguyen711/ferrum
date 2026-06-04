@@ -1,6 +1,7 @@
 //! Maps the content-type field model to OpenAPI/JSON Schema fragments.
 
 use rustapi_core::field::{Cardinality, Field, FieldKind};
+use rustapi_core::ContentType;
 use serde_json::{json, Value};
 
 /// Build a JSON Schema fragment for a single field's value type.
@@ -64,10 +65,182 @@ pub fn field_to_schema(field: &Field) -> Value {
     schema
 }
 
+/// Returns (response_schema_name, request_schema_name) for a content type.
+pub fn schema_names(ct_name: &str) -> (String, String) {
+    let pascal = to_pascal(ct_name);
+    (pascal.clone(), format!("{pascal}Input"))
+}
+
+fn to_pascal(name: &str) -> String {
+    name.split('_')
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            let mut c = s.chars();
+            match c.next() {
+                Some(first) => first.to_uppercase().chain(c).collect::<String>(),
+                None => String::new(),
+            }
+        })
+        .collect()
+}
+
+/// Build response (`T`) and request (`TInput`) component schemas for a type.
+pub fn content_type_schemas(ct: &ContentType) -> Value {
+    let (resp_name, req_name) = schema_names(&ct.name);
+
+    let mut resp_props = serde_json::Map::new();
+    resp_props.insert("id".into(), json!({ "type": "string", "format": "uuid" }));
+    resp_props.insert("created_at".into(), json!({ "type": "string", "format": "date-time" }));
+    resp_props.insert("updated_at".into(), json!({ "type": "string", "format": "date-time" }));
+
+    let mut req_props = serde_json::Map::new();
+    let mut req_required: Vec<String> = Vec::new();
+    let mut resp_required: Vec<String> =
+        vec!["id".into(), "created_at".into(), "updated_at".into()];
+
+    for field in &ct.fields {
+        let s = field_to_schema(field);
+        resp_props.insert(field.name.clone(), s.clone());
+        req_props.insert(field.name.clone(), s);
+        if field.required {
+            req_required.push(field.name.clone());
+            resp_required.push(field.name.clone());
+        }
+    }
+
+    json!({
+        resp_name: {
+            "type": "object",
+            "properties": Value::Object(resp_props),
+            "required": resp_required,
+        },
+        req_name: {
+            "type": "object",
+            "properties": Value::Object(req_props),
+            "required": req_required,
+        }
+    })
+}
+
+/// Build the `/api/{name}` and `/api/{name}/{id}` path items for a type.
+pub fn content_type_paths(ct: &ContentType) -> Value {
+    let (resp_name, req_name) = schema_names(&ct.name);
+    let resp_ref = format!("#/components/schemas/{resp_name}");
+    let req_ref = format!("#/components/schemas/{req_name}");
+    let tag = ct.name.clone();
+    let secured = json!([{ "bearerAuth": [] }]);
+    let errs = json!({
+        "401": { "$ref": "#/components/responses/Unauthorized" },
+        "403": { "$ref": "#/components/responses/Forbidden" },
+        "404": { "$ref": "#/components/responses/NotFound" }
+    });
+
+    let list_get = json!({
+        "tags": [tag],
+        "summary": format!("List {} entries", ct.name),
+        "security": secured,
+        "parameters": [
+            { "name": "page", "in": "query", "schema": { "type": "integer" } },
+            { "name": "pageSize", "in": "query", "schema": { "type": "integer" } },
+            { "name": "sort", "in": "query", "schema": { "type": "string" } },
+            { "name": "populate", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": merge_obj(json!({
+            "200": {
+                "description": "List of entries",
+                "content": { "application/json": { "schema": {
+                    "type": "object",
+                    "properties": {
+                        "data": { "type": "array", "items": { "$ref": resp_ref } },
+                        "meta": { "type": "object", "properties": {
+                            "page": { "type": "integer" },
+                            "pageSize": { "type": "integer" },
+                            "total": { "type": "integer" }
+                        }}
+                    }
+                }}}
+            }
+        }), errs.clone())
+    });
+
+    let create_post = json!({
+        "tags": [tag],
+        "summary": format!("Create a {} entry", ct.name),
+        "security": secured,
+        "requestBody": { "required": true, "content": { "application/json": {
+            "schema": { "$ref": req_ref }
+        }}},
+        "responses": merge_obj(json!({
+            "201": { "description": "Created", "content": { "application/json": {
+                "schema": { "$ref": resp_ref }
+            }}}
+        }), errs.clone())
+    });
+
+    let id_param = json!([{
+        "name": "id", "in": "path", "required": true,
+        "schema": { "type": "string", "format": "uuid" }
+    }]);
+
+    let get_one = json!({
+        "tags": [tag], "summary": format!("Fetch one {} entry", ct.name),
+        "security": secured, "parameters": id_param,
+        "responses": merge_obj(json!({
+            "200": { "description": "Entry", "content": { "application/json": {
+                "schema": { "$ref": resp_ref }
+            }}}
+        }), errs.clone())
+    });
+
+    let put_one = json!({
+        "tags": [tag], "summary": format!("Replace a {} entry", ct.name),
+        "security": secured, "parameters": id_param,
+        "requestBody": { "required": true, "content": { "application/json": {
+            "schema": { "$ref": req_ref }
+        }}},
+        "responses": merge_obj(json!({
+            "200": { "description": "Updated", "content": { "application/json": {
+                "schema": { "$ref": resp_ref }
+            }}}
+        }), errs.clone())
+    });
+
+    let delete_one = json!({
+        "tags": [tag], "summary": format!("Delete a {} entry", ct.name),
+        "security": secured, "parameters": id_param,
+        "responses": merge_obj(json!({ "204": { "description": "Deleted" } }), errs)
+    });
+
+    json!({
+        format!("/api/{}", ct.name): {
+            "get": list_get,
+            "post": create_post
+        },
+        format!("/api/{}/{{id}}", ct.name): {
+            "get": get_one,
+            "put": put_one,
+            "delete": delete_one
+        }
+    })
+}
+
+/// Shallow-merge two JSON objects (right wins on key conflict).
+fn merge_obj(mut base: Value, extra: Value) -> Value {
+    if let (Value::Object(ref mut b), Value::Object(e)) = (&mut base, extra) {
+        for (k, v) in e {
+            b.insert(k, v);
+        }
+    }
+    base
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use rustapi_core::field::Field;
+    use rustapi_core::ContentType;
+    use chrono::Utc;
+    use uuid::Uuid;
     use serde_json::json;
 
     fn f(kind: FieldKind, kind_meta: Value) -> Field {
@@ -164,5 +337,54 @@ mod tests {
         let s = field_to_schema(&f(FieldKind::Enum, json!({})));
         assert_eq!(s["type"], "string");
         assert!(s["enum"].is_null());
+    }
+
+    fn sample_ct() -> ContentType {
+        ContentType {
+            id: Uuid::nil(),
+            name: "article".into(),
+            display_name: "Article".into(),
+            fields: vec![
+                Field { name: "title".into(), kind: FieldKind::String, required: true, unique: false, default: Value::Null, max_length: None, kind_meta: json!({}) },
+                Field { name: "views".into(), kind: FieldKind::Integer, required: false, unique: false, default: Value::Null, max_length: None, kind_meta: json!({}) },
+            ],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn schema_names_pascalcase() {
+        assert_eq!(schema_names("blog_post"), ("BlogPost".into(), "BlogPostInput".into()));
+    }
+
+    #[test]
+    fn response_schema_has_system_fields_request_does_not() {
+        let s = content_type_schemas(&sample_ct());
+        let resp = &s["Article"]["properties"];
+        let req = &s["ArticleInput"]["properties"];
+        assert!(resp["id"].is_object());
+        assert!(resp["created_at"].is_object());
+        assert!(resp["title"].is_object());
+        assert!(req["title"].is_object());
+        assert!(req["id"].is_null(), "request schema must omit id");
+        assert!(req["created_at"].is_null(), "request schema must omit timestamps");
+    }
+
+    #[test]
+    fn required_field_listed_in_both() {
+        let s = content_type_schemas(&sample_ct());
+        assert!(s["Article"]["required"].as_array().unwrap().iter().any(|v| v == "title"));
+        assert!(s["ArticleInput"]["required"].as_array().unwrap().iter().any(|v| v == "title"));
+    }
+
+    #[test]
+    fn paths_cover_list_and_item() {
+        let p = content_type_paths(&sample_ct());
+        assert!(p["/api/article"]["get"].is_object());
+        assert!(p["/api/article"]["post"].is_object());
+        assert!(p["/api/article/{id}"]["get"].is_object());
+        assert!(p["/api/article/{id}"]["put"].is_object());
+        assert!(p["/api/article/{id}"]["delete"].is_object());
     }
 }
