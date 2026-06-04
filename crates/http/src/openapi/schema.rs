@@ -183,9 +183,15 @@ pub fn content_type_paths(ct: &ContentType) -> Value {
         "schema": { "type": "string", "format": "uuid" }
     }]);
 
+    // get_one also accepts ?populate= (handled by content::get_one).
+    let get_one_params = json!([
+        { "name": "id", "in": "path", "required": true,
+          "schema": { "type": "string", "format": "uuid" } },
+        { "name": "populate", "in": "query", "schema": { "type": "string" } }
+    ]);
     let get_one = json!({
         "tags": [tag], "summary": format!("Fetch one {} entry", ct.name),
-        "security": secured, "parameters": id_param,
+        "security": secured, "parameters": get_one_params,
         "responses": merge_obj(json!({
             "200": { "description": "Entry", "content": { "application/json": {
                 "schema": { "$ref": resp_ref }
@@ -387,6 +393,9 @@ mod tests {
         assert!(p["/api/article/{id}"]["get"].is_object());
         assert!(p["/api/article/{id}"]["put"].is_object());
         assert!(p["/api/article/{id}"]["delete"].is_object());
+        // get_one documents the ?populate= query param.
+        let get_params = p["/api/article/{id}"]["get"]["parameters"].as_array().unwrap();
+        assert!(get_params.iter().any(|prm| prm["name"] == "populate" && prm["in"] == "query"));
 
         let env = &p["/api/article"]["get"]["responses"]["200"]["content"]["application/json"]["schema"];
         assert_eq!(env["required"], serde_json::json!(["data", "meta"]));
