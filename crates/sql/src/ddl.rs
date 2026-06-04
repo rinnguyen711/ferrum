@@ -38,6 +38,12 @@ pub fn add_column(ct_name: &str, field: &Field) -> Result<String, DdlError> {
             field.name
         ))));
     }
+    if field.kind == FieldKind::Media && !field.is_stored_column() {
+        return Err(DdlError::Ident(IdentError(format!(
+            "add_column called for non-stored media field `{}`",
+            field.name
+        ))));
+    }
     let table = table_name(ct_name)?;
     let def = column_def(ct_name, field)?;
     Ok(format!("ALTER TABLE {table} ADD COLUMN {def}"))
@@ -571,6 +577,13 @@ PRIMARY KEY (\"post_id\", \"tag_id\"))"
     fn add_column_rejects_many_to_many() {
         let mut f = field("tags", FieldKind::Relation);
         f.kind_meta = json!({"target":"tag","cardinality":"many_to_many"});
+        assert!(add_column("post", &f).is_err());
+    }
+
+    #[test]
+    fn add_column_rejects_multiple_media() {
+        let mut f = field("gallery", FieldKind::Media);
+        f.kind_meta = json!({"multiple": true});
         assert!(add_column("post", &f).is_err());
     }
 

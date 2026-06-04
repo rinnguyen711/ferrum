@@ -129,6 +129,7 @@ pub fn delete_links(
 /// `INSERT INTO j_media_<ct>_<field> (<ct>_id, asset_id, position)` — replace-set
 /// insert of a gallery in array order. `position` comes from `WITH ORDINALITY`
 /// (1-based). Caller binds `$1` = owner id, `$2` = `uuid[]` of asset ids in order.
+/// No `ON CONFLICT` clause: callers always precede this with `delete_media_links` (replace-set pattern).
 pub fn insert_media_links(ct: &str, field: &str, owner_id: Uuid) -> Result<(String, Uuid), DmlError> {
     let jt = crate::ident::media_join_table_name(ct, field)?;
     let owner_col = quote_ident(&format!("{ct}_id"))?;
