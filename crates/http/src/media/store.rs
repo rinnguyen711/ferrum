@@ -168,6 +168,16 @@ pub async fn get_asset(pool: &PgPool, id: Uuid) -> Result<Option<AssetRow>, sqlx
     Ok(t.map(asset_from))
 }
 
+pub async fn get_assets_by_ids(pool: &PgPool, ids: &[Uuid]) -> Result<Vec<AssetRow>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, AssetTuple>(&format!(
+        "SELECT {ASSET_COLS} FROM _media_assets WHERE id = ANY($1)"
+    ))
+    .bind(ids)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(asset_from).collect())
+}
+
 /// Parameters for inserting a freshly uploaded asset.
 pub struct NewAsset<'a> {
     pub folder_id: Option<Uuid>,

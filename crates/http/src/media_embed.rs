@@ -3,6 +3,8 @@
 //! Not gated by `?populate`. Single media -> object or null; multiple media ->
 //! ordered array of asset objects.
 
+use crate::media::store;
+use crate::routes::media::AssetView;
 use rustapi_core::{ContentType, Error, FieldKind};
 use serde_json::{Map, Value};
 use sqlx::{PgPool, Row};
@@ -19,37 +21,6 @@ pub fn group_gallery_ids(parents: &[Uuid], fetched: Vec<(Uuid, Uuid)>) -> HashMa
 }
 
 fn internal(e: impl Into<anyhow::Error>) -> Error { Error::Internal(e.into()) }
-
-/// Build an `AssetView`-shaped JSON object from an `_media_assets` row.
-fn asset_row_to_json(row: &sqlx::postgres::PgRow) -> Result<(Uuid, Value), Error> {
-    use chrono::{DateTime, Utc};
-    let id: Uuid = row.try_get("id").map_err(internal)?;
-    let folder_id: Option<Uuid> = row.try_get("folder_id").map_err(internal)?;
-    let file_name: String = row.try_get("file_name").map_err(internal)?;
-    let alt_text: Option<String> = row.try_get("alt_text").map_err(internal)?;
-    let caption: Option<String> = row.try_get("caption").map_err(internal)?;
-    let mime_type: String = row.try_get("mime_type").map_err(internal)?;
-    let size_bytes: i64 = row.try_get("size_bytes").map_err(internal)?;
-    let width: Option<i32> = row.try_get("width").map_err(internal)?;
-    let height: Option<i32> = row.try_get("height").map_err(internal)?;
-    let original_filename: String = row.try_get("original_filename").map_err(internal)?;
-    let created_at: DateTime<Utc> = row.try_get("created_at").map_err(internal)?;
-    let updated_at: DateTime<Utc> = row.try_get("updated_at").map_err(internal)?;
-    let mut m = Map::new();
-    m.insert("id".into(), Value::String(id.to_string()));
-    m.insert("folder_id".into(), folder_id.map(|u| Value::String(u.to_string())).unwrap_or(Value::Null));
-    m.insert("file_name".into(), Value::String(file_name));
-    m.insert("alt_text".into(), alt_text.map(Value::String).unwrap_or(Value::Null));
-    m.insert("caption".into(), caption.map(Value::String).unwrap_or(Value::Null));
-    m.insert("mime_type".into(), Value::String(mime_type));
-    m.insert("size_bytes".into(), Value::Number(size_bytes.into()));
-    m.insert("width".into(), width.map(|n| Value::Number(n.into())).unwrap_or(Value::Null));
-    m.insert("height".into(), height.map(|n| Value::Number(n.into())).unwrap_or(Value::Null));
-    m.insert("original_filename".into(), Value::String(original_filename));
-    m.insert("created_at".into(), Value::String(created_at.to_rfc3339()));
-    m.insert("updated_at".into(), Value::String(updated_at.to_rfc3339()));
-    Ok((id, Value::Object(m)))
-}
 
 /// Embed all media fields on `rows` in place.
 pub async fn apply_media_embed(pool: &PgPool, ct: &ContentType, rows: &mut [Map<String, Value>]) -> Result<(), Error> {
@@ -96,9 +67,11 @@ pub async fn apply_media_embed(pool: &PgPool, ct: &ContentType, rows: &mut [Map<
     let mut by_id: HashMap<Uuid, Value> = HashMap::new();
     if !all_asset_ids.is_empty() {
         let ids: Vec<Uuid> = all_asset_ids.into_iter().collect();
-        let fetched = sqlx::query("SELECT * FROM \"_media_assets\" WHERE id = ANY($1)").bind(&ids).fetch_all(pool).await.map_err(internal)?;
-        for row in &fetched {
-            let (id, obj) = asset_row_to_json(row)?;
+        let asset_rows = store::get_assets_by_ids(pool, &ids).await.map_err(internal)?;
+        for row in asset_rows {
+            let id = row.id;
+            let obj = serde_json::to_value(AssetView::from(row))
+                .map_err(|e| internal(anyhow::anyhow!(e)))?;
             by_id.insert(id, obj);
         }
     }

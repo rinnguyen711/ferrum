@@ -294,7 +294,7 @@ async fn test_settings(
 // ---- Task 14: asset handlers ----
 
 #[derive(Serialize)]
-struct AssetView {
+pub(crate) struct AssetView {
     id: Uuid,
     folder_id: Option<Uuid>,
     file_name: String,
