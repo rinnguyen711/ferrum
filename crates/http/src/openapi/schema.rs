@@ -1,14 +1,18 @@
 //! Maps the content-type field model to OpenAPI/JSON Schema fragments.
 
-use rustapi_core::field::{Field, FieldKind};
+use rustapi_core::field::{Cardinality, Field, FieldKind};
 use serde_json::{json, Value};
 
 /// Build a JSON Schema fragment for a single field's value type.
 pub fn field_to_schema(field: &Field) -> Value {
     let mut schema = match field.kind {
-        FieldKind::String | FieldKind::Text => {
+        FieldKind::String => {
             json!({ "type": "string", "maxLength": field.effective_max_length() })
         }
+        FieldKind::Text => match field.max_length {
+            Some(n) => json!({ "type": "string", "maxLength": n }),
+            None => json!({ "type": "string" }),
+        },
         FieldKind::Integer => json!({ "type": "integer", "format": "int64" }),
         FieldKind::Float => json!({ "type": "number", "format": "double" }),
         FieldKind::Boolean => json!({ "type": "boolean" }),
@@ -21,19 +25,23 @@ pub fn field_to_schema(field: &Field) -> Value {
         }
         FieldKind::Enum => {
             let values = field.enum_meta().map(|m| m.values).unwrap_or_default();
-            json!({ "type": "string", "enum": values })
+            if values.is_empty() {
+                json!({ "type": "string" })
+            } else {
+                json!({ "type": "string", "enum": values })
+            }
         }
         FieldKind::Json => json!({}),
         FieldKind::Relation => {
             let many = field
                 .relation_meta()
-                .map(|m| {
-                    matches!(m.cardinality, rustapi_core::field::Cardinality::ManyToMany)
-                })
+                .map(|m| matches!(m.cardinality, Cardinality::ManyToMany))
                 .unwrap_or(false);
             if many {
                 json!({ "type": "array", "items": { "type": "string", "format": "uuid" } })
             } else {
+                // Covers many_to_one and one_to_one (both single-FK).
+                // None from relation_meta() also falls back to this single-UUID shape.
                 json!({ "type": "string", "format": "uuid" })
             }
         }
@@ -99,7 +107,7 @@ mod tests {
     #[test]
     fn slug_has_pattern() {
         let s = field_to_schema(&f(FieldKind::Slug, json!({})));
-        assert!(s["pattern"].is_string());
+        assert_eq!(s["pattern"], "^[a-z0-9]+(?:-[a-z0-9]+)*$");
     }
 
     #[test]
@@ -134,5 +142,27 @@ mod tests {
         let mut field = f(FieldKind::Integer, json!({}));
         field.default = json!(7);
         assert_eq!(field_to_schema(&field)["default"], json!(7));
+    }
+
+    #[test]
+    fn text_no_maxlength_by_default() {
+        let s = field_to_schema(&f(FieldKind::Text, json!({})));
+        assert_eq!(s["type"], "string");
+        assert!(s["maxLength"].is_null());
+    }
+
+    #[test]
+    fn text_with_explicit_maxlength() {
+        let mut field = f(FieldKind::Text, json!({}));
+        field.max_length = Some(5000);
+        let s = field_to_schema(&field);
+        assert_eq!(s["maxLength"], 5000);
+    }
+
+    #[test]
+    fn enum_empty_meta_no_enum_key() {
+        let s = field_to_schema(&f(FieldKind::Enum, json!({})));
+        assert_eq!(s["type"], "string");
+        assert!(s["enum"].is_null());
     }
 }
