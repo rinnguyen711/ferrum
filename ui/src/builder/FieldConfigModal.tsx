@@ -40,17 +40,19 @@ export function FieldConfigModal({
 
   const set = (patch: Partial<DraftField>) => setField((f) => ({ ...f, ...patch }));
 
-  // many_to_many + required is rejected by the server.
-  const m2mRequiredBlocked = field.kind === "relation" && field.cardinality === "many_to_many";
+  // many_to_many + required is rejected by the server; media is never required.
+  const requiredBlocked =
+    (field.kind === "relation" && field.cardinality === "many_to_many") ||
+    field.kind === "media";
 
   const save = () => {
     if (!field.name.trim()) { setErr("A field name is required."); setTab("basic"); return; }
     const out = { ...field, name: field.name.trim() };
-    if (m2mRequiredBlocked) out.required = false;
+    if (requiredBlocked) out.required = false;
     onSave(out);
   };
 
-  const I = Icons[field.kind === "relation" ? "relation" : "type"];
+  const I = Icons[field.kind === "relation" ? "relation" : field.kind === "media" ? "image" : "type"];
 
   return (
     <div className="rs-modal-backdrop" onClick={onClose}>
@@ -164,6 +166,23 @@ export function FieldConfigModal({
                   />
                 </div>
               )}
+
+              {field.kind === "media" && (
+                <div className="rs-field">
+                  <div className="rs-field-label"><label>Selection</label></div>
+                  <div className="rs-setting-row">
+                    <div className="rs-setting-meta">
+                      <strong>Allow multiple assets</strong>
+                      <span>Pick a gallery of assets instead of a single one.</span>
+                    </div>
+                    <Toggle
+                      on={field.mediaMultiple}
+                      disabled={locked}
+                      onChange={(v) => set({ mediaMultiple: v })}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -173,14 +192,16 @@ export function FieldConfigModal({
                 <div className="rs-setting-meta">
                   <strong>Required field</strong>
                   <span>
-                    {m2mRequiredBlocked
-                      ? "Many-to-many relations cannot be required."
+                    {requiredBlocked
+                      ? (field.kind === "media"
+                          ? "Media fields cannot be required."
+                          : "Many-to-many relations cannot be required.")
                       : "The entry can't be saved while this is empty."}
                   </span>
                 </div>
                 <Toggle
-                  on={field.required && !m2mRequiredBlocked}
-                  disabled={locked || m2mRequiredBlocked}
+                  on={field.required && !requiredBlocked}
+                  disabled={locked || requiredBlocked}
                   onChange={(v) => set({ required: v })}
                 />
               </div>
