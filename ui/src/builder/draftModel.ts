@@ -2,11 +2,35 @@ import type {
   ContentType, Field, FieldKind, NewContentType, PatchContentType, EnumExtension,
 } from "../api/types";
 import { enumValues, relationMeta, mediaMeta } from "../api/types";
+import type { IconKey } from "../components/icons";
 
 export const KINDS: FieldKind[] = [
   "string", "text", "integer", "float", "boolean", "datetime",
   "relation", "media", "enum", "json", "email", "url", "slug",
 ];
+
+/** Picker cards — one per user-addable FieldKind, with a friendly label.
+ *  `uuid` is server-managed and intentionally excluded. */
+export const FIELD_CARDS: { kind: FieldKind; label: string; desc: string; icon: IconKey }[] = [
+  { kind: "string",   label: "Short text",  desc: "Small text like a title or name",         icon: "type" },
+  { kind: "text",     label: "Long text",   desc: "Multi-line text or description",          icon: "doc" },
+  { kind: "email",    label: "Email",       desc: "An email with built-in validation",       icon: "mail" },
+  { kind: "slug",     label: "Slug",        desc: "A URL-friendly identifier",               icon: "hash" },
+  { kind: "url",      label: "URL",         desc: "A web address",                           icon: "link" },
+  { kind: "integer",  label: "Integer",     desc: "Whole numbers",                           icon: "hash" },
+  { kind: "float",    label: "Decimal",     desc: "Decimals and floats",                     icon: "hash" },
+  { kind: "boolean",  label: "Boolean",     desc: "A yes-or-no toggle",                      icon: "toggle" },
+  { kind: "datetime", label: "Datetime",    desc: "A date, time or date-time",               icon: "calendar" },
+  { kind: "enum",     label: "Enumeration", desc: "A list of values to pick from",           icon: "layers" },
+  { kind: "relation", label: "Relation",    desc: "Link entries across types",               icon: "relation" },
+  { kind: "media",    label: "Media",       desc: "Files — images, video, audio, documents", icon: "image" },
+  { kind: "json",     label: "JSON",        desc: "Raw, structured JSON data",               icon: "braces" },
+];
+
+/** Friendly label for a kind; falls back to the raw kind string. */
+export function fieldLabel(kind: FieldKind): string {
+  return FIELD_CARDS.find((c) => c.kind === kind)?.label ?? kind;
+}
 
 export type Cardinality = "many_to_one" | "one_to_one" | "many_to_many";
 
@@ -34,11 +58,11 @@ export interface Draft {
   serverSnapshot?: ContentType;  // existing only — diff baseline
 }
 
-export function blankField(): DraftField {
+export function blankField(kind: FieldKind = "string"): DraftField {
   return {
     id: crypto.randomUUID(),
     name: "",
-    kind: "string",
+    kind,
     required: false,
     unique: false,
     enumValues: [],

@@ -133,6 +133,12 @@ export const Icons = {
   upload: (p: IconProps) => (
     <Ic {...p} d={<g><path d="M12 16V4M8 8l4-4 4 4"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></g>} />
   ),
+  mail: (p: IconProps) => (
+    <Ic {...p} d={<g><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></g>} />
+  ),
+  braces: (p: IconProps) => (
+    <Ic {...p} d={<g><path d="M8 4a3 3 0 0 0-3 3v2a2 2 0 0 1-2 2 2 2 0 0 1 2 2v2a3 3 0 0 0 3 3"/><path d="M16 4a3 3 0 0 1 3 3v2a2 2 0 0 0 2 2 2 2 0 0 0-2 2v2a3 3 0 0 1-3 3"/></g>} />
+  ),
 } as const;
 
 export type IconKey = keyof typeof Icons;

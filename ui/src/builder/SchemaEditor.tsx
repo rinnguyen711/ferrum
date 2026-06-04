@@ -7,10 +7,12 @@ import {
 } from "../api/endpoints";
 import { ApiError } from "../api/client";
 import { enumValues } from "../api/types";
+import type { FieldKind } from "../api/types";
 import { useBuilderDraft } from "./BuilderDraftContext";
 import { blankField, type DraftField } from "./draftModel";
 import { FieldRow } from "./FieldRow";
 import { FieldConfigModal } from "./FieldConfigModal";
+import { FieldPicker } from "./FieldPicker";
 
 export function SchemaEditor() {
   const { type } = useParams<{ type: string }>();
@@ -55,8 +57,11 @@ export function SchemaEditor() {
     }
   };
 
-  // Field edit modal: { field, isNew } when open, null when closed.
-  const [modal, setModal] = useState<{ field: DraftField; isNew: boolean } | null>(null);
+  // Field modal: "pick" = choosing a type, "config" = editing one, null = closed.
+  type FieldModal =
+    | { step: "pick" }
+    | { step: "config"; field: DraftField; isNew: boolean };
+  const [modal, setModal] = useState<FieldModal | null>(null);
 
   // Reset per-type local UI state when switching between types.
   useEffect(() => {
@@ -85,9 +90,13 @@ export function SchemaEditor() {
   const removeField = (f: DraftField) =>
     setDraft((d) => ({ ...d, fields: d.fields.filter((x) => x.id !== f.id) }));
 
-  const addField = () => setModal({ field: blankField(), isNew: true });
+  const addField = () => setModal({ step: "pick" });
 
-  const editField = (f: DraftField) => setModal({ field: f, isNew: false });
+  const pickKind = (kind: FieldKind) =>
+    setModal({ step: "config", field: blankField(kind), isNew: true });
+
+  const editField = (f: DraftField) =>
+    setModal({ step: "config", field: f, isNew: false });
 
   const saveField = (f: DraftField) => {
     setDraft((d) => {
@@ -170,13 +179,22 @@ export function SchemaEditor() {
         </button>
       </div>
 
-      {modal && (
+      {modal?.step === "pick" && (
+        <FieldPicker
+          typeDisplay={draft.display_name || draft.name}
+          isFirst={draft.fields.length === 0}
+          onPick={pickKind}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal?.step === "config" && (
         <FieldConfigModal
           initial={modal.field}
           isNew={modal.isNew}
           typeNames={allTypes.data?.map((t) => t.name) ?? []}
           lockedEnumValues={lockedEnum(modal.field)}
           onSave={saveField}
+          onBack={modal.isNew ? () => setModal({ step: "pick" }) : undefined}
           onClose={() => setModal(null)}
         />
       )}

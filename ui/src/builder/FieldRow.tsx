@@ -2,8 +2,7 @@ import { Icons } from "../components/icons";
 import type { DraftField } from "./draftModel";
 import type { FieldKind } from "../api/types";
 
-// kind → icon key in ui/src/components/icons.tsx. icons.tsx has no
-// braces/mail keys, so json/email fall back to doc/type.
+// kind → icon key in ui/src/components/icons.tsx.
 const KIND_ICON: Record<FieldKind, keyof typeof Icons> = {
   string: "type",
   text: "doc",
@@ -16,8 +15,8 @@ const KIND_ICON: Record<FieldKind, keyof typeof Icons> = {
   relation: "relation",
   media: "image",
   enum: "layers",
-  json: "doc",
-  email: "type",
+  json: "braces",
+  email: "mail",
   url: "link",
 };
 

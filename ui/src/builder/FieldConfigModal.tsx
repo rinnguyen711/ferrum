@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Icons } from "../components/icons";
-import type { FieldKind } from "../api/types";
-import { KINDS, type Cardinality, type DraftField } from "./draftModel";
+import { fieldLabel, type Cardinality, type DraftField } from "./draftModel";
 import { EnumEditor } from "./EnumEditor";
 
 const CARDINALITIES: [Cardinality, string][] = [
@@ -16,6 +15,7 @@ export function FieldConfigModal({
   typeNames,
   lockedEnumValues,
   onSave,
+  onBack,
   onClose,
 }: {
   initial: DraftField;
@@ -23,6 +23,7 @@ export function FieldConfigModal({
   typeNames: string[];
   lockedEnumValues: string[]; // existing enum values that cannot be removed
   onSave: (field: DraftField) => void;
+  onBack?: () => void;        // adding a new field → return to the type picker
   onClose: () => void;
 }) {
   const locked = initial.origin === "existing";
@@ -65,7 +66,9 @@ export function FieldConfigModal({
         <div className="rs-modal-head">
           <div className="rs-modal-icon"><I size={18} /></div>
           <div className="rs-modal-titles">
-            <span className="rs-modal-eyebrow">{isNew ? "Add a field" : "Edit field"}</span>
+            <span className="rs-modal-eyebrow">
+              {(isNew ? "Add a field" : "Edit field")} · {fieldLabel(field.kind)}
+            </span>
             <h2>{field.name || "Untitled field"}</h2>
           </div>
           <button className="rs-modal-x" onClick={onClose}><Icons.x size={18} /></button>
@@ -94,21 +97,6 @@ export function FieldConfigModal({
                   disabled={locked}
                   onChange={(e) => { set({ name: e.target.value }); setErr(null); }}
                 />
-              </div>
-
-              <div className="rs-field">
-                <div className="rs-field-label">
-                  <label>Type</label>
-                  {locked && <span className="rs-field-hint">type can't be changed after creation</span>}
-                </div>
-                <select
-                  className="rs-input"
-                  value={field.kind}
-                  disabled={locked}
-                  onChange={(e) => set({ kind: e.target.value as FieldKind })}
-                >
-                  {KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
-                </select>
               </div>
 
               {field.kind === "relation" && (
@@ -236,6 +224,11 @@ export function FieldConfigModal({
         </div>
 
         <div className="rs-modal-foot">
+          {onBack && (
+            <button className="rs-btn rs-btn--ghost" onClick={onBack}>
+              <Icons.chevLeft size={15} /> Back
+            </button>
+          )}
           <button className="rs-btn rs-btn--ghost" onClick={onClose}>Cancel</button>
           <div className="rs-spacer" />
           <button className="rs-btn rs-btn--primary" onClick={save}>
