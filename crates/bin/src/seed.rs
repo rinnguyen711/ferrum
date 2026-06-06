@@ -51,6 +51,7 @@ fn author_type() -> NewContentType {
             field("role", FieldKind::String, false),
             field("bio", FieldKind::Text, false),
         ],
+        options: serde_json::Value::Null,
     }
 }
 
@@ -64,6 +65,7 @@ fn category_type() -> NewContentType {
             field("color", FieldKind::String, false),
             field("description", FieldKind::Text, false),
         ],
+        options: serde_json::Value::Null,
     }
 }
 
@@ -83,6 +85,7 @@ fn article_type() -> NewContentType {
             field("read_time", FieldKind::Integer, false),
             field("published_at", FieldKind::Datetime, false),
         ],
+        options: serde_json::Value::Null,
     }
 }
 
