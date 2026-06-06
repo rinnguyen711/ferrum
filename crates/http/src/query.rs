@@ -93,6 +93,7 @@ mod tests {
                 max_length: None,
                 kind_meta: json!({}),
             }],
+            options: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -174,6 +175,7 @@ mod tests {
                     kind_meta: json!({}),
                 },
             ],
+            options: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };

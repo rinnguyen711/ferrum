@@ -495,6 +495,7 @@ mod tests {
                     }),
                 },
             ],
+            options: serde_json::json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -514,6 +515,7 @@ mod tests {
                 max_length: None,
                 kind_meta: json!({}),
             }],
+            options: serde_json::json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -669,6 +671,7 @@ mod tests {
                 max_length: None,
                 kind_meta: json!({"target":"tag","cardinality":"many_to_many","inverse":"posts"}),
             }],
+            options: serde_json::json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -688,6 +691,7 @@ mod tests {
                 max_length: None,
                 kind_meta: json!({}),
             }],
+            options: serde_json::json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
