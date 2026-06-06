@@ -32,6 +32,7 @@ export interface ContentType {
   name: string;
   display_name: string;
   fields: Field[];
+  options?: { draft_publish?: boolean };
   created_at: string;
   updated_at: string;
 }
@@ -40,6 +41,7 @@ export interface NewContentType {
   name: string;
   display_name: string;
   fields: Field[];
+  options?: { draft_publish?: boolean };
 }
 
 // PATCH /admin/content-types/{name} wire shape — mirrors rustapi_core.
@@ -53,12 +55,14 @@ export interface PatchContentType {
   add_fields: Field[];
   drop_fields: string[];
   extend_enum_values: EnumExtension[];
+  options?: { draft_publish?: boolean };
 }
 
 export type Entry = {
   id: string;
   created_at: string;
   updated_at: string;
+  published_at?: string | null;
   [field: string]: unknown;
 };
 
@@ -83,6 +87,10 @@ export interface RelationMeta {
 // Enum kind_meta shape (when kind === "enum").
 export interface EnumMeta {
   values: string[];
+}
+
+export function draftPublishEnabled(ct: ContentType): boolean {
+  return ct.options?.draft_publish === true;
 }
 
 export function relationMeta(f: Field): RelationMeta | null {

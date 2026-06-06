@@ -54,6 +54,7 @@ interface ListOpts {
   pageSize?: number;
   sort?: string;
   populate?: string;
+  status?: "published" | "draft" | "all";
 }
 
 export function listEntries(type: string, opts: ListOpts = {}): Promise<ListResponse<Entry>> {
@@ -62,6 +63,7 @@ export function listEntries(type: string, opts: ListOpts = {}): Promise<ListResp
   if (opts.pageSize) q.set("pageSize", String(opts.pageSize));
   if (opts.sort) q.set("sort", opts.sort);
   if (opts.populate) q.set("populate", opts.populate);
+  if (opts.status) q.set("status", opts.status);
   const qs = q.toString();
   return apiFetch<ListResponse<Entry>>(`/api/${encodeURIComponent(type)}${qs ? `?${qs}` : ""}`);
 }
@@ -86,6 +88,20 @@ export function deleteEntry(type: string, id: string): Promise<void> {
   return apiFetch<void>(`/api/${encodeURIComponent(type)}/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
+}
+
+export function publishEntry(type: string, id: string): Promise<Entry> {
+  return apiFetch<Entry>(
+    `/api/${encodeURIComponent(type)}/${encodeURIComponent(id)}/publish`,
+    { method: "POST" },
+  );
+}
+
+export function unpublishEntry(type: string, id: string): Promise<Entry> {
+  return apiFetch<Entry>(
+    `/api/${encodeURIComponent(type)}/${encodeURIComponent(id)}/unpublish`,
+    { method: "POST" },
+  );
 }
 
 export function getHealth(): Promise<Health> {
