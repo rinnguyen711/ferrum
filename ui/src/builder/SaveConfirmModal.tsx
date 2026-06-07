@@ -48,12 +48,12 @@ export function SaveConfirmModal({
             )}
           </ul>
         </div>
-        <div className="rs-modal-foot">
+        <div className="rs-modal-foot" style={{ justifyContent: "space-between" }}>
           <button className="rs-btn rs-btn--ghost" onClick={onCancel} disabled={saving}>
             Cancel
           </button>
           <button
-            className="rs-btn rs-btn--primary rs-danger"
+            className="rs-btn rs-btn--primary"
             onClick={onConfirm}
             disabled={saving}
           >

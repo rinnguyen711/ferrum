@@ -19,7 +19,7 @@ export function DeleteConfirmModal({
       footer={<>
         <button className="rs-btn rs-btn--ghost" onClick={onCancel} type="button">Cancel</button>
         <div className="rs-spacer" />
-        <button className="rs-btn rs-btn--primary rs-danger" onClick={onConfirm} type="button">
+        <button className="rs-btn rs-btn--primary" onClick={onConfirm} type="button">
           <Icons.trash size={15} /> Delete
         </button>
       </>}

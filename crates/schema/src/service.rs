@@ -153,7 +153,9 @@ impl SchemaService {
                     .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
                 sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
             } else {
-                let sql = rustapi_sql::drop_column(name, drop_name)
+                // Single media fields store a FK column named `<field>_id`, not `<field>`.
+                let col = dropped.map(|f| f.physical_column()).unwrap_or_else(|| drop_name.clone());
+                let sql = rustapi_sql::drop_column(name, &col)
                     .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
                 sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
             }

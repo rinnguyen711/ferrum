@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Icons } from "../components/icons";
 import { Notice, LoadingState } from "../components/ui";
@@ -14,6 +14,72 @@ import { blankField, type DraftField } from "./draftModel";
 import { FieldRow } from "./FieldRow";
 import { FieldConfigModal } from "./FieldConfigModal";
 import { FieldPicker } from "./FieldPicker";
+
+function DeleteTypeModal({
+  typeName,
+  deleting,
+  error,
+  onConfirm,
+  onClose,
+}: {
+  typeName: string;
+  deleting: boolean;
+  error: string | null;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape" && !deleting) onCloseRef.current(); };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [deleting]);
+
+  return (
+    <div className="rs-modal-backdrop" onClick={() => { if (!deleting) onClose(); }}>
+      <div
+        className="rs-modal"
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: 420 }}
+      >
+        <div className="rs-modal-head">
+          <div className="rs-modal-ico" style={{ background: "var(--danger-soft, var(--surface-3))", color: "var(--danger)" }}>
+            <Icons.trash size={18} />
+          </div>
+          <div className="rs-modal-titles">
+            <span className="rs-modal-eyebrow">Destructive action</span>
+            <h2>Delete "{typeName}"?</h2>
+          </div>
+          <button className="rs-modal-x" onClick={onClose} disabled={deleting} aria-label="Close">
+            <Icons.x size={18} />
+          </button>
+        </div>
+        <div className="rs-modal-body">
+          <p style={{ fontSize: 14, color: "var(--text-muted)", margin: 0 }}>
+            This will permanently drop the <strong className="rs-mono">{typeName}</strong> content type and <strong>all its entries</strong>. This cannot be undone.
+          </p>
+          {error && <div style={{ marginTop: 12 }}><Notice>{error}</Notice></div>}
+        </div>
+        <div className="rs-modal-foot" style={{ justifyContent: "space-between" }}>
+          <button className="rs-btn rs-btn--ghost" onClick={onClose} disabled={deleting}>
+            Cancel
+          </button>
+          <button
+            className="rs-btn rs-btn--primary"
+            onClick={onConfirm}
+            disabled={deleting}
+            style={{ background: "var(--danger)", borderColor: "var(--danger)", color: "#fff" }}
+          >
+            {deleting ? "Deleting…" : "Delete type"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function SchemaEditor() {
   const { type } = useParams<{ type: string }>();
@@ -129,27 +195,14 @@ export function SchemaEditor() {
             <Icons.eye size={15} /> Preview API
           </button>
         {draft.mode === "existing" && (
-          confirming ? (
-            <div className="rs-confirm">
-              <span>Delete <strong>{draft.name}</strong>? Drops the type and all its entries.</span>
-              <button className="rs-btn rs-btn--ghost rs-btn--sm rs-danger" onClick={doDelete} disabled={deleting}>
-                {deleting ? "Deleting…" : "Confirm"}
-              </button>
-              <button className="rs-btn rs-btn--ghost rs-btn--sm" onClick={() => setConfirming(false)} disabled={deleting}>
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <button className="rs-btn rs-btn--ghost rs-danger" onClick={() => setConfirming(true)}>
-              Delete type
-            </button>
-          )
+          <button className="rs-btn rs-btn--ghost rs-danger" onClick={() => setConfirming(true)}>
+            Delete type
+          </button>
         )}
         </div>
       </div>
 
       {banner && <Notice>{banner}</Notice>}
-      {delBanner && <Notice>{delBanner}</Notice>}
       {renameCollisions.length > 0 && (
         <Notice>
           Field{renameCollisions.length > 1 ? "s" : ""} {renameCollisions.join(", ")}{" "}
@@ -200,6 +253,15 @@ export function SchemaEditor() {
         </button>
       </div>
 
+      {confirming && type && (
+        <DeleteTypeModal
+          typeName={type}
+          deleting={deleting}
+          error={delBanner}
+          onConfirm={doDelete}
+          onClose={() => { setConfirming(false); setDelBanner(null); }}
+        />
+      )}
       {modal?.step === "pick" && (
         <FieldPicker
           typeDisplay={draft.display_name || draft.name}
