@@ -30,7 +30,8 @@ pub fn build_router(state: AppState, extra: Vec<Router<AppState>>) -> Router {
 
     // Custom routers from the bin, merged after built-ins. Behind the same
     // require_auth layer; axum panics on a duplicate exact path+method so
-    // collisions surface at startup.
+    // collisions surface at startup. Static segments take precedence over
+    // `:param`, so e.g. `/api/feature` does not collide with `/api/:type`.
     for r in extra {
         protected = protected.merge(r);
     }
