@@ -83,7 +83,7 @@ fn article_type() -> NewContentType {
             relation_field("author", "author", Some("articles"), false),
             field("featured", FieldKind::Boolean, false),
             field("read_time", FieldKind::Integer, false),
-            field("published_at", FieldKind::Datetime, false),
+            field("published_date", FieldKind::Datetime, false),
         ],
         options: serde_json::Value::Null,
     }
@@ -163,7 +163,7 @@ pub async fn seed_rows(pool: &PgPool, schemas: &SchemaService) -> Result<()> {
         insert_entry(pool, &category_ct, b).await?;
     }
 
-    // --- articles --- (title, slug, status, excerpt, author-name, featured, read_time, published_at)
+    // --- articles --- (title, slug, status, excerpt, author-name, featured, read_time, published_date)
     let articles = [
         ("The quiet reinvention of the tidal turbine", "tidal-turbine-reinvention", "published", "A new generation of low-speed rotors is making estuary power viable for the first time.", "Idris Bello", true, 9, Some("2026-05-28T09:00:00Z")),
         ("What a city remembers when its river is gone", "city-remembers-river", "published", "Walking the buried waterways of four cities that paved over their founding streams.", "Saoirse Lynch", false, 14, Some("2026-05-27T07:30:00Z")),
@@ -185,7 +185,7 @@ pub async fn seed_rows(pool: &PgPool, schemas: &SchemaService) -> Result<()> {
         b.insert("featured".into(), json!(featured));
         b.insert("read_time".into(), json!(read_time));
         if let Some(pa) = published_at {
-            b.insert("published_at".into(), json!(pa));
+            b.insert("published_date".into(), json!(pa));
         }
         if let Some(aid) = author_id.get(author_name) {
             b.insert("author".into(), json!(aid.to_string()));
@@ -194,6 +194,18 @@ pub async fn seed_rows(pool: &PgPool, schemas: &SchemaService) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn seed_types_have_no_reserved_or_invalid_fields() {
+        for ct in [author_type(), category_type(), article_type()] {
+            ct.validate().unwrap_or_else(|e| panic!("seed type `{}` invalid: {e}", ct.name));
+        }
+    }
 }
 
 /// Top-level entry point: seed types + rows when the DB is empty and seeding
