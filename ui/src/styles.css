@@ -861,4 +861,3 @@ select.rs-input { appearance: none; background-image: url("data:image/svg+xml,%3
 /* Media settings */
 .rs-settings-card { max-width: 560px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
 .rs-field-error { display: block; margin-top: 4px; font-size: 12px; color: var(--danger); }
-.rs-settings-ok { margin-top: 4px; padding: 8px 12px; border-radius: 8px; font-size: 13px; color: var(--ok); background: var(--ok-bg); }
