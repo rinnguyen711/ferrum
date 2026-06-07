@@ -22,13 +22,6 @@ fn field(name: &str, kind: FieldKind, required: bool) -> Field {
     }
 }
 
-fn enum_field(name: &str, values: &[&str], required: bool) -> Field {
-    Field {
-        kind_meta: json!({ "values": values }),
-        ..field(name, FieldKind::Enum, required)
-    }
-}
-
 /// many_to_one relation `name` -> `target`, optionally registering an inverse
 /// field `inverse` on the target type.
 fn relation_field(name: &str, target: &str, inverse: Option<&str>, required: bool) -> Field {
@@ -76,16 +69,13 @@ fn article_type() -> NewContentType {
         fields: vec![
             field("title", FieldKind::String, true),
             field("slug", FieldKind::Slug, true),
-            enum_field("status", &["draft", "review", "published"], true),
-            field("excerpt", FieldKind::Text, false),
             field("body", FieldKind::Text, false),
             // inverse "articles" registers the Author<->Article back-reference.
             relation_field("author", "author", Some("articles"), false),
-            field("featured", FieldKind::Boolean, false),
-            field("read_time", FieldKind::Integer, false),
-            field("published_date", FieldKind::Datetime, false),
         ],
-        options: serde_json::Value::Null,
+        // Draft & Publish replaces the old `status` enum: publish state lives in
+        // the system `published_at` column.
+        options: serde_json::json!({ "draft_publish": true }),
     }
 }
 
@@ -163,7 +153,7 @@ pub async fn seed_rows(pool: &PgPool, schemas: &SchemaService) -> Result<()> {
         insert_entry(pool, &category_ct, b).await?;
     }
 
-    // --- articles --- (title, slug, status, excerpt, author-name, featured, read_time, published_date)
+    // --- articles --- (title, slug, status, excerpt(unused), author-name, featured(unused), read_time(unused), published_date)
     let articles = [
         ("The quiet reinvention of the tidal turbine", "tidal-turbine-reinvention", "published", "A new generation of low-speed rotors is making estuary power viable for the first time.", "Idris Bello", true, 9, Some("2026-05-28T09:00:00Z")),
         ("What a city remembers when its river is gone", "city-remembers-river", "published", "Walking the buried waterways of four cities that paved over their founding streams.", "Saoirse Lynch", false, 14, Some("2026-05-27T07:30:00Z")),
@@ -176,21 +166,21 @@ pub async fn seed_rows(pool: &PgPool, schemas: &SchemaService) -> Result<()> {
         ("A field guide to urban lichen", "urban-lichen-field-guide", "review", "The pollution map hiding in plain sight on every old stone wall.", "Tomas Reier", false, 6, None),
         ("The economics of a free public sauna", "free-public-sauna", "published", "One northern city bet that warmth should be a commons. The numbers are surprising.", "Saoirse Lynch", false, 12, Some("2026-05-17T08:30:00Z")),
     ];
-    for (title, slug, status, excerpt, author_name, featured, read_time, published_at) in articles {
+    for (title, slug, status, _excerpt, author_name, _featured, _read_time, _published_at) in articles {
         let mut b = Map::new();
         b.insert("title".into(), json!(title));
         b.insert("slug".into(), json!(slug));
-        b.insert("status".into(), json!(status));
-        b.insert("excerpt".into(), json!(excerpt));
-        b.insert("featured".into(), json!(featured));
-        b.insert("read_time".into(), json!(read_time));
-        if let Some(pa) = published_at {
-            b.insert("published_date".into(), json!(pa));
-        }
         if let Some(aid) = author_id.get(author_name) {
             b.insert("author".into(), json!(aid.to_string()));
         }
-        insert_entry(pool, &article_ct, b).await?;
+        let id = insert_entry(pool, &article_ct, b).await?;
+        // Draft & Publish: rows that were "published" under the old status enum
+        // get published via the system column; "draft"/"review" stay drafts.
+        if status == "published" {
+            let (sql, binds) = rustapi_sql::publish(&article_ct.name, id)
+                .map_err(|e| anyhow::anyhow!("seed publish sql: {e}"))?;
+            bind_all(sqlx::query(&sql), &binds).execute(pool).await?;
+        }
     }
 
     Ok(())
