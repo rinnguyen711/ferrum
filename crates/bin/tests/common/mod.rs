@@ -1,7 +1,7 @@
 //! Shared integration-test plumbing. Spins a real Postgres via testcontainers
 //! and the rustapi router in-process, hitting it via reqwest.
 
-use rustapi_http::{build_router, resolve_provider, secret_key_from_env, AppConfig, AppState, NoopSink, RoleAuthz};
+use rustapi_http::{build_router, resolve_provider, secret_key_from_env, AppConfig, AppState, NoopHook, NoopSink, RoleAuthz};
 use rustapi_schema::{SchemaRegistry, SchemaService, MIGRATOR};
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -65,6 +65,7 @@ impl TestApp {
             schemas: schemas.clone(),
             authz: Arc::new(RoleAuthz),
             events: Arc::new(NoopSink),
+            hooks: Arc::new(NoopHook),
             config: AppConfig {
                 jwt_secret: JWT_SECRET.into(),
                 jwt_ttl_secs: 3600,

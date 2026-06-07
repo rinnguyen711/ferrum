@@ -1,9 +1,10 @@
 //! Application state and pluggable traits (authz, event sink).
 
 use async_trait::async_trait;
-use rustapi_core::{role_allows, Action, Event, Principal};
+use rustapi_core::{role_allows, Action, Error, Event, Principal};
 use rustapi_media::StorageProvider;
 use rustapi_schema::SchemaService;
+use serde_json::{Map, Value};
 use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -46,6 +47,60 @@ impl EventSink for NoopSink {
     async fn emit(&self, _event: Event) {}
 }
 
+/// Which content write a hook is being invoked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WriteOp {
+    Create,
+    Update,
+}
+
+/// Context passed to a `WriteHook`. Borrows live only for the duration of the
+/// hook call. `content_type` is the registry name (e.g. `"article"`); the hook
+/// dispatches per type itself.
+pub struct WriteContext<'a> {
+    pub content_type: &'a str,
+    pub operation: WriteOp,
+    pub principal: &'a Principal,
+}
+
+/// Developer extension point around content writes. Wired into `AppState` like
+/// `EventSink`; the default `NoopHook` leaves behavior unchanged.
+#[async_trait]
+pub trait WriteHook: Send + Sync + 'static {
+    /// Runs after authz and JSON parse, before schema validation
+    /// (`body_to_binds`). May add, remove, or rewrite fields, or return `Err`
+    /// to reject the request. The returned body is validated against the
+    /// schema by the framework, so injected values must satisfy it.
+    async fn before_write(
+        &self,
+        ctx: &WriteContext<'_>,
+        body: Map<String, Value>,
+    ) -> Result<Map<String, Value>, Error> {
+        let _ = ctx;
+        Ok(body)
+    }
+
+    /// Runs after the write commits, with the final saved record (after
+    /// `row_to_json`, before populate/media-embed). The write is already
+    /// durable; returning `Err` surfaces as an error response but does not roll
+    /// back. For fire-and-forget fan-out (webhooks, cache bust) use `EventSink`
+    /// instead.
+    async fn after_write(
+        &self,
+        ctx: &WriteContext<'_>,
+        record: &Value,
+    ) -> Result<(), Error> {
+        let _ = (ctx, record);
+        Ok(())
+    }
+}
+
+/// Default no-op hook. Both methods keep their trait defaults.
+pub struct NoopHook;
+
+#[async_trait]
+impl WriteHook for NoopHook {}
+
 #[derive(Clone)]
 pub struct AppConfig {
     /// HS256 signing secret for JWTs.
@@ -67,6 +122,7 @@ pub struct AppState {
     pub schemas: SchemaService,
     pub authz: Arc<dyn Authz>,
     pub events: Arc<dyn EventSink>,
+    pub hooks: Arc<dyn WriteHook>,
     pub config: AppConfig,
     /// Active media storage provider, hot-swappable when settings change.
     pub storage: Arc<RwLock<Arc<dyn StorageProvider>>>,
