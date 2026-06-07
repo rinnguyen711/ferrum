@@ -57,7 +57,7 @@ export function EditorBar({
 }) {
   return (
     <div className="rs-editor-bar">
-      <button className="rs-back" onClick={onBack} aria-label="Back">
+      <button type="button" className="rs-back" onClick={onBack} aria-label="Back">
         <Icons.arrowLeft size={18} />
       </button>
       <div className="rs-editor-titlewrap">
