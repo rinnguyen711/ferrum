@@ -1,7 +1,7 @@
 import type {
   ContentType, Field, FieldKind, NewContentType, PatchContentType, EnumExtension,
 } from "../api/types";
-import { enumValues, relationMeta, mediaMeta } from "../api/types";
+import { draftPublishEnabled, enumValues, relationMeta, mediaMeta } from "../api/types";
 import type { IconKey } from "../components/icons";
 
 export const KINDS: FieldKind[] = [
@@ -55,6 +55,7 @@ export interface Draft {
   display_name: string;
   fields: DraftField[];
   mode: "new" | "existing";
+  draft_publish: boolean;
   serverSnapshot?: ContentType;  // existing only — diff baseline
 }
 
@@ -90,7 +91,7 @@ export function deriveApiId(display: string): string {
 }
 
 export function newDraft(name: string, display_name: string): Draft {
-  return { name, display_name, fields: [], mode: "new" };
+  return { name, display_name, fields: [], mode: "new", draft_publish: true };
 }
 
 export function seedFromContentType(ct: ContentType): Draft {
@@ -117,6 +118,7 @@ export function seedFromContentType(ct: ContentType): Draft {
     display_name: ct.display_name,
     fields,
     mode: "existing",
+    draft_publish: draftPublishEnabled(ct),
     serverSnapshot: ct,
   };
 }
@@ -172,6 +174,7 @@ export function toNewContentType(draft: Draft): NewContentType {
     name: draft.name,
     display_name: draft.display_name,
     fields: draft.fields.map(draftFieldToField),
+    options: { draft_publish: draft.draft_publish },
   };
 }
 
@@ -186,6 +189,12 @@ export function diffToPatch(draft: Draft): PatchContentType {
 
   if (draft.display_name !== snap.display_name) {
     patch.display_name = draft.display_name;
+  }
+
+  // Only send options when enabling D&P (false → true). Disabling is rejected by server.
+  const snapDraftPublish = draftPublishEnabled(snap);
+  if (draft.draft_publish && !snapDraftPublish) {
+    patch.options = { draft_publish: true };
   }
 
   for (const d of draft.fields) {
@@ -214,7 +223,8 @@ export function isPatchEmpty(p: PatchContentType): boolean {
     p.display_name === undefined &&
     p.add_fields.length === 0 &&
     p.drop_fields.length === 0 &&
-    p.extend_enum_values.length === 0
+    p.extend_enum_values.length === 0 &&
+    p.options === undefined
   );
 }
 
