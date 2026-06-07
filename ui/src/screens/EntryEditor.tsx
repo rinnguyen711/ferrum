@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Icons } from "../components/icons";
-import { Notice, LoadingState, EditorBar } from "../components/ui";
+import { Notice, LoadingState, EmptyState, EditorBar } from "../components/ui";
 import { StatusBadge } from "../components/shell";
 import { useResource } from "../hooks/useResource";
 import {
@@ -56,10 +56,10 @@ export function EntryEditor() {
   }, [schema.data, existing.data, isNew]);
 
   if (schema.loading || existing.loading) return <LoadingState />;
-  if (schema.error) return <div className="rs-empty">Couldn’t load type. {schema.error.message}</div>;
-  if (existing.error) return <div className="rs-empty">{existing.error.message}</div>;
+  if (schema.error) return <EmptyState>Couldn't load type. {schema.error.message}</EmptyState>;
+  if (existing.error) return <EmptyState>{existing.error.message}</EmptyState>;
   const ct = schema.data;
-  if (!ct) return <div className="rs-empty">Unknown content type.</div>;
+  if (!ct) return <EmptyState>Unknown content type.</EmptyState>;
 
   const dp = ct ? draftPublishEnabled(ct) : false;
   const isPublished = publishedAt != null;
