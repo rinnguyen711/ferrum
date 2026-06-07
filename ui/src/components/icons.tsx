@@ -111,6 +111,9 @@ export const Icons = {
   clock: (p: IconProps) => (
     <Ic {...p} d={<g><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></g>} />
   ),
+  lock: (p: IconProps) => (
+    <Ic {...p} d={<g><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></g>} />
+  ),
   star: (p: IconProps) => (
     <Ic {...p} d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.7l5.9-.9L12 3.5Z" />
   ),

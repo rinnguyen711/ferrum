@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Icons } from "../components/icons";
 import { Avatar, StatusBadge } from "../components/shell";
+import { FieldsMenu, type ColumnDef } from "./FieldsMenu";
 import { useResource } from "../hooks/useResource";
 import { getContentType, listContentTypes, listEntries } from "../api/endpoints";
 import type { ContentType, Entry, Field } from "../api/types";
@@ -35,6 +36,26 @@ export function ContentList() {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [selected, setSelected] = useState<string[]>([]);
+  const [fieldsOpen, setFieldsOpen] = useState(false);
+
+  const colKey = `rs-cols:${type}`;
+  const [hidden, setHidden] = useState<Record<string, boolean>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(colKey) || "{}");
+    } catch {
+      return {};
+    }
+  });
+  const setHiddenPersist = (next: Record<string, boolean>) => {
+    setHidden(next);
+    localStorage.setItem(colKey, JSON.stringify(next));
+  };
+  const toggleCol = (key: string) =>
+    setHiddenPersist({ ...hidden, [key]: !hidden[key] });
+  const resetCols = () => {
+    setHidden({});
+    localStorage.removeItem(colKey);
+  };
 
   const hasStatus = !!ct?.fields.some((f) => f.name === "status" && f.kind === "enum");
   const titleField = ct?.fields.find((f) => ["title", "name"].includes(f.name))?.name;
@@ -68,7 +89,17 @@ export function ContentList() {
     );
   if (!ct || !entries.data) return <div className="rs-empty">Unknown content type.</div>;
 
-  const cols = ct.fields;
+  const allColumns: ColumnDef[] = [
+    { key: "id", label: "ID" },
+    ...ct.fields.map((f) => ({ key: f.name, label: f.name })),
+    { key: "updated", label: "Updated" },
+  ];
+  const lockedKey = titleField; // title column always shown
+  const colVisible = (key: string) => key === lockedKey || !hidden[key];
+  const cols = ct.fields.filter((f) => colVisible(f.name));
+  const visibleMap = Object.fromEntries(
+    allColumns.map((c) => [c.key, colVisible(c.key)]),
+  );
   const total = entries.data.meta.total;
   const statusCount = (s: string) =>
     s === "all" ? rows.length : rows.filter((e) => e["status"] === s).length;
@@ -155,9 +186,24 @@ export function ContentList() {
           <Icons.filter size={15} /> Filters
         </button>
         <div className="rs-spacer" />
-        <button className="rs-btn rs-btn--ghost" data-placeholder title="Coming soon">
-          <Icons.layers size={15} /> Fields
-        </button>
+        <div className="rs-pop-anchor">
+          <button
+            className={"rs-btn rs-btn--ghost" + (fieldsOpen ? " is-active" : "")}
+            onClick={() => setFieldsOpen((o) => !o)}
+          >
+            <Icons.layers size={15} /> Fields
+          </button>
+          {fieldsOpen && (
+            <FieldsMenu
+              columns={allColumns}
+              visible={visibleMap}
+              lockedKey={lockedKey}
+              onToggle={toggleCol}
+              onReset={resetCols}
+              onClose={() => setFieldsOpen(false)}
+            />
+          )}
+        </div>
       </div>
 
       {selected.length > 0 && (
@@ -182,9 +228,9 @@ export function ContentList() {
               <th className="rs-col-check">
                 <Checkbox checked={allOn} onChange={toggleAll} />
               </th>
-              <th className="rs-col-id">ID</th>
+              {colVisible("id") && <th className="rs-col-id">ID</th>}
               {cols.map((f) => <th key={f.name}>{f.name}</th>)}
-              <th>Updated</th>
+              {colVisible("updated") && <th>Updated</th>}
             </tr>
           </thead>
           <tbody>
@@ -197,9 +243,9 @@ export function ContentList() {
                 <td className="rs-col-check" onClick={(ev) => ev.stopPropagation()}>
                   <Checkbox checked={selected.includes(e.id)} onChange={() => toggle(e.id)} />
                 </td>
-                <td className="rs-col-id rs-mono">{shortId(e.id)}</td>
+                {colVisible("id") && <td className="rs-col-id rs-mono">{shortId(e.id)}</td>}
                 {cols.map((f) => <td key={f.name}>{renderCell(e, f)}</td>)}
-                <td className="rs-cell-muted">{relTime(e.updated_at)}</td>
+                {colVisible("updated") && <td className="rs-cell-muted">{relTime(e.updated_at)}</td>}
               </tr>
             ))}
           </tbody>
