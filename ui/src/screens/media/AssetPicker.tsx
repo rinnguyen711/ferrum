@@ -3,7 +3,7 @@ import { Icons } from "../../components/icons";
 import { listFolders, listAssets } from "../../api/endpoints";
 import type { MediaFolder, MediaAsset } from "../../api/types";
 import { AssetThumb } from "./AssetThumb";
-import { Checkbox } from "./Checkbox";
+import { SelectBox } from "./SelectBox";
 
 export function AssetPicker({
   multiple,
@@ -90,11 +90,9 @@ export function AssetPicker({
                 const sel = pickedIds.has(m.id);
                 return (
                   <div className={"rs-media-card" + (sel ? " is-selected" : "")} key={m.id} onClick={() => toggle(m)}>
-                    {multiple && (
-                      <div className="rs-media-check" onClick={(e) => e.stopPropagation()}>
-                        <Checkbox checked={sel} onChange={() => toggle(m)} />
-                      </div>
-                    )}
+                    <div className="rs-media-check" onClick={(e) => { e.stopPropagation(); toggle(m); }}>
+                      <SelectBox checked={sel} />
+                    </div>
                     <AssetThumb asset={m} />
                     <div className="rs-media-card-meta">
                       <span className="rs-media-card-text"><strong title={m.file_name}>{m.file_name}</strong></span>
