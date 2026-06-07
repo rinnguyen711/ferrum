@@ -56,7 +56,7 @@ async fn main() -> Result<()> {
         secret_key,
     };
 
-    let mut app = build_router(state);
+    let mut app = build_router(state, vec![]);
     tracing::info!(content = "/api", admin = "/admin/content-types", health = "/healthz", "routes mounted");
     if let Some(ref dir) = cfg.studio_dir {
         app = mount_studio(app, dir);

@@ -34,20 +34,30 @@ pub struct TestApp {
 #[allow(dead_code)]
 impl TestApp {
     pub async fn spawn() -> Self {
-        Self::spawn_full(true, Arc::new(NoopHook)).await
+        Self::spawn_full(true, Arc::new(NoopHook), vec![]).await
     }
 
     pub async fn spawn_with_docs(docs_enabled: bool) -> Self {
-        Self::spawn_full(docs_enabled, Arc::new(NoopHook)).await
+        Self::spawn_full(docs_enabled, Arc::new(NoopHook), vec![]).await
     }
 
     /// Spawn with a custom `WriteHook` injected into `AppState`.
     #[allow(dead_code)]
     pub async fn spawn_with_hook(hook: Arc<dyn WriteHook>) -> Self {
-        Self::spawn_full(true, hook).await
+        Self::spawn_full(true, hook, vec![]).await
     }
 
-    async fn spawn_full(docs_enabled: bool, hook: Arc<dyn WriteHook>) -> Self {
+    /// Spawn with custom routers injected into `build_router`.
+    #[allow(dead_code)]
+    pub async fn spawn_with_routers(routers: Vec<axum::Router<AppState>>) -> Self {
+        Self::spawn_full(true, Arc::new(NoopHook), routers).await
+    }
+
+    async fn spawn_full(
+        docs_enabled: bool,
+        hook: Arc<dyn WriteHook>,
+        routers: Vec<axum::Router<AppState>>,
+    ) -> Self {
         let pg = PgImage::default().start().await.expect("pg start");
         let port = pg.get_host_port_ipv4(5432).await.expect("pg port");
         let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
@@ -88,7 +98,7 @@ impl TestApp {
             secret_key,
         };
 
-        let app = build_router(state);
+        let app = build_router(state, routers);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("addr");
         let (tx, rx) = tokio::sync::oneshot::channel::<()>();
