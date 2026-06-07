@@ -53,7 +53,7 @@ pub async fn build(state: &AppState) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::{AlwaysAllow, AppConfig, NoopSink};
+    use crate::state::{AlwaysAllow, AppConfig, NoopHook, NoopSink};
     use rustapi_core::{ContentType, Field};
     use rustapi_core::field::FieldKind;
     use rustapi_schema::{SchemaRegistry, SchemaService};
@@ -102,6 +102,7 @@ mod tests {
             schemas,
             authz: Arc::new(AlwaysAllow),
             events: Arc::new(NoopSink),
+            hooks: Arc::new(NoopHook),
             config: AppConfig {
                 jwt_secret: "x".repeat(32),
                 jwt_ttl_secs: 3600,
