@@ -7,6 +7,7 @@ import {
 } from "../api/endpoints";
 import { ApiError } from "../api/client";
 import type { MediaFolder, MediaAsset } from "../api/types";
+import { Notice } from "../components/ui";
 import { Checkbox } from "./media/Checkbox";
 import { AssetThumb } from "./media/AssetThumb";
 import { FolderModal } from "./media/FolderModal";
@@ -176,7 +177,7 @@ export function MediaLibrary() {
         </button>
       </div>
 
-      {notice && <div className="rs-login-error" style={{ marginBottom: 12 }}>{notice}</div>}
+      {notice && <Notice>{notice}</Notice>}
 
       {selected.length > 0 && (
         <div className="rs-bulkbar">

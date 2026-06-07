@@ -3,6 +3,7 @@ import { useResource } from "../hooks/useResource";
 import { getHealth, listContentTypes, listEntries } from "../api/endpoints";
 import { Icons } from "../components/icons";
 import { StatusBadge } from "../components/shell";
+import { LoadingState, EmptyState } from "../components/ui";
 import { relTime } from "../util";
 import type { Entry } from "../api/types";
 
@@ -18,13 +19,13 @@ export function Dashboard() {
   );
   const health = useResource(() => getHealth().catch(() => null), []);
 
-  if (loading) return <div className="rs-empty">Loading…</div>;
+  if (loading) return <LoadingState />;
   if (error)
     return (
-      <div className="rs-empty">
+      <EmptyState>
         {error.message}{" "}
         <button className="rs-link-btn" onClick={refetch}>Retry</button>
-      </div>
+      </EmptyState>
     );
 
   const rows = (articles.data?.data ?? []) as Entry[];

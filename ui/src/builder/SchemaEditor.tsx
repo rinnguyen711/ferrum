@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Icons } from "../components/icons";
+import { Notice, LoadingState } from "../components/ui";
 import { useResource } from "../hooks/useResource";
 import {
   deleteContentType, getContentType, listContentTypes,
@@ -71,7 +72,7 @@ export function SchemaEditor() {
     setDelBanner(null);
   }, [type]);
 
-  if (!draft) return <div className="rs-empty">Loading…</div>;
+  if (!draft) return <LoadingState />;
 
   const snapshot = draft.serverSnapshot;
 
@@ -147,21 +148,21 @@ export function SchemaEditor() {
         </div>
       </div>
 
-      {banner && <div className="rs-login-error" style={{ marginBottom: 12 }}>{banner}</div>}
-      {delBanner && <div className="rs-login-error" style={{ marginBottom: 12 }}>{delBanner}</div>}
+      {banner && <Notice>{banner}</Notice>}
+      {delBanner && <Notice>{delBanner}</Notice>}
       {renameCollisions.length > 0 && (
-        <div className="rs-login-error" style={{ marginBottom: 12 }}>
+        <Notice>
           Field{renameCollisions.length > 1 ? "s" : ""} {renameCollisions.join(", ")}{" "}
           already exist on this type. Renaming or changing a field's type is not
           supported — remove the new field or pick a different name.
-        </div>
+        </Notice>
       )}
       {Object.keys(fieldErrors).length > 0 && (
-        <div className="rs-login-error" style={{ marginBottom: 12 }}>
+        <Notice>
           {Object.entries(fieldErrors).map(([name, msg]) => (
             <div key={name}><strong className="rs-mono">{name}</strong>: {msg}</div>
           ))}
-        </div>
+        </Notice>
       )}
 
       <div className="rs-setting-row" style={{ marginBottom: 16 }}>

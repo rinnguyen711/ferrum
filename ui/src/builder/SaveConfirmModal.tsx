@@ -1,3 +1,4 @@
+import { Notice } from "../components/ui";
 import type { PatchContentType } from "../api/types";
 
 export function SaveConfirmModal({
@@ -26,10 +27,10 @@ export function SaveConfirmModal({
           <h2>Confirm schema changes</h2>
         </div>
         <div className="rs-modal-body">
-          <div className="rs-login-error" style={{ marginBottom: 12 }}>
+          <Notice>
             Dropping a field deletes its column and all of its data. This cannot
             be undone.
-          </div>
+          </Notice>
           <ul className="rs-change-list">
             {patch.drop_fields.map((f) => (
               <li key={"d" + f}><strong className="rs-danger">Drop</strong> {f}</li>

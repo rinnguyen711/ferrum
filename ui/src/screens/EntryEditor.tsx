@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Icons } from "../components/icons";
+import { Notice, LoadingState, EditorBar } from "../components/ui";
+import { StatusBadge } from "../components/shell";
 import { useResource } from "../hooks/useResource";
 import {
   createEntry,
@@ -53,7 +55,7 @@ export function EntryEditor() {
     }
   }, [schema.data, existing.data, isNew]);
 
-  if (schema.loading || existing.loading) return <div className="rs-empty">Loading…</div>;
+  if (schema.loading || existing.loading) return <LoadingState />;
   if (schema.error) return <div className="rs-empty">Couldn’t load type. {schema.error.message}</div>;
   if (existing.error) return <div className="rs-empty">{existing.error.message}</div>;
   const ct = schema.data;
@@ -136,44 +138,38 @@ export function EntryEditor() {
 
   return (
     <div className="rs-editor">
-      <div className="rs-editor-bar">
-        <button className="rs-back" onClick={onBack}>
-          <Icons.arrowLeft size={18} />
-        </button>
-        <div className="rs-editor-titlewrap">
-          <h1>{isNew ? `Create ${ct.display_name}` : `Edit ${ct.display_name}`}</h1>
-          {dp && !isNew && (
-            <span className={"rs-status " + (isPublished ? "rs-status--ok" : "rs-status--muted")}>
-              {isPublished ? "Published" : "Draft"}
-            </span>
-          )}
-        </div>
-        <div className="rs-editor-actions">
-          {dp && !isNew && (
+      <EditorBar
+        onBack={onBack}
+        title={isNew ? `Create ${ct.display_name}` : `Edit ${ct.display_name}`}
+        status={dp && !isNew ? <StatusBadge status={isPublished ? "published" : "draft"} /> : undefined}
+        actions={
+          <>
+            {dp && !isNew && (
+              <button
+                className={"rs-btn " + (isPublished ? "rs-btn--ghost" : "rs-btn--primary")}
+                onClick={togglePublish}
+                disabled={publishing}
+              >
+                {publishing ? "…" : isPublished ? "Unpublish" : "Publish"}
+              </button>
+            )}
             <button
-              className={"rs-btn " + (isPublished ? "rs-btn--ghost" : "rs-btn--primary")}
-              onClick={togglePublish}
-              disabled={publishing}
+              className={"rs-btn " + (dp && isNew ? "rs-btn--ghost" : "rs-btn--primary")}
+              onClick={() => save(false)}
+              disabled={saving}
             >
-              {publishing ? "…" : isPublished ? "Unpublish" : "Publish"}
+              {saving ? "Saving…" : isNew ? "Create" : "Save"}
             </button>
-          )}
-          <button
-            className={"rs-btn " + (dp && isNew ? "rs-btn--ghost" : "rs-btn--primary")}
-            onClick={() => save(false)}
-            disabled={saving}
-          >
-            {saving ? "Saving…" : isNew ? "Create" : "Save"}
-          </button>
-          {dp && isNew && (
-            <button className="rs-btn rs-btn--primary" onClick={() => save(true)} disabled={saving}>
-              {saving ? "…" : "Create & Publish"}
-            </button>
-          )}
-        </div>
-      </div>
+            {dp && isNew && (
+              <button className="rs-btn rs-btn--primary" onClick={() => save(true)} disabled={saving}>
+                {saving ? "…" : "Create & Publish"}
+              </button>
+            )}
+          </>
+        }
+      />
 
-      {banner && <div className="rs-login-error" style={{ margin: "0 24px" }}>{banner}</div>}
+      {banner && <div style={{ margin: "0 24px" }}><Notice>{banner}</Notice></div>}
 
       <div className="rs-editor-body">
         <div className="rs-editor-main">
@@ -218,7 +214,7 @@ function FieldRow({
         <span className="rs-field-hint">{field.kind}</span>
       </div>
       <FieldInput field={field} value={value} onChange={onChange} type={type} />
-      {error && <div className="rs-login-error">{error}</div>}
+      {error && <Notice>{error}</Notice>}
     </div>
   );
 }

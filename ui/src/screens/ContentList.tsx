@@ -2,12 +2,13 @@ import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Icons } from "../components/icons";
 import { Avatar, StatusBadge } from "../components/shell";
+import { Checkbox, LoadingState, EmptyState } from "../components/ui";
 import { FieldsMenu, type ColumnDef } from "./FieldsMenu";
 import { useResource } from "../hooks/useResource";
 import { getContentType, listContentTypes, listEntries } from "../api/endpoints";
 import type { ContentType, Entry, Field } from "../api/types";
 import { draftPublishEnabled, relationMeta } from "../api/types";
-import { relTime, relationLabel, shortId } from "../util";
+import { relTime, relationLabel, shortId, initials, AVATAR_NEUTRAL } from "../util";
 
 const STATUS_TABS: [string, string][] = [
   ["all", "All"],
@@ -81,22 +82,22 @@ export function ContentList() {
     });
   }, [rows, statusFilter, query, hasStatus, titleField]);
 
-  if (schema.loading || entries.loading) return <div className="rs-empty">Loading…</div>;
+  if (schema.loading || entries.loading) return <LoadingState />;
   if (schema.error)
     return (
-      <div className="rs-empty">
-        Couldn’t load type “{type}”.{" "}
+      <EmptyState>
+        Couldn't load type "{type}".{" "}
         <button className="rs-link-btn" onClick={schema.refetch}>Retry</button>
-      </div>
+      </EmptyState>
     );
   if (entries.error)
     return (
-      <div className="rs-empty">
+      <EmptyState>
         {entries.error.message}{" "}
         <button className="rs-link-btn" onClick={entries.refetch}>Retry</button>
-      </div>
+      </EmptyState>
     );
-  if (!ct || !entries.data) return <div className="rs-empty">Unknown content type.</div>;
+  if (!ct || !entries.data) return <EmptyState>Unknown content type.</EmptyState>;
 
   const allColumns: ColumnDef[] = [
     { key: "id", label: "ID" },
@@ -136,7 +137,7 @@ export function ContentList() {
         if (obj && "name" in obj) {
           return (
             <span className="rs-cell-author">
-              <Avatar name={String(label)} initials={initials(String(label))} color="#52525B" size={22} />
+              <Avatar name={String(label)} initials={initials(String(label))} color={AVATAR_NEUTRAL} size={22} />
               {label}
             </span>
           );
@@ -268,9 +269,7 @@ export function ContentList() {
                 {colVisible("id") && <td className="rs-col-id rs-mono">{shortId(e.id)}</td>}
                 {dp && (
                   <td>
-                    {e.published_at
-                      ? <span className="rs-status rs-status--ok">Published</span>
-                      : <span className="rs-status rs-status--muted">Draft</span>}
+                    <StatusBadge status={e.published_at ? "published" : "draft"} />
                   </td>
                 )}
                 {cols.map((f) => <td key={f.name}>{renderCell(e, f)}</td>)}
@@ -295,20 +294,3 @@ export function ContentList() {
   );
 }
 
-function Checkbox({ checked, onChange }: { checked: boolean; onChange: () => void }) {
-  return (
-    <button
-      className={"rs-check" + (checked ? " is-on" : "")}
-      onClick={onChange}
-      role="checkbox"
-      aria-checked={checked}
-      type="button"
-    >
-      {checked && <Icons.check size={13} />}
-    </button>
-  );
-}
-
-function initials(s: string): string {
-  return s.split(/\s+/).map((w) => w[0] ?? "").join("").slice(0, 2).toUpperCase() || "?";
-}

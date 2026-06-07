@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Modal } from "./Modal";
 import { AssetThumb } from "./AssetThumb";
 import { Icons } from "../../components/icons";
+import { Notice } from "../../components/ui";
 import type { MediaAsset, PatchAsset } from "../../api/types";
 
 export function AssetDetail({
@@ -58,7 +59,7 @@ export function AssetDetail({
         </button>
       </>}
     >
-      {error && <div className="rs-login-error" style={{ marginBottom: 12 }}>{error}</div>}
+      {error && <Notice>{error}</Notice>}
       <div className="rs-asset-detail">
         <AssetThumb asset={asset} className="rs-asset-detail-preview" />
         <p className="rs-cell-muted rs-mono" style={{ marginTop: 8 }}>{asset.mime_type} · {dims}{sizeMb}</p>
