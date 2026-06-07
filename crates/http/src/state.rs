@@ -83,7 +83,9 @@ pub trait WriteHook: Send + Sync + 'static {
     /// Runs after the write commits, with the final saved record (after
     /// `row_to_json`, before populate/media-embed). The write is already
     /// durable; returning `Err` surfaces as an error response but does not roll
-    /// back. For fire-and-forget fan-out (webhooks, cache bust) use `EventSink`
+    /// back. Prefer `Error::Internal` here — a 4xx variant (e.g. `Validation`)
+    /// would tell the client the request was rejected even though it persisted.
+    /// For fire-and-forget fan-out (webhooks, cache bust) use `EventSink`
     /// instead.
     async fn after_write(
         &self,

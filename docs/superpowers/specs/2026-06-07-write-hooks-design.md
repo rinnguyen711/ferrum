@@ -127,8 +127,11 @@ Same shape with `WriteOp::Update`:
 
 ### Out of scope this iteration
 
-`delete_one` gets no hooks. No per-type registry, no hook `Vec`/chain, no
-transaction access in `after_write`. Deferred; recorded in the roadmap.
+`delete_one` gets no hooks. The `publish_entry` / `unpublish_entry` handlers
+also do not fire hooks: they carry no request body (nothing for `before_write`
+to transform or validate) and already emit `EntryUpdated` via `EventSink` for
+observers. No per-type registry, no hook `Vec`/chain, no transaction access in
+`after_write`. All deferred; recorded in the roadmap.
 
 ## Wiring and exports
 
