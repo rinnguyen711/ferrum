@@ -3,7 +3,7 @@ mod common;
 use async_trait::async_trait;
 use common::TestApp;
 use rustapi_core::{Error, ValidationErrors};
-use rustapi_http::{WriteContext, WriteHook};
+use rustapi_http::{WriteContext, WriteHook, WriteOp};
 use serde_json::{json, Map, Value};
 use std::sync::Arc;
 
@@ -119,4 +119,73 @@ async fn before_write_output_is_revalidated() {
     let resp = app.admin(app.client.get(app.url("/api/post"))).send().await.unwrap();
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["meta"]["total"], 0, "invalid injected field must not persist");
+}
+
+#[tokio::test]
+async fn after_write_failure_returns_500_but_write_is_durable() {
+    let app = TestApp::spawn_with_hook(Arc::new(TestHook)).await;
+    make_post_type(&app).await;
+
+    let resp = app
+        .admin(app.client.post(app.url("/api/post")))
+        .json(&json!({ "title": "POSTFAIL" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 500, "after_write Err surfaces as 5xx");
+
+    // The write committed before after_write ran, so the row is durable.
+    // Use status=all so draft-publish types also surface the persisted draft.
+    let resp = app.admin(app.client.get(app.url("/api/post?status=all"))).send().await.unwrap();
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["meta"]["total"], 1, "write must persist despite hook error");
+    assert_eq!(body["data"][0]["title"], "POSTFAIL");
+}
+
+use std::sync::Mutex;
+
+/// Records the operation seen by before_write so the test can assert
+/// Create on POST and Update on PUT.
+struct RecordingHook {
+    ops: Arc<Mutex<Vec<WriteOp>>>,
+}
+
+#[async_trait]
+impl WriteHook for RecordingHook {
+    async fn before_write(
+        &self,
+        ctx: &WriteContext<'_>,
+        body: Map<String, Value>,
+    ) -> Result<Map<String, Value>, Error> {
+        self.ops.lock().unwrap().push(ctx.operation);
+        Ok(body)
+    }
+}
+
+#[tokio::test]
+async fn write_context_reports_create_then_update() {
+    let ops = Arc::new(Mutex::new(Vec::new()));
+    let app = TestApp::spawn_with_hook(Arc::new(RecordingHook { ops: ops.clone() })).await;
+    make_post_type(&app).await;
+
+    let resp = app
+        .admin(app.client.post(app.url("/api/post")))
+        .json(&json!({ "title": "First" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "{}", resp.text().await.unwrap());
+    let entry: Value = resp.json().await.unwrap();
+    let id = entry["id"].as_str().unwrap().to_string();
+
+    let resp = app
+        .admin(app.client.put(app.url(&format!("/api/post/{id}"))))
+        .json(&json!({ "title": "Second" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+
+    let seen = ops.lock().unwrap().clone();
+    assert_eq!(seen, vec![WriteOp::Create, WriteOp::Update]);
 }
