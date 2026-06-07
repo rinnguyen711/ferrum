@@ -43,3 +43,16 @@ export function relationLabel(
   }
   return "—";
 }
+
+/** Neutral avatar fill, bound to the --avatar-neutral design token. */
+export const AVATAR_NEUTRAL = "var(--avatar-neutral)";
+
+/** Derive up to two uppercase initials from a name or email. */
+export function initials(s: string): string {
+  const base = s.includes("@") ? s.split("@")[0] : s;
+  const parts = base.split(/[\s._-]+/).filter(Boolean);
+  const letters = parts.length >= 2
+    ? parts[0][0] + parts[1][0]
+    : base.slice(0, 2);
+  return letters.toUpperCase() || "?";
+}
