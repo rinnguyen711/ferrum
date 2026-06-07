@@ -12,7 +12,7 @@ pub mod media;
 pub mod schema;
 pub mod users;
 
-pub fn build_router(state: AppState) -> Router {
+pub fn build_router(state: AppState, extra: Vec<Router<AppState>>) -> Router {
     let mut public = Router::new()
         .route("/healthz", get(health::healthz))
         .merge(auth::public_router());
@@ -21,16 +21,24 @@ pub fn build_router(state: AppState) -> Router {
         public = public.merge(openapi::router());
     }
 
-    let protected = Router::new()
+    let mut protected = Router::new()
         .merge(schema::router())
         .merge(content::router())
         .merge(users::router())
         .merge(media::router())
-        .merge(auth::protected_router())
-        .route_layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            require_auth,
-        ));
+        .merge(auth::protected_router());
+
+    // Custom routers from the bin, merged after built-ins. Behind the same
+    // require_auth layer; axum panics on a duplicate exact path+method so
+    // collisions surface at startup.
+    for r in extra {
+        protected = protected.merge(r);
+    }
+
+    let protected = protected.route_layer(axum::middleware::from_fn_with_state(
+        state.clone(),
+        require_auth,
+    ));
 
     public.merge(protected).with_state(state)
 }
