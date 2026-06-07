@@ -4,7 +4,7 @@ use crate::entry::{body_to_binds, row_to_json, RelationCheck};
 use crate::error::ApiError;
 use crate::populate::{self, PopulateField};
 use crate::query::{parse_list, ListParams};
-use crate::state::AppState;
+use crate::state::{AppState, WriteContext, WriteOp};
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::get;
@@ -116,6 +116,14 @@ async fn create(
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     ensure(&state, &principal, Action::ContentWrite, &ct_name).await?;
     let ct = state.schemas.registry().get(&ct_name).await.ok_or(ApiError(Error::NotFound))?;
+
+    let ctx = WriteContext {
+        content_type: &ct.name,
+        operation: WriteOp::Create,
+        principal: &principal,
+    };
+    let body = state.hooks.before_write(&ctx, body).await.map_err(ApiError)?;
+
     let (binds_map, checks, links, media_checks, media_links) = body_to_binds(&ct, body, true)?;
     verify_relation_targets_exist(&state, &checks).await?;
     verify_link_targets_exist(&state, &links).await?;
@@ -128,8 +136,8 @@ async fn create(
     let mut tx = state.pool.begin().await.map_err(db)?;
     let q = bind_all(sqlx::query(&sql), &binds);
     let row = q.fetch_one(&mut *tx).await.map_err(|e| db_with_relation_context(e, &checks))?;
-    let body = row_to_json(&ct, &row)?;
-    let new_id = body
+    let record = row_to_json(&ct, &row)?;
+    let new_id = record
         .get("id")
         .and_then(|v| v.as_str())
         .and_then(|s| Uuid::parse_str(s).ok())
@@ -139,8 +147,9 @@ async fn create(
     write_media_links(&mut tx, &ct.name, &media_links, new_id).await?;
     tx.commit().await.map_err(db)?;
 
+    state.hooks.after_write(&ctx, &record).await.map_err(ApiError)?;
     state.events.emit(Event::EntryCreated { content_type: ct.name.clone(), id: new_id }).await;
-    Ok((StatusCode::CREATED, Json(body)))
+    Ok((StatusCode::CREATED, Json(record)))
 }
 
 async fn get_one(
@@ -183,6 +192,14 @@ async fn update(
 ) -> Result<Json<Value>, ApiError> {
     ensure(&state, &principal, Action::ContentWrite, &ct_name).await?;
     let ct = state.schemas.registry().get(&ct_name).await.ok_or(ApiError(Error::NotFound))?;
+
+    let ctx = WriteContext {
+        content_type: &ct.name,
+        operation: WriteOp::Update,
+        principal: &principal,
+    };
+    let body = state.hooks.before_write(&ctx, body).await.map_err(ApiError)?;
+
     let (mut binds_map, checks, links, media_checks, media_links) = body_to_binds(&ct, body, true)?;
     verify_relation_targets_exist(&state, &checks).await?;
     verify_link_targets_exist(&state, &links).await?;
@@ -231,8 +248,10 @@ async fn update(
     write_media_links(&mut tx, &ct.name, &media_links, id).await?;
     tx.commit().await.map_err(db)?;
 
+    let record = row_to_json(&ct, &row)?;
+    state.hooks.after_write(&ctx, &record).await.map_err(ApiError)?;
     state.events.emit(Event::EntryUpdated { content_type: ct.name.clone(), id }).await;
-    Ok(Json(row_to_json(&ct, &row)?))
+    Ok(Json(record))
 }
 
 async fn delete_one(
