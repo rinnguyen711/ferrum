@@ -35,7 +35,7 @@ export function ContentList() {
     ? ct.fields.filter((f) => f.kind === "relation").map((f) => f.name).join(",")
     : "";
 
-  const [publishFilter, setPublishFilter] = useState<"published" | "draft" | "all">("published");
+  const [publishFilter, setPublishFilter] = useState<"published" | "draft" | "all">("all");
 
   const entries = useResource(
     () => listEntries(type, { populate: populate || undefined, pageSize: 100, status: dp ? publishFilter : undefined }),

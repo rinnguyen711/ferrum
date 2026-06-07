@@ -80,7 +80,7 @@ export function EntryEditor() {
     }
   };
 
-  const save = async () => {
+  const save = async (publishAfter = false) => {
     setSaving(true);
     setFieldErrors({});
     setBanner(null);
@@ -110,8 +110,12 @@ export function EntryEditor() {
       }
     }
     try {
-      if (isNew) await createEntry(type, body);
-      else await updateEntry(type, id, body);
+      if (isNew) {
+        const created = await createEntry(type, body);
+        if (publishAfter) await publishEntry(type, created.id);
+      } else {
+        await updateEntry(type, id, body);
+      }
       navigate(`/content/${type}`);
     } catch (e) {
       if (e instanceof ApiError) {
@@ -154,9 +158,18 @@ export function EntryEditor() {
               {publishing ? "…" : isPublished ? "Unpublish" : "Publish"}
             </button>
           )}
-          <button className="rs-btn rs-btn--primary" onClick={save} disabled={saving}>
+          <button
+            className={"rs-btn " + (dp && isNew ? "rs-btn--ghost" : "rs-btn--primary")}
+            onClick={() => save(false)}
+            disabled={saving}
+          >
             {saving ? "Saving…" : isNew ? "Create" : "Save"}
           </button>
+          {dp && isNew && (
+            <button className="rs-btn rs-btn--primary" onClick={() => save(true)} disabled={saving}>
+              {saving ? "…" : "Create & Publish"}
+            </button>
+          )}
         </div>
       </div>
 
