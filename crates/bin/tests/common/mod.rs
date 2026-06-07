@@ -1,7 +1,7 @@
 //! Shared integration-test plumbing. Spins a real Postgres via testcontainers
 //! and the rustapi router in-process, hitting it via reqwest.
 
-use rustapi_http::{build_router, resolve_provider, secret_key_from_env, AppConfig, AppState, NoopSink, RoleAuthz};
+use rustapi_http::{build_router, resolve_provider, secret_key_from_env, AppConfig, AppState, NoopHook, NoopSink, RoleAuthz, WriteHook};
 use rustapi_schema::{SchemaRegistry, SchemaService, MIGRATOR};
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -34,10 +34,20 @@ pub struct TestApp {
 #[allow(dead_code)]
 impl TestApp {
     pub async fn spawn() -> Self {
-        Self::spawn_with_docs(true).await
+        Self::spawn_full(true, Arc::new(NoopHook)).await
     }
 
     pub async fn spawn_with_docs(docs_enabled: bool) -> Self {
+        Self::spawn_full(docs_enabled, Arc::new(NoopHook)).await
+    }
+
+    /// Spawn with a custom `WriteHook` injected into `AppState`.
+    #[allow(dead_code)]
+    pub async fn spawn_with_hook(hook: Arc<dyn WriteHook>) -> Self {
+        Self::spawn_full(true, hook).await
+    }
+
+    async fn spawn_full(docs_enabled: bool, hook: Arc<dyn WriteHook>) -> Self {
         let pg = PgImage::default().start().await.expect("pg start");
         let port = pg.get_host_port_ipv4(5432).await.expect("pg port");
         let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
@@ -65,6 +75,7 @@ impl TestApp {
             schemas: schemas.clone(),
             authz: Arc::new(RoleAuthz),
             events: Arc::new(NoopSink),
+            hooks: hook,
             config: AppConfig {
                 jwt_secret: JWT_SECRET.into(),
                 jwt_ttl_secs: 3600,

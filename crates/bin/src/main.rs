@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use rustapi::config::Config;
 use rustapi::seed;
-use rustapi_http::{build_router, mount_studio, resolve_provider, secret_key_from_env, AppConfig, AppState, NoopSink, RoleAuthz};
+use rustapi_http::{build_router, mount_studio, resolve_provider, secret_key_from_env, AppConfig, AppState, NoopHook, NoopSink, RoleAuthz};
 use rustapi_schema::{SchemaRegistry, SchemaService, MIGRATOR};
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
@@ -43,6 +43,7 @@ async fn main() -> Result<()> {
         schemas,
         authz: Arc::new(RoleAuthz),
         events: Arc::new(NoopSink),
+        hooks: Arc::new(NoopHook),
         config: AppConfig {
             jwt_secret: cfg.jwt_secret.clone(),
             jwt_ttl_secs: cfg.jwt_ttl_secs,
