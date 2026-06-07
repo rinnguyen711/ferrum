@@ -39,7 +39,7 @@ impl SchemaRegistry {
     /// Used at boot and (eventually) on LISTEN/NOTIFY in phase 7.
     pub async fn reload_from_db(&self, pool: &PgPool) -> Result<(), sqlx::Error> {
         let rows = sqlx::query_as::<_, RawCt>(
-            "SELECT id, name, display_name, fields, created_at, updated_at FROM _content_types",
+            "SELECT id, name, display_name, fields, options, created_at, updated_at FROM _content_types",
         )
         .fetch_all(pool)
         .await?;
@@ -145,6 +145,7 @@ struct RawCt {
     name: String,
     display_name: String,
     fields: sqlx::types::Json<Vec<rustapi_core::Field>>,
+    options: sqlx::types::Json<serde_json::Value>,
     created_at: chrono::DateTime<chrono::Utc>,
     updated_at: chrono::DateTime<chrono::Utc>,
 }
@@ -156,6 +157,7 @@ impl RawCt {
             name: self.name,
             display_name: self.display_name,
             fields: self.fields.0,
+            options: self.options.0,
             created_at: self.created_at,
             updated_at: self.updated_at,
         }
@@ -184,6 +186,7 @@ mod tests {
                 max_length: None,
                 kind_meta: json!({}),
             }],
+            options: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -217,6 +220,7 @@ mod tests {
             name: "user".into(),
             display_name: "User".into(),
             fields: vec![],
+            options: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -237,6 +241,7 @@ mod tests {
                     "inverse": "posts"
                 }),
             }],
+            options: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -263,6 +268,7 @@ mod tests {
             name: "user".into(),
             display_name: "User".into(),
             fields: vec![],
+            options: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         })
@@ -280,6 +286,7 @@ mod tests {
                 max_length: None,
                 kind_meta: json!({"target":"user","cardinality":"many_to_one"}),
             }],
+            options: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         })
@@ -389,6 +396,7 @@ mod tests {
                 max_length: None,
                 kind_meta: json!({}),
             }],
+            options: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         })

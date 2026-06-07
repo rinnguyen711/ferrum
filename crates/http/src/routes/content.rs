@@ -10,6 +10,7 @@ use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Json, Router};
 use rustapi_core::{Action, ContentType, Error, Event, Principal, ValidationErrors};
+use rustapi_sql::PublishFilter;
 use rustapi_schema::bind::{bind_all, bind_all_as};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -27,6 +28,8 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/:type", get(list).post(create))
         .route("/api/:type/:id", get(get_one).put(update).delete(delete_one))
+        .route("/api/:type/:id/publish", axum::routing::post(publish_entry))
+        .route("/api/:type/:id/unpublish", axum::routing::post(unpublish_entry))
 }
 
 async fn ensure(state: &AppState, principal: &Principal, action: Action, ct: &str) -> Result<(), ApiError> {
@@ -46,17 +49,29 @@ async fn list(
     ensure(&state, &principal, Action::ContentRead, &ct_name).await?;
     let ct = state.schemas.registry().get(&ct_name).await.ok_or(ApiError(Error::NotFound))?;
     let populate_param = params.populate.clone();
+    let status = params.status.clone();
     let opts = parse_list(&ct, params, state.config.page_size_max)?;
     let offset: i64 = ((opts.page - 1) as i64) * (opts.page_size as i64);
 
     let filter = crate::filter::parse(raw_query.as_deref().unwrap_or(""), &ct)?;
 
-    let (list_sql, list_binds) = rustapi_sql::select_list(
+    let publish = if ct.draft_publish() {
+        match status.as_deref() {
+            Some("draft") => PublishFilter::Draft,
+            Some("all") => PublishFilter::All,
+            _ => PublishFilter::Published,
+        }
+    } else {
+        PublishFilter::All
+    };
+
+    let (list_sql, list_binds) = rustapi_sql::select_list_status(
         &ct.name,
         &filter,
         &opts.sort,
         opts.page_size as i64,
         offset,
+        publish,
     )
     .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
 
@@ -78,7 +93,7 @@ async fn list(
 
     let data: Vec<Value> = maps.into_iter().map(Value::Object).collect();
 
-    let (count_sql, count_binds) = rustapi_sql::count(&ct.name, &filter)
+    let (count_sql, count_binds) = rustapi_sql::count_status(&ct.name, &filter, publish)
         .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
     let cq = bind_all_as(sqlx::query_as::<_, (i64,)>(&count_sql), &count_binds);
     let total: i64 = cq.fetch_one(&state.pool).await.map_err(db)?.0;
@@ -533,6 +548,51 @@ async fn verify_media_link_targets_exist(state: &AppState, links: &[crate::entry
         }
     }
     Ok(())
+}
+
+async fn publish_entry(
+    State(state): State<AppState>,
+    Path((ct_name, id)): Path<(String, Uuid)>,
+    axum::extract::Extension(principal): axum::extract::Extension<Principal>,
+) -> Result<Json<Value>, ApiError> {
+    set_publish_state(state, ct_name, id, principal, true).await
+}
+
+async fn unpublish_entry(
+    State(state): State<AppState>,
+    Path((ct_name, id)): Path<(String, Uuid)>,
+    axum::extract::Extension(principal): axum::extract::Extension<Principal>,
+) -> Result<Json<Value>, ApiError> {
+    set_publish_state(state, ct_name, id, principal, false).await
+}
+
+async fn set_publish_state(
+    state: AppState,
+    ct_name: String,
+    id: Uuid,
+    principal: Principal,
+    publish: bool,
+) -> Result<Json<Value>, ApiError> {
+    ensure(&state, &principal, Action::ContentWrite, &ct_name).await?;
+    let ct = state.schemas.registry().get(&ct_name).await.ok_or(ApiError(Error::NotFound))?;
+    if !ct.draft_publish() {
+        return Err(ApiError(Error::Validation(
+            rustapi_core::ValidationErrors::single(
+                "Draft & Publish is not enabled for this content type",
+            ),
+        )));
+    }
+    let (sql, binds) = if publish {
+        rustapi_sql::publish(&ct.name, id)
+    } else {
+        rustapi_sql::unpublish(&ct.name, id)
+    }
+    .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
+    let q = bind_all(sqlx::query(&sql), &binds);
+    let row = q.fetch_optional(&state.pool).await.map_err(db)?;
+    let row = row.ok_or(ApiError(Error::NotFound))?;
+    state.events.emit(Event::EntryUpdated { content_type: ct.name.clone(), id }).await;
+    Ok(Json(row_to_json(&ct, &row)?))
 }
 
 /// Apply each multiple-media replace-set inside the txn: clear the gallery, then

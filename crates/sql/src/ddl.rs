@@ -24,6 +24,9 @@ pub fn create_table(ct: &ContentType) -> Result<String, DdlError> {
         }
         cols.push(column_def(&ct.name, f)?);
     }
+    if ct.draft_publish() {
+        cols.push(r#""published_at" TIMESTAMPTZ"#.into());
+    }
     let body = cols.join(", ");
     Ok(format!("CREATE TABLE {table} ({body})"))
 }
@@ -47,6 +50,16 @@ pub fn add_column(ct_name: &str, field: &Field) -> Result<String, DdlError> {
     let table = table_name(ct_name)?;
     let def = column_def(ct_name, field)?;
     Ok(format!("ALTER TABLE {table} ADD COLUMN {def}"))
+}
+
+/// `ALTER TABLE ct_<name> ADD COLUMN "published_at" TIMESTAMPTZ` — used when
+/// Draft & Publish is enabled on an existing type. Nullable: existing rows
+/// become drafts (NULL).
+pub fn add_published_at_column(ct_name: &str) -> Result<String, DdlError> {
+    let table = table_name(ct_name)?;
+    Ok(format!(
+        "ALTER TABLE {table} ADD COLUMN \"published_at\" TIMESTAMPTZ"
+    ))
 }
 
 /// `ALTER TABLE ct_<name> DROP COLUMN "<col>"`
@@ -301,6 +314,7 @@ mod tests {
             name: "post".into(),
             display_name: "Post".into(),
             fields,
+            options: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -640,6 +654,29 @@ PRIMARY KEY (\"post_id\", \"asset_id\"))"
         assert_eq!(
             drop_media_join_table("post", "gallery").unwrap(),
             "DROP TABLE \"j_media_post_gallery\""
+        );
+    }
+
+    #[test]
+    fn create_table_emits_published_at_when_draft_publish() {
+        let mut c = ct(vec![field("title", FieldKind::String)]);
+        c.options = json!({ "draft_publish": true });
+        let sql = create_table(&c).unwrap();
+        assert!(sql.contains("\"published_at\" TIMESTAMPTZ"), "got: {sql}");
+    }
+
+    #[test]
+    fn create_table_omits_published_at_when_disabled() {
+        let sql = create_table(&ct(vec![field("title", FieldKind::String)])).unwrap();
+        assert!(!sql.contains("published_at"), "got: {sql}");
+    }
+
+    #[test]
+    fn add_published_at_column_builds_alter() {
+        let sql = add_published_at_column("post").unwrap();
+        assert_eq!(
+            sql,
+            "ALTER TABLE \"ct_post\" ADD COLUMN \"published_at\" TIMESTAMPTZ"
         );
     }
 }

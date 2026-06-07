@@ -17,6 +17,8 @@ pub struct ListParams {
     /// happens in `populate::parse_populate`.
     #[serde(default)]
     pub populate: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
 }
 
 #[derive(Debug)]
@@ -93,6 +95,7 @@ mod tests {
                 max_length: None,
                 kind_meta: json!({}),
             }],
+            options: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -110,7 +113,7 @@ mod tests {
     fn caps_page_size() {
         let opts = parse_list(
             &ct(),
-            ListParams { page: None, page_size: Some(9999), sort: None, populate: None },
+            ListParams { page: None, page_size: Some(9999), sort: None, populate: None, status: None },
             50,
         ).unwrap();
         assert_eq!(opts.page_size, 50);
@@ -120,7 +123,7 @@ mod tests {
     fn sort_user_field() {
         let opts = parse_list(
             &ct(),
-            ListParams { page: None, page_size: None, sort: Some("title:desc".into()), populate: None },
+            ListParams { page: None, page_size: None, sort: Some("title:desc".into()), populate: None, status: None },
             100,
         ).unwrap();
         assert_eq!(opts.sort.column, "title");
@@ -131,7 +134,7 @@ mod tests {
     fn sort_unknown_field_rejected() {
         let r = parse_list(
             &ct(),
-            ListParams { page: None, page_size: None, sort: Some("nope".into()), populate: None },
+            ListParams { page: None, page_size: None, sort: Some("nope".into()), populate: None, status: None },
             100,
         );
         assert!(matches!(r, Err(Error::Validation(_))));
@@ -141,7 +144,7 @@ mod tests {
     fn sort_bad_dir_rejected() {
         let r = parse_list(
             &ct(),
-            ListParams { page: None, page_size: None, sort: Some("title:sideways".into()), populate: None },
+            ListParams { page: None, page_size: None, sort: Some("title:sideways".into()), populate: None, status: None },
             100,
         );
         assert!(matches!(r, Err(Error::Validation(_))));
@@ -174,6 +177,7 @@ mod tests {
                     kind_meta: json!({}),
                 },
             ],
+            options: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };

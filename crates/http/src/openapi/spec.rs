@@ -82,6 +82,7 @@ mod tests {
                     max_length: None,
                     kind_meta: json!({}),
                 }],
+                options: json!({}),
                 created_at: chrono::Utc::now(),
                 updated_at: chrono::Utc::now(),
             })

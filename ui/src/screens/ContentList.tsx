@@ -6,7 +6,7 @@ import { FieldsMenu, type ColumnDef } from "./FieldsMenu";
 import { useResource } from "../hooks/useResource";
 import { getContentType, listContentTypes, listEntries } from "../api/endpoints";
 import type { ContentType, Entry, Field } from "../api/types";
-import { relationMeta } from "../api/types";
+import { draftPublishEnabled, relationMeta } from "../api/types";
 import { relTime, relationLabel, shortId } from "../util";
 
 const STATUS_TABS: [string, string][] = [
@@ -14,6 +14,12 @@ const STATUS_TABS: [string, string][] = [
   ["published", "Published"],
   ["review", "In review"],
   ["draft", "Draft"],
+];
+
+const PUBLISH_TABS: [("published" | "draft" | "all"), string][] = [
+  ["published", "Published"],
+  ["draft", "Draft"],
+  ["all", "All"],
 ];
 
 export function ContentList() {
@@ -24,13 +30,16 @@ export function ContentList() {
   const allTypes = useResource(() => listContentTypes(), []);
 
   const ct = schema.data;
+  const dp = ct ? draftPublishEnabled(ct) : false;
   const populate = ct
     ? ct.fields.filter((f) => f.kind === "relation").map((f) => f.name).join(",")
     : "";
 
+  const [publishFilter, setPublishFilter] = useState<"published" | "draft" | "all">("published");
+
   const entries = useResource(
-    () => listEntries(type, { populate: populate || undefined, pageSize: 100 }),
-    [type, populate],
+    () => listEntries(type, { populate: populate || undefined, pageSize: 100, status: dp ? publishFilter : undefined }),
+    [type, populate, dp, publishFilter],
   );
 
   const [query, setQuery] = useState("");
@@ -159,7 +168,19 @@ export function ContentList() {
         </button>
       </div>
 
-      {hasStatus && (
+      {dp ? (
+        <div className="rs-cm-tabs">
+          {PUBLISH_TABS.map(([k, l]) => (
+            <button
+              key={k}
+              className={"rs-tab" + (publishFilter === k ? " is-active" : "")}
+              onClick={() => setPublishFilter(k)}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
+      ) : hasStatus && (
         <div className="rs-cm-tabs">
           {STATUS_TABS.map(([k, l]) => (
             <button
@@ -229,6 +250,7 @@ export function ContentList() {
                 <Checkbox checked={allOn} onChange={toggleAll} />
               </th>
               {colVisible("id") && <th className="rs-col-id">ID</th>}
+              {dp && <th>Status</th>}
               {cols.map((f) => <th key={f.name}>{f.name}</th>)}
               {colVisible("updated") && <th>Updated</th>}
             </tr>
@@ -244,6 +266,13 @@ export function ContentList() {
                   <Checkbox checked={selected.includes(e.id)} onChange={() => toggle(e.id)} />
                 </td>
                 {colVisible("id") && <td className="rs-col-id rs-mono">{shortId(e.id)}</td>}
+                {dp && (
+                  <td>
+                    {e.published_at
+                      ? <span className="rs-status rs-status--ok">Published</span>
+                      : <span className="rs-status rs-status--muted">Draft</span>}
+                  </td>
+                )}
                 {cols.map((f) => <td key={f.name}>{renderCell(e, f)}</td>)}
                 {colVisible("updated") && <td className="rs-cell-muted">{relTime(e.updated_at)}</td>}
               </tr>

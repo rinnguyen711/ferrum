@@ -6,7 +6,7 @@ import {
   deleteContentType, getContentType, listContentTypes,
 } from "../api/endpoints";
 import { ApiError } from "../api/client";
-import { enumValues } from "../api/types";
+import { draftPublishEnabled, enumValues } from "../api/types";
 import type { FieldKind } from "../api/types";
 import { useBuilderDraft } from "./BuilderDraftContext";
 import { blankField, type DraftField } from "./draftModel";
@@ -163,6 +163,26 @@ export function SchemaEditor() {
           ))}
         </div>
       )}
+
+      <div className="rs-setting-row" style={{ marginBottom: 16 }}>
+        <div className="rs-setting-meta">
+          <strong>Enable Draft &amp; Publish</strong>
+          <span>Entries go through a draft state before being published.</span>
+        </div>
+        <button
+          type="button"
+          className={"rs-toggle" + (draft.draft_publish ? " is-on" : "")}
+          disabled={draft.mode === "existing" && (draft.serverSnapshot ? draftPublishEnabled(draft.serverSnapshot) : false)}
+          title={draft.mode === "existing" && (draft.serverSnapshot ? draftPublishEnabled(draft.serverSnapshot) : false) ? "Cannot be disabled" : undefined}
+          aria-pressed={draft.draft_publish}
+          onClick={() => {
+            clearBanner();
+            setDraft((d) => ({ ...d, draft_publish: !d.draft_publish }));
+          }}
+        >
+          <span className="rs-toggle-knob" />
+        </button>
+      </div>
 
       <div className="rs-schema">
         <div className="rs-schema-head"><span>Field</span><span>Type</span><span></span></div>

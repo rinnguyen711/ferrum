@@ -66,7 +66,7 @@ pub fn body_to_binds(
     mut body: Map<String, Value>,
     require_required: bool,
 ) -> Result<BodyBinds, Error> {
-    for sys in &["id", "created_at", "updated_at"] {
+    for sys in &["id", "created_at", "updated_at", "published_at"] {
         body.remove(*sys);
     }
 
@@ -287,6 +287,15 @@ pub fn row_to_json(ct: &ContentType, row: &PgRow) -> Result<Value, Error> {
     let ua: chrono::DateTime<chrono::Utc> = row.try_get("updated_at").map_err(decode)?;
     obj.insert("updated_at".into(), Value::String(ua.to_rfc3339()));
 
+    if ct.draft_publish() {
+        let pa: Option<chrono::DateTime<chrono::Utc>> =
+            row.try_get("published_at").map_err(decode)?;
+        obj.insert(
+            "published_at".into(),
+            pa.map(|d| Value::String(d.to_rfc3339())).unwrap_or(Value::Null),
+        );
+    }
+
     for f in &ct.fields {
         if is_system_column(&f.name) {
             continue;
@@ -398,6 +407,7 @@ mod tests {
                     kind_meta: json!({}),
                 },
             ],
+            options: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -461,6 +471,33 @@ mod tests {
         assert!(matches!(body_to_binds(&ct(), body, true), Err(Error::Validation(_))));
     }
 
+    #[test]
+    fn body_to_binds_strips_published_at() {
+        let ct = ContentType {
+            id: Uuid::nil(),
+            name: "post".into(),
+            display_name: "Post".into(),
+            fields: vec![Field {
+                name: "title".into(),
+                kind: FieldKind::String,
+                required: false,
+                unique: false,
+                default: json!(null),
+                max_length: None,
+                kind_meta: json!({}),
+            }],
+            options: json!({ "draft_publish": true }),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let body = serde_json::json!({ "title": "x", "published_at": "2026-01-01T00:00:00Z" })
+            .as_object()
+            .unwrap()
+            .clone();
+        let (binds, ..) = body_to_binds(&ct, body, true).unwrap();
+        assert!(!binds.contains_key("published_at"));
+    }
+
     fn ct_with_relation() -> ContentType {
         ContentType {
             id: Uuid::nil(),
@@ -475,6 +512,7 @@ mod tests {
                 max_length: None,
                 kind_meta: json!({"target":"user","cardinality":"many_to_one"}),
             }],
+            options: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -579,6 +617,7 @@ mod tests {
                     kind_meta: json!({"target":"tag","cardinality":"many_to_many"}),
                 },
             ],
+            options: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -679,6 +718,7 @@ mod tests {
                 Field { name: "hero".into(), kind: FieldKind::Media, required: false, unique: false, default: json!(null), max_length: None, kind_meta: json!({"multiple": false}) },
                 Field { name: "gallery".into(), kind: FieldKind::Media, required: false, unique: false, default: json!(null), max_length: None, kind_meta: json!({"multiple": true}) },
             ],
+            options: json!({}),
             created_at: Utc::now(), updated_at: Utc::now(),
         }
     }

@@ -8,12 +8,14 @@ import {
   getEntry,
   listAssets,
   listEntries,
+  publishEntry,
+  unpublishEntry,
   updateEntry,
 } from "../api/endpoints";
 import { AssetPicker } from "./media/AssetPicker";
 import { AssetThumb } from "./media/AssetThumb";
 import type { Entry, Field, MediaAsset } from "../api/types";
-import { enumValues, mediaMeta, relationMeta } from "../api/types";
+import { draftPublishEnabled, enumValues, mediaMeta, relationMeta } from "../api/types";
 import { relationLabel } from "../util";
 import { ApiError } from "../api/client";
 
@@ -33,6 +35,12 @@ export function EntryEditor() {
   const [saving, setSaving] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [banner, setBanner] = useState<string | null>(null);
+  const [publishedAt, setPublishedAt] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState(false);
+
+  useEffect(() => {
+    setPublishedAt((existing.data?.published_at as string | null) ?? null);
+  }, [existing.data]);
 
   // Seed the form once data is available.
   useEffect(() => {
@@ -51,8 +59,26 @@ export function EntryEditor() {
   const ct = schema.data;
   if (!ct) return <div className="rs-empty">Unknown content type.</div>;
 
+  const dp = ct ? draftPublishEnabled(ct) : false;
+  const isPublished = publishedAt != null;
+
   const set = (name: string, value: unknown) =>
     setForm((f) => ({ ...f, [name]: value }));
+
+  const togglePublish = async () => {
+    if (!ct) return;
+    setPublishing(true);
+    try {
+      const updated = isPublished
+        ? await unpublishEntry(ct.name, id)
+        : await publishEntry(ct.name, id);
+      setPublishedAt((updated.published_at as string | null) ?? null);
+    } catch {
+      setBanner("Publish action failed.");
+    } finally {
+      setPublishing(false);
+    }
+  };
 
   const save = async () => {
     setSaving(true);
@@ -112,8 +138,22 @@ export function EntryEditor() {
         </button>
         <div className="rs-editor-titlewrap">
           <h1>{isNew ? `Create ${ct.display_name}` : `Edit ${ct.display_name}`}</h1>
+          {dp && !isNew && (
+            <span className={"rs-status " + (isPublished ? "rs-status--ok" : "rs-status--muted")}>
+              {isPublished ? "Published" : "Draft"}
+            </span>
+          )}
         </div>
         <div className="rs-editor-actions">
+          {dp && !isNew && (
+            <button
+              className={"rs-btn " + (isPublished ? "rs-btn--ghost" : "rs-btn--primary")}
+              onClick={togglePublish}
+              disabled={publishing}
+            >
+              {publishing ? "…" : isPublished ? "Unpublish" : "Publish"}
+            </button>
+          )}
           <button className="rs-btn rs-btn--primary" onClick={save} disabled={saving}>
             {saving ? "Saving…" : isNew ? "Create" : "Save"}
           </button>

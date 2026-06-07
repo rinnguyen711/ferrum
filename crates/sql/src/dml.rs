@@ -24,6 +24,14 @@ pub enum DmlError {
 
 pub type SqlAndBinds = (String, Vec<BoundValue>);
 
+/// Which publish state to return from a list query. `All` adds no clause.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PublishFilter {
+    Published,
+    Draft,
+    All,
+}
+
 /// `INSERT INTO ct_<name> (cols...) VALUES ($1, $2, ...) RETURNING *`
 pub fn insert(ct: &ContentType, values: &BTreeMap<String, BoundValue>) -> Result<SqlAndBinds, DmlError> {
     let table = table_name(&ct.name)?;
@@ -84,6 +92,24 @@ pub fn update(
 pub fn delete(ct_name: &str, id: Uuid) -> Result<SqlAndBinds, DmlError> {
     let table = table_name(ct_name)?;
     let sql = format!("DELETE FROM {table} WHERE \"id\" = $1::uuid");
+    Ok((sql, vec![BoundValue::Str(id.to_string())]))
+}
+
+/// `UPDATE ct_<name> SET published_at = now(), updated_at = now() WHERE id=$1`
+pub fn publish(ct_name: &str, id: Uuid) -> Result<SqlAndBinds, DmlError> {
+    let table = table_name(ct_name)?;
+    let sql = format!(
+        "UPDATE {table} SET \"published_at\" = now(), \"updated_at\" = now() WHERE \"id\" = $1::uuid RETURNING *"
+    );
+    Ok((sql, vec![BoundValue::Str(id.to_string())]))
+}
+
+/// `UPDATE ct_<name> SET published_at = NULL, updated_at = now() WHERE id=$1`
+pub fn unpublish(ct_name: &str, id: Uuid) -> Result<SqlAndBinds, DmlError> {
+    let table = table_name(ct_name)?;
+    let sql = format!(
+        "UPDATE {table} SET \"published_at\" = NULL, \"updated_at\" = now() WHERE \"id\" = $1::uuid RETURNING *"
+    );
     Ok((sql, vec![BoundValue::Str(id.to_string())]))
 }
 
@@ -165,11 +191,36 @@ pub fn select_list(
     limit: i64,
     offset: i64,
 ) -> Result<SqlAndBinds, DmlError> {
+    select_list_status(ct_name, filter, sort, limit, offset, PublishFilter::All)
+}
+
+/// Like `select_list` but also filters by publish state.
+pub fn select_list_status(
+    ct_name: &str,
+    filter: &Filter,
+    sort: &Sort,
+    limit: i64,
+    offset: i64,
+    publish: PublishFilter,
+) -> Result<SqlAndBinds, DmlError> {
     let table = table_name(ct_name)?;
     let col = quote_ident(&sort.column)?;
     let dir = sort.dir.as_sql();
 
-    let (where_sql, mut binds) = render_where(filter, 1)?;
+    let (mut where_sql, mut binds) = render_where(filter, 1)?;
+    let publish_pred = match publish {
+        PublishFilter::Published => Some("\"published_at\" IS NOT NULL"),
+        PublishFilter::Draft => Some("\"published_at\" IS NULL"),
+        PublishFilter::All => None,
+    };
+    if let Some(pred) = publish_pred {
+        if where_sql.is_empty() {
+            where_sql = format!(" WHERE {pred}");
+        } else {
+            where_sql = format!("{where_sql} AND {pred}");
+        }
+    }
+
     let limit_ph = binds.len() + 1;
     let offset_ph = binds.len() + 2;
     binds.push(BoundValue::I64(limit));
@@ -185,6 +236,29 @@ pub fn select_list(
 pub fn count(ct_name: &str, filter: &Filter) -> Result<SqlAndBinds, DmlError> {
     let table = table_name(ct_name)?;
     let (where_sql, binds) = render_where(filter, 1)?;
+    Ok((format!("SELECT count(*) FROM {table}{where_sql}"), binds))
+}
+
+/// `SELECT count(*) FROM ct_<name> [WHERE ...]` with publish-state predicate.
+pub fn count_status(
+    ct_name: &str,
+    filter: &Filter,
+    publish: PublishFilter,
+) -> Result<SqlAndBinds, DmlError> {
+    let table = table_name(ct_name)?;
+    let (mut where_sql, binds) = render_where(filter, 1)?;
+    let publish_pred = match publish {
+        PublishFilter::Published => Some("\"published_at\" IS NOT NULL"),
+        PublishFilter::Draft => Some("\"published_at\" IS NULL"),
+        PublishFilter::All => None,
+    };
+    if let Some(pred) = publish_pred {
+        if where_sql.is_empty() {
+            where_sql = format!(" WHERE {pred}");
+        } else {
+            where_sql = format!("{where_sql} AND {pred}");
+        }
+    }
     Ok((format!("SELECT count(*) FROM {table}{where_sql}"), binds))
 }
 
@@ -227,6 +301,7 @@ mod tests {
             name: "post".into(),
             display_name: "Post".into(),
             fields,
+            options: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -452,6 +527,43 @@ SELECT $1::uuid, x.asset, x.ord::int FROM UNNEST($2::uuid[]) WITH ORDINALITY AS 
         let (sql, owner) = super::delete_media_links("post", "gallery", id).unwrap();
         assert_eq!(owner, id);
         assert_eq!(sql, "DELETE FROM \"j_media_post_gallery\" WHERE \"post_id\" = $1::uuid");
+    }
+
+    #[test]
+    fn publish_sets_published_at_now() {
+        let (sql, binds) = publish("post", Uuid::nil()).unwrap();
+        assert_eq!(
+            sql,
+            "UPDATE \"ct_post\" SET \"published_at\" = now(), \"updated_at\" = now() WHERE \"id\" = $1::uuid RETURNING *"
+        );
+        assert_eq!(binds.len(), 1);
+    }
+
+    #[test]
+    fn unpublish_nulls_published_at() {
+        let (sql, _) = unpublish("post", Uuid::nil()).unwrap();
+        assert_eq!(
+            sql,
+            "UPDATE \"ct_post\" SET \"published_at\" = NULL, \"updated_at\" = now() WHERE \"id\" = $1::uuid RETURNING *"
+        );
+    }
+
+    #[test]
+    fn select_list_published_filter_appends_clause() {
+        let (sql, _) = select_list_status("post", &Filter::None, &Sort::default_created_at(), 10, 0, PublishFilter::Published).unwrap();
+        assert!(sql.contains("\"published_at\" IS NOT NULL"), "got: {sql}");
+    }
+
+    #[test]
+    fn select_list_draft_filter_appends_clause() {
+        let (sql, _) = select_list_status("post", &Filter::None, &Sort::default_created_at(), 10, 0, PublishFilter::Draft).unwrap();
+        assert!(sql.contains("\"published_at\" IS NULL"), "got: {sql}");
+    }
+
+    #[test]
+    fn select_list_all_filter_no_publish_clause() {
+        let (sql, _) = select_list_status("post", &Filter::None, &Sort::default_created_at(), 10, 0, PublishFilter::All).unwrap();
+        assert!(!sql.contains("published_at"), "got: {sql}");
     }
 }
 

@@ -7,6 +7,24 @@ use sqlx::{PgPool, Postgres, Transaction};
 use tracing::instrument;
 use uuid::Uuid;
 
+/// Decide the published_at DDL action when options change on PATCH.
+/// Returns Ok(true) when the column must be added (enable), Ok(false) when
+/// nothing changes, Err when an unsupported disable is requested.
+pub(crate) fn published_at_transition(
+    was_enabled: bool,
+    now_enabled: bool,
+) -> Result<bool, Error> {
+    match (was_enabled, now_enabled) {
+        (false, true) => Ok(true),
+        (true, false) => Err(Error::Validation(
+            rustapi_core::ValidationErrors::single(
+                "disabling Draft & Publish is not supported",
+            ),
+        )),
+        _ => Ok(false),
+    }
+}
+
 #[derive(Clone)]
 pub struct SchemaService {
     pool: PgPool,
@@ -41,6 +59,7 @@ impl SchemaService {
             name: payload.name.clone(),
             display_name: payload.display_name.clone(),
             fields: payload.fields.clone(),
+            options: payload.resolved_options(),
             created_at: now,
             updated_at: now,
         };
@@ -51,13 +70,14 @@ impl SchemaService {
         let mut tx: Transaction<'_, Postgres> = self.pool.begin().await.map_err(internal)?;
 
         sqlx::query(
-            "INSERT INTO _content_types (id, name, display_name, fields, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6)",
+            "INSERT INTO _content_types (id, name, display_name, fields, options, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)",
         )
         .bind(ct.id)
         .bind(&ct.name)
         .bind(&ct.display_name)
         .bind(sqlx::types::Json(&ct.fields))
+        .bind(sqlx::types::Json(&ct.options))
         .bind(ct.created_at)
         .bind(ct.updated_at)
         .execute(&mut *tx)
@@ -185,12 +205,28 @@ impl SchemaService {
             .clone()
             .unwrap_or_else(|| existing.display_name.clone());
 
+        let was_enabled = existing.draft_publish();
+        let new_options = match &payload.options {
+            Some(o) => o.clone(),
+            None => existing.options.clone(),
+        };
+        let now_enabled = new_options
+            .get("draft_publish")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if published_at_transition(was_enabled, now_enabled)? {
+            let sql = rustapi_sql::add_published_at_column(name)
+                .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
+            sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
+        }
+
         let now = Utc::now();
         sqlx::query(
-            "UPDATE _content_types SET display_name = $1, fields = $2, updated_at = $3 WHERE name = $4",
+            "UPDATE _content_types SET display_name = $1, fields = $2, options = $3, updated_at = $4 WHERE name = $5",
         )
         .bind(&new_display)
         .bind(sqlx::types::Json(&new_fields))
+        .bind(sqlx::types::Json(&new_options))
         .bind(now)
         .bind(name)
         .execute(&mut *tx)
@@ -204,6 +240,7 @@ impl SchemaService {
             name: existing.name.clone(),
             display_name: new_display,
             fields: new_fields,
+            options: new_options,
             created_at: existing.created_at,
             updated_at: now,
         };
@@ -404,6 +441,7 @@ mod tests {
                 max_length: None,
                 kind_meta: json!({}),
             }],
+            options: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -442,6 +480,14 @@ mod tests {
             }
             other => panic!("expected Error::Validation, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn published_at_transition_rules() {
+        assert_eq!(published_at_transition(false, true).unwrap(), true);
+        assert_eq!(published_at_transition(true, true).unwrap(), false);
+        assert_eq!(published_at_transition(false, false).unwrap(), false);
+        assert!(published_at_transition(true, false).is_err());
     }
 
     #[tokio::test]
@@ -494,6 +540,7 @@ mod tests {
             name: "post".into(),
             display_name: "Post".into(),
             fields: vec![relation_field("author", "user", Some("posts"))],
+            options: json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         })
