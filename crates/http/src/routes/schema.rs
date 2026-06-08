@@ -17,20 +17,25 @@ pub fn router() -> Router<AppState> {
 }
 
 async fn list(State(state): State<AppState>) -> Result<Json<Vec<ContentType>>, ApiError> {
-    Ok(Json(state.schemas.registry().list().await))
+    let cts = state.schemas.registry().list().await;
+    let mut out = Vec::with_capacity(cts.len());
+    for ct in cts {
+        out.push(inject_component_fields(&state, ct).await);
+    }
+    Ok(Json(out))
 }
 
 async fn get_one(
     State(state): State<AppState>,
     Path(name): Path<String>,
 ) -> Result<Json<ContentType>, ApiError> {
-    state
+    let ct = state
         .schemas
         .registry()
         .get(&name)
         .await
-        .map(Json)
-        .ok_or(ApiError(Error::NotFound))
+        .ok_or(ApiError(Error::NotFound))?;
+    Ok(Json(inject_component_fields(&state, ct).await))
 }
 
 async fn create(
@@ -70,4 +75,31 @@ async fn delete_one(
     state.schemas.delete(&name).await?;
     state.events.emit(Event::SchemaDeleted { name }).await;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Inject `_component_fields` into every component-kind field on a ContentType.
+async fn inject_component_fields(
+    state: &AppState,
+    mut ct: rustapi_core::ContentType,
+) -> rustapi_core::ContentType {
+    use rustapi_core::FieldKind;
+    use serde_json::json;
+
+    for f in &mut ct.fields {
+        if f.kind != FieldKind::Component { continue; }
+        let Some(meta) = f.component_meta() else { continue };
+        if let Some(comp) = state.components.get(&meta.component).await {
+            let fields_json = serde_json::to_value(&comp.fields).unwrap_or(json!([]));
+            if let serde_json::Value::Object(ref mut m) = f.kind_meta {
+                m.insert("_component_fields".into(), fields_json);
+            } else {
+                f.kind_meta = json!({
+                    "component": meta.component,
+                    "multiple": meta.multiple,
+                    "_component_fields": fields_json,
+                });
+            }
+        }
+    }
+    ct
 }
