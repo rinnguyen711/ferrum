@@ -4,10 +4,16 @@ import Underline from "@tiptap/extension-underline";
 import Link from "@tiptap/extension-link";
 import Highlight from "@tiptap/extension-highlight";
 import TextAlign from "@tiptap/extension-text-align";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { MediaImageExtension } from "./MediaImageExtension";
 import { AssetPicker } from "../screens/media/AssetPicker";
 import type { MediaAsset } from "../api/types";
+import {
+  Bold, Italic, Underline as UnderlineIcon, Strikethrough,
+  Code, Code2, Highlighter, Link2, AlignLeft, AlignCenter,
+  AlignRight, AlignJustify, List, ListOrdered, TextQuote,
+  Image, Undo2, Redo2, Heading1, Heading2, Heading3,
+} from "lucide-react";
 
 const extensions = [
   StarterKit,
@@ -35,15 +41,24 @@ export function RichTextEditor({
   disabled?: boolean;
 }) {
   const [showPicker, setShowPicker] = useState(false);
+  const skipNextSync = useRef(false);
 
   const editor = useEditor({
     extensions,
     content: toContent(value),
     editable: !disabled,
     onUpdate({ editor }) {
+      skipNextSync.current = true;
       onChange(editor.getJSON());
     },
   });
+
+  useEffect(() => {
+    if (!editor) return;
+    if (skipNextSync.current) { skipNextSync.current = false; return; }
+    const incoming = toContent(value);
+    if (incoming) editor.commands.setContent(incoming, { emitUpdate: false });
+  }, [editor, value]);
 
   if (!editor) return null;
 
@@ -79,34 +94,34 @@ export function RichTextEditor({
   return (
     <div className="rs-rich-text">
       <div className="rs-rich-text-toolbar">
-        {btn(false, () => editor.chain().focus().undo().run(), "Undo", "↩")}
-        {btn(false, () => editor.chain().focus().redo().run(), "Redo", "↪")}
+        {btn(false, () => editor.chain().focus().undo().run(), "Undo", <Undo2 size={14} />)}
+        {btn(false, () => editor.chain().focus().redo().run(), "Redo", <Redo2 size={14} />)}
         {sep()}
-        {btn(editor.isActive("heading", { level: 1 }), () => editor.chain().focus().toggleHeading({ level: 1 }).run(), "H1", "H1")}
-        {btn(editor.isActive("heading", { level: 2 }), () => editor.chain().focus().toggleHeading({ level: 2 }).run(), "H2", "H2")}
-        {btn(editor.isActive("heading", { level: 3 }), () => editor.chain().focus().toggleHeading({ level: 3 }).run(), "H3", "H3")}
+        {btn(editor.isActive("heading", { level: 1 }), () => editor.chain().focus().toggleHeading({ level: 1 }).run(), "H1", <Heading1 size={14} />)}
+        {btn(editor.isActive("heading", { level: 2 }), () => editor.chain().focus().toggleHeading({ level: 2 }).run(), "H2", <Heading2 size={14} />)}
+        {btn(editor.isActive("heading", { level: 3 }), () => editor.chain().focus().toggleHeading({ level: 3 }).run(), "H3", <Heading3 size={14} />)}
         {sep()}
-        {btn(editor.isActive("bulletList"), () => editor.chain().focus().toggleBulletList().run(), "Bullet list", "•")}
-        {btn(editor.isActive("orderedList"), () => editor.chain().focus().toggleOrderedList().run(), "Ordered list", "1.")}
-        {btn(editor.isActive("blockquote"), () => editor.chain().focus().toggleBlockquote().run(), "Blockquote", "“")}
+        {btn(editor.isActive("bulletList"), () => editor.chain().focus().toggleBulletList().run(), "Bullet list", <List size={14} />)}
+        {btn(editor.isActive("orderedList"), () => editor.chain().focus().toggleOrderedList().run(), "Ordered list", <ListOrdered size={14} />)}
+        {btn(editor.isActive("blockquote"), () => editor.chain().focus().toggleBlockquote().run(), "Blockquote", <TextQuote size={14} />)}
         {sep()}
-        {btn(editor.isActive("bold"), () => editor.chain().focus().toggleBold().run(), "Bold", "B")}
-        {btn(editor.isActive("italic"), () => editor.chain().focus().toggleItalic().run(), "Italic", "I")}
-        {btn(editor.isActive("underline"), () => editor.chain().focus().toggleUnderline().run(), "Underline", "U")}
-        {btn(editor.isActive("strike"), () => editor.chain().focus().toggleStrike().run(), "Strikethrough", "S̶")}
+        {btn(editor.isActive("bold"), () => editor.chain().focus().toggleBold().run(), "Bold", <Bold size={14} />)}
+        {btn(editor.isActive("italic"), () => editor.chain().focus().toggleItalic().run(), "Italic", <Italic size={14} />)}
+        {btn(editor.isActive("underline"), () => editor.chain().focus().toggleUnderline().run(), "Underline", <UnderlineIcon size={14} />)}
+        {btn(editor.isActive("strike"), () => editor.chain().focus().toggleStrike().run(), "Strikethrough", <Strikethrough size={14} />)}
         {sep()}
-        {btn(editor.isActive("code"), () => editor.chain().focus().toggleCode().run(), "Inline code", "`")}
-        {btn(editor.isActive("codeBlock"), () => editor.chain().focus().toggleCodeBlock().run(), "Code block", "```")}
-        {btn(editor.isActive("highlight"), () => editor.chain().focus().toggleHighlight().run(), "Highlight", "▌")}
+        {btn(editor.isActive("code"), () => editor.chain().focus().toggleCode().run(), "Inline code", <Code size={14} />)}
+        {btn(editor.isActive("codeBlock"), () => editor.chain().focus().toggleCodeBlock().run(), "Code block", <Code2 size={14} />)}
+        {btn(editor.isActive("highlight"), () => editor.chain().focus().toggleHighlight().run(), "Highlight", <Highlighter size={14} />)}
         {sep()}
-        {btn(editor.isActive("link"), setLink, "Link", "🔗")}
+        {btn(editor.isActive("link"), setLink, "Link", <Link2 size={14} />)}
         {sep()}
-        {btn(editor.isActive({ textAlign: "left" }), () => editor.chain().focus().setTextAlign("left").run(), "Align left", "⬅")}
-        {btn(editor.isActive({ textAlign: "center" }), () => editor.chain().focus().setTextAlign("center").run(), "Align center", "≡")}
-        {btn(editor.isActive({ textAlign: "right" }), () => editor.chain().focus().setTextAlign("right").run(), "Align right", "➡")}
-        {btn(editor.isActive({ textAlign: "justify" }), () => editor.chain().focus().setTextAlign("justify").run(), "Justify", "☰")}
+        {btn(editor.isActive({ textAlign: "left" }), () => editor.chain().focus().setTextAlign("left").run(), "Align left", <AlignLeft size={14} />)}
+        {btn(editor.isActive({ textAlign: "center" }), () => editor.chain().focus().setTextAlign("center").run(), "Align center", <AlignCenter size={14} />)}
+        {btn(editor.isActive({ textAlign: "right" }), () => editor.chain().focus().setTextAlign("right").run(), "Align right", <AlignRight size={14} />)}
+        {btn(editor.isActive({ textAlign: "justify" }), () => editor.chain().focus().setTextAlign("justify").run(), "Justify", <AlignJustify size={14} />)}
         {sep()}
-        {btn(false, () => setShowPicker(true), "Insert image", "🖼")}
+        {btn(false, () => setShowPicker(true), "Insert image", <Image size={14} />)}
       </div>
       <EditorContent editor={editor} className="rs-rich-text-content" />
       {showPicker && (

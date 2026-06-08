@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Icons } from "../components/icons";
 import { Notice, LoadingState, EmptyState, EditorBar } from "../components/ui";
@@ -15,6 +15,7 @@ import {
   unpublishEntry,
   updateEntry,
 } from "../api/endpoints";
+import { Plus, Link2, Trash2, Check, GripVertical } from "lucide-react";
 import { AssetPicker } from "./media/AssetPicker";
 import { AssetThumb } from "./media/AssetThumb";
 import type { Entry, Field, MediaAsset } from "../api/types";
@@ -192,6 +193,8 @@ export function EntryEditor() {
   );
 }
 
+const WIDE_KINDS = new Set(["text", "json", "rich_text", "media"]);
+
 function FieldRow({
   field,
   value,
@@ -205,8 +208,9 @@ function FieldRow({
   onChange: (v: unknown) => void;
   type: string;
 }) {
+  const wide = WIDE_KINDS.has(field.kind);
   return (
-    <div className="rs-field">
+    <div className="rs-field" data-wide={wide ? "true" : undefined}>
       <div className="rs-field-label">
         <label>
           {field.name}
@@ -339,9 +343,13 @@ function MediaField({
   const multiple = mediaMeta(field)?.multiple ?? false;
   const [open, setOpen] = useState(false);
   const [assets, setAssets] = useState<MediaAsset[]>([]);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState<number | null>(null);
+  const dragSrc = useRef<number | null>(null);
+  const selfChange = useRef(false);
 
-  // Seed from embedded read shape: object | array<object> | id | id[] | "".
   useEffect(() => {
+    if (selfChange.current) { selfChange.current = false; return; }
     let cancelled = false;
     const seed = async () => {
       if (value === "" || value == null) { setAssets([]); return; }
@@ -367,6 +375,7 @@ function MediaField({
   }, [value]);
 
   const emit = (next: MediaAsset[]) => {
+    selfChange.current = true;
     setAssets(next);
     onChange(multiple ? next.map((a) => a.id) : (next[0]?.id ?? null));
   };
@@ -382,40 +391,78 @@ function MediaField({
   };
 
   const remove = (id: string) => emit(assets.filter((a) => a.id !== id));
-  const move = (i: number, dir: -1 | 1) => {
-    const j = i + dir;
-    if (j < 0 || j >= assets.length) return;
-    const next = assets.slice();
-    [next[i], next[j]] = [next[j], next[i]];
-    emit(next);
+
+  const copyLink = (id: string) => {
+    const url = `${window.location.origin}/admin/media/assets/${id}/raw`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId((c) => (c === id ? null : c)), 1800);
+    }).catch(() => {});
   };
+
+  const onDragStart = (i: number) => { dragSrc.current = i; };
+  const onDragEnter = (i: number) => { if (dragSrc.current !== null && dragSrc.current !== i) setDragOver(i); };
+  const onDragEnd = () => { setDragOver(null); dragSrc.current = null; };
+  const onDrop = (i: number) => {
+    const src = dragSrc.current;
+    if (src === null || src === i) return;
+    const next = assets.slice();
+    const [item] = next.splice(src, 1);
+    next.splice(i, 0, item);
+    emit(next);
+    setDragOver(null);
+    dragSrc.current = null;
+  };
+
+  const showAdd = multiple || assets.length === 0;
 
   return (
     <div className="rs-media-field">
-      {assets.length === 0 ? (
-        <div className="rs-media-field-empty">No asset selected.</div>
-      ) : (
-        <div className="rs-media-field-strip">
+      {assets.length > 0 && (
+        <div className="rs-media-field-grid">
           {assets.map((a, i) => (
-            <div className="rs-media-field-item" key={a.id}>
-              <AssetThumb asset={a} />
-              <span className="rs-media-field-name" title={a.file_name}>{a.file_name}</span>
-              <div className="rs-media-field-actions">
-                {multiple && (
-                  <>
-                    <button type="button" className="rs-link-btn" disabled={i === 0} onClick={() => move(i, -1)}>↑</button>
-                    <button type="button" className="rs-link-btn" disabled={i === assets.length - 1} onClick={() => move(i, 1)}>↓</button>
-                  </>
-                )}
-                <button type="button" className="rs-link-btn rs-danger" onClick={() => remove(a.id)}>Remove</button>
+            <div
+              key={a.id}
+              className={"rs-media-field-card" + (dragOver === i ? " is-drag-over" : "")}
+              draggable={multiple}
+              onDragStart={multiple ? () => onDragStart(i) : undefined}
+              onDragEnter={multiple ? (e) => { e.preventDefault(); onDragEnter(i); } : undefined}
+              onDragOver={multiple ? (e) => e.preventDefault() : undefined}
+              onDragLeave={multiple ? () => setDragOver(null) : undefined}
+              onDragEnd={multiple ? onDragEnd : undefined}
+              onDrop={multiple ? (e) => { e.preventDefault(); onDrop(i); } : undefined}
+            >
+              {multiple && <div className="rs-media-field-grip"><GripVertical size={13} /></div>}
+              <div className="rs-media-field-thumb-wrap">
+                <AssetThumb asset={a} className="rs-media-field-thumb" />
+                <div className="rs-media-field-overlay">
+                  <div className="rs-media-field-act-wrap" style={{ position: "relative" }}>
+                    <button
+                      type="button"
+                      className={"rs-media-field-act" + (copiedId === a.id ? " is-copied" : "")}
+                      title="Copy link"
+                      onClick={() => copyLink(a.id)}
+                    >
+                      {copiedId === a.id ? <Check size={15} /> : <Link2 size={15} />}
+                    </button>
+                    {copiedId === a.id && <span className="rs-media-field-copied">Copied!</span>}
+                  </div>
+                  <button type="button" className="rs-media-field-act rs-media-field-act--danger" title="Remove" onClick={() => remove(a.id)}>
+                    <Trash2 size={15} />
+                  </button>
+                </div>
               </div>
+              <p className="rs-media-field-name" title={a.file_name}>{a.original_filename}</p>
             </div>
           ))}
         </div>
       )}
-      <button type="button" className="rs-btn rs-btn--ghost" onClick={() => setOpen(true)}>
-        <Icons.image size={15} /> {multiple ? "Add assets" : assets.length ? "Replace asset" : "Choose asset"}
-      </button>
+      {showAdd && (
+        <button type="button" className="rs-media-field-add" onClick={() => setOpen(true)}>
+          <Plus size={15} />
+          <span>{assets.length === 0 ? "Add asset" : "Add more"}</span>
+        </button>
+      )}
       {open && <AssetPicker multiple={multiple} onClose={() => setOpen(false)} onPick={onPick} />}
     </div>
   );
