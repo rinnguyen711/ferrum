@@ -35,6 +35,7 @@ pub enum FieldKind {
     /// a nullable FK column; multiple media lives in an ordered join table.
     Media,
     /// Rich text document stored as jsonb (ProseMirror JSON).
+    #[serde(rename = "rich_text")]
     RichText,
 }
 
