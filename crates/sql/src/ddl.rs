@@ -189,7 +189,7 @@ fn column_def(ct_name: &str, f: &Field) -> Result<String, DdlError> {
             "{col} text{default_clause}{not_null}{unique} CONSTRAINT {constraint_name} CHECK ({col} IS NULL OR {col} IN ({values_lit}))"
         ));
     }
-    if f.kind == FieldKind::Json {
+    if f.kind == FieldKind::Json || f.kind == FieldKind::RichText {
         let col = quote_ident(&f.name)?;
         let default_clause = if !f.default.is_null() {
             format!(" DEFAULT {}", render_default(f))
@@ -282,6 +282,10 @@ fn render_default(f: &Field) -> String {
         (FieldKind::Integer, v) | (FieldKind::Float, v) => v.to_string(),
         (FieldKind::Boolean, serde_json::Value::Bool(b)) => if *b { "TRUE" } else { "FALSE" }.into(),
         (FieldKind::Json, v) if !v.is_null() => {
+            let s = v.to_string().replace('\'', "''");
+            format!("'{s}'::jsonb")
+        }
+        (FieldKind::RichText, v) if !v.is_null() => {
             let s = v.to_string().replace('\'', "''");
             format!("'{s}'::jsonb")
         }
@@ -454,6 +458,21 @@ mod tests {
         };
         let sql = create_table(&ct(vec![f])).unwrap();
         assert!(sql.contains("\"meta\" jsonb"));
+    }
+
+    #[test]
+    fn create_table_emits_rich_text_jsonb() {
+        let f = Field {
+            name: "body".into(),
+            kind: FieldKind::RichText,
+            required: false,
+            unique: false,
+            default: json!(null),
+            max_length: None,
+            kind_meta: json!({}),
+        };
+        let sql = create_table(&ct(vec![f])).unwrap();
+        assert!(sql.contains("\"body\" jsonb"), "got: {sql}");
     }
 
     #[test]
