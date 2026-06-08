@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Notice } from "../components/ui";
 import { createComponent } from "../api/endpoints";
 
@@ -14,19 +14,6 @@ export function CreateComponentModal({
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-  const savingRef = useRef(saving);
-  savingRef.current = saving;
-
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !savingRef.current) onCloseRef.current();
-    };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
-  }, []);
-
   const submit = async () => {
     if (!displayName.trim()) return setErr("Display name is required.");
     if (!uid.trim()) return setErr("UID is required.");
@@ -40,6 +27,7 @@ export function CreateComponentModal({
       onCreated(c.uid);
     } catch (e: unknown) {
       setErr((e as Error)?.message ?? "Create failed.");
+    } finally {
       setSaving(false);
     }
   };
@@ -53,7 +41,11 @@ export function CreateComponentModal({
         className="rs-modal"
         role="dialog"
         aria-modal="true"
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          if (e.key === "Escape" && !saving) onClose();
+        }}
       >
         <div className="rs-modal-head">
           <h2>Create a component</h2>
