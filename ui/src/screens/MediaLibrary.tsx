@@ -7,14 +7,17 @@ import {
 } from "../api/endpoints";
 import { ApiError } from "../api/client";
 import type { MediaFolder, MediaAsset } from "../api/types";
-import { Checkbox } from "./media/Checkbox";
+import { Notice } from "../components/ui";
+import { SelectBox } from "./media/SelectBox";
 import { AssetThumb } from "./media/AssetThumb";
 import { FolderModal } from "./media/FolderModal";
 import { MoveModal } from "./media/MoveModal";
 import { UploadModal } from "./media/UploadModal";
 import { AssetDetail } from "./media/AssetDetail";
+import { DeleteConfirmModal } from "./media/DeleteConfirmModal";
 
 type ModalState = null | "folder" | "upload" | "move" | { editFolder: MediaFolder };
+type DeleteState = null | { kind: "assets"; ids: string[] } | { kind: "folder"; id: string };
 type Sort = "newest" | "oldest" | "name";
 
 export function MediaLibrary() {
@@ -25,6 +28,7 @@ export function MediaLibrary() {
   const [sort, setSort] = useState<Sort>("newest");
   const [selected, setSelected] = useState<string[]>([]);
   const [modal, setModal] = useState<ModalState>(null);
+  const [deleteState, setDeleteState] = useState<DeleteState>(null);
   const [detail, setDetail] = useState<MediaAsset | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -77,8 +81,9 @@ export function MediaLibrary() {
     await reloadFolders();
     setModal(null);
   };
-  const onDeleteFolder = async (id: string) => {
-    if (!window.confirm("Delete this folder?")) return;
+  const onDeleteFolder = (id: string) => setDeleteState({ kind: "folder", id });
+  const confirmDeleteFolder = async (id: string) => {
+    setDeleteState(null);
     try {
       await deleteFolder(id);
       await reloadFolders();
@@ -107,8 +112,9 @@ export function MediaLibrary() {
     setModal(null);
     await reloadAssets(cur);
   };
-  const onDeleteAssets = async (ids: string[]) => {
-    if (!window.confirm(`Delete ${ids.length} asset${ids.length === 1 ? "" : "s"}?`)) return;
+  const onDeleteAssets = (ids: string[]) => setDeleteState({ kind: "assets", ids });
+  const confirmDeleteAssets = async (ids: string[]) => {
+    setDeleteState(null);
     for (const id of ids) await deleteAsset(id);
     setSelected([]);
     await reloadAssets(cur);
@@ -176,7 +182,7 @@ export function MediaLibrary() {
         </button>
       </div>
 
-      {notice && <div className="rs-login-error" style={{ marginBottom: 12 }}>{notice}</div>}
+      {notice && <Notice>{notice}</Notice>}
 
       {selected.length > 0 && (
         <div className="rs-bulkbar">
@@ -245,7 +251,7 @@ export function MediaLibrary() {
                       draggable onDragStart={() => onAssetDragStart(m.id)}
                       onClick={() => setDetail(m)}>
                       <div className="rs-media-check" onClick={(e) => { e.stopPropagation(); toggleSel(m.id); }}>
-                        <Checkbox checked={sel} onChange={() => toggleSel(m.id)} />
+                        <SelectBox checked={sel} />
                       </div>
                       <AssetThumb asset={m} />
                       <div className="rs-media-card-meta">
@@ -281,6 +287,20 @@ export function MediaLibrary() {
       {detail && (
         <AssetDetail asset={detail} onClose={() => setDetail(null)}
           onSave={(patch) => onSaveAsset(detail.id, patch)} onDelete={() => onDeleteAsset(detail.id)} />
+      )}
+      {deleteState?.kind === "assets" && (
+        <DeleteConfirmModal
+          message={`Delete ${deleteState.ids.length} asset${deleteState.ids.length === 1 ? "" : "s"}? This cannot be undone.`}
+          onConfirm={() => confirmDeleteAssets(deleteState.ids)}
+          onCancel={() => setDeleteState(null)}
+        />
+      )}
+      {deleteState?.kind === "folder" && (
+        <DeleteConfirmModal
+          message="Delete this folder? This cannot be undone."
+          onConfirm={() => confirmDeleteFolder(deleteState.id)}
+          onCancel={() => setDeleteState(null)}
+        />
       )}
     </div>
   );

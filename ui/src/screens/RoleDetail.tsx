@@ -1,10 +1,11 @@
 import { useNavigate, useParams } from "react-router-dom";
 import { Icons } from "../components/icons";
 import { Avatar } from "../components/shell";
+import { EditorBar, LoadingState, EmptyState } from "../components/ui";
 import { useResource } from "../hooks/useResource";
 import { listUsers } from "../api/endpoints";
 import { ROLES, roleOf, CAPS, capsFor } from "../roles";
-import { shortId } from "../util";
+import { shortId, initials, AVATAR_NEUTRAL } from "../util";
 
 export function RoleDetail() {
   const { key } = useParams<{ key: string }>();
@@ -17,22 +18,15 @@ export function RoleDetail() {
   if (!isValid) {
     return (
       <div className="rs-editor">
-        <div className="rs-editor-bar">
-          <button className="rs-back" onClick={() => navigate("/roles")}>
-            <Icons.arrowLeft size={18} />
-          </button>
-          <div className="rs-editor-titlewrap">
-            <h1>Role not found</h1>
-          </div>
-        </div>
+        <EditorBar onBack={() => navigate("/roles")} title="Role not found" />
         <div className="rs-editor-body">
           <div className="rs-editor-main">
-            <div className="rs-empty">
+            <EmptyState>
               Role "{key}" does not exist.{" "}
               <button className="rs-btn rs-btn--ghost" onClick={() => navigate("/roles")}>
                 Back to Roles
               </button>
-            </div>
+            </EmptyState>
           </div>
         </div>
       </div>
@@ -45,20 +39,16 @@ export function RoleDetail() {
 
   return (
     <div className="rs-editor">
-      <div className="rs-editor-bar">
-        <button className="rs-back" onClick={() => navigate("/roles")}>
-          <Icons.arrowLeft size={18} />
-        </button>
-        <div className="rs-editor-titlewrap">
-          <h1>
-            <span className="rs-role-name">
-              <span className="rs-rolebar-dot" style={{ ["--chip" as string]: role.color }} />
-              {role.name}
-              <span className="rs-role-system">System</span>
-            </span>
-          </h1>
-        </div>
-      </div>
+      <EditorBar
+        onBack={() => navigate("/roles")}
+        title={
+          <span className="rs-role-name">
+            <span className="rs-rolebar-dot" style={{ ["--chip" as string]: role.color }} />
+            {role.name}
+            <span className="rs-role-system">System</span>
+          </span>
+        }
+      />
 
       <div className="rs-editor-body">
         <div className="rs-editor-main">
@@ -82,7 +72,7 @@ export function RoleDetail() {
 
             <div className="rs-field">
               <span className="rs-field-label">Members</span>
-              {users.loading && <div className="rs-empty">Loading…</div>}
+              {users.loading && <LoadingState />}
               {(!users.loading && members.length === 0) && (
                 <div className="rs-empty rs-cell-muted">No users have this role yet.</div>
               )}
@@ -97,8 +87,8 @@ export function RoleDetail() {
                             <span className="rs-user-cell">
                               <Avatar
                                 name={u.email}
-                                initials={u.email.slice(0, 2).toUpperCase()}
-                                color="#52525B"
+                                initials={initials(u.email)}
+                                color={AVATAR_NEUTRAL}
                                 size={34}
                               />
                               <span className="rs-user-id">

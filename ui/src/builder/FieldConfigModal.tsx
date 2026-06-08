@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Icons } from "../components/icons";
+import { Notice } from "../components/ui";
 import { fieldLabel, type Cardinality, type DraftField } from "./draftModel";
 import { EnumEditor } from "./EnumEditor";
 
@@ -84,7 +85,7 @@ export function FieldConfigModal({
         </div>
 
         <div className="rs-modal-body">
-          {err && <div className="rs-login-error" style={{ marginBottom: 12 }}>{err}</div>}
+          {err && <Notice>{err}</Notice>}
 
           {tab === "basic" && (
             <div className="rs-fields">

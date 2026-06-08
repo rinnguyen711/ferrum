@@ -10,6 +10,7 @@ import { getClaims } from "../auth";
 import { diffToPatch } from "../builder/draftModel";
 import { CreateTypeModal } from "../builder/CreateTypeModal";
 import { SaveConfirmModal } from "../builder/SaveConfirmModal";
+import { initials, AVATAR_NEUTRAL } from "../util";
 
 export function Avatar({
   name,
@@ -108,7 +109,7 @@ export function Sidebar({ section: _section }: { section: Section }) {
         >
           <Icons.gear size={20} />
         </button>
-        <Avatar name="Admin" initials="AD" color="#52525B" size={30} />
+        <Avatar name="Admin" initials="AD" color={AVATAR_NEUTRAL} size={30} />
       </div>
     </nav>
   );
@@ -474,8 +475,8 @@ export function Topbar({
         <div className="rs-topbar-user">
           <Avatar
             name={email ?? "Admin"}
-            initials={(email ?? "AD").slice(0, 2).toUpperCase()}
-            color="#52525B"
+            initials={initials(email ?? "Admin")}
+            color={AVATAR_NEUTRAL}
             size={28}
           />
           <div className="rs-topbar-user-meta">

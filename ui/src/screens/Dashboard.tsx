@@ -3,6 +3,7 @@ import { useResource } from "../hooks/useResource";
 import { getHealth, listContentTypes, listEntries } from "../api/endpoints";
 import { Icons } from "../components/icons";
 import { StatusBadge } from "../components/shell";
+import { LoadingState, EmptyState } from "../components/ui";
 import { relTime } from "../util";
 import type { Entry } from "../api/types";
 
@@ -18,17 +19,21 @@ export function Dashboard() {
   );
   const health = useResource(() => getHealth().catch(() => null), []);
 
-  if (loading) return <div className="rs-empty">Loading…</div>;
+  if (loading) return <LoadingState />;
   if (error)
     return (
-      <div className="rs-empty">
+      <EmptyState>
         {error.message}{" "}
         <button className="rs-link-btn" onClick={refetch}>Retry</button>
-      </div>
+      </EmptyState>
     );
 
   const rows = (articles.data?.data ?? []) as Entry[];
-  const byStatus = (s: string) => rows.filter((a) => a["status"] === s).length;
+  const byStatus = (s: string) => rows.filter((a) => {
+    if (s === "published") return !!a.published_at;
+    if (s === "draft") return !a.published_at;
+    return false;
+  }).length;
   const recent = [...rows]
     .sort((a, b) => +new Date(b.updated_at) - +new Date(a.updated_at))
     .slice(0, 5);
@@ -45,7 +50,7 @@ export function Dashboard() {
           </p>
         </div>
         {hasArticle && (
-          <Link to="/content/article/new" className="rs-btn rs-btn--primary rs-btn--lg">
+          <Link to="/content/article/new" className="rs-btn rs-btn--primary">
             <Icons.plus size={17} /> New article
           </Link>
         )}
@@ -76,7 +81,7 @@ export function Dashboard() {
             {recent.map((a) => (
               <Link className="rs-dash-row" key={a.id} to={`/content/article/${a.id}`}>
                 <span className="rs-dash-row-title">{String(a["title"] ?? a.id)}</span>
-                <StatusBadge status={(a["status"] as "draft" | "review" | "published") ?? "draft"} />
+                <StatusBadge status={a.published_at ? "published" : "draft"} />
                 <span className="rs-cell-muted">{relTime(a.updated_at)}</span>
               </Link>
             ))}

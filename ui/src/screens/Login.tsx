@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { setToken } from "../auth";
 import { fetchSetupStatus, login, setup } from "../api/endpoints";
 import { ApiError } from "../api/client";
+import { Notice } from "../components/ui";
 
 type Mode = "loading" | "login" | "setup" | "unreachable";
 
@@ -136,7 +137,7 @@ export function Login() {
             autoComplete="new-password"
           />
         )}
-        {error && <div className="rs-login-error">{error}</div>}
+        {error && <Notice>{error}</Notice>}
         <button
           className="rs-btn rs-btn--primary"
           type="submit"

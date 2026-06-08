@@ -632,6 +632,79 @@ async fn slug_unique_violation_returns_409() {
 }
 
 // ---------------------------------------------------------------------------
+// Rich text
+// ---------------------------------------------------------------------------
+
+/// `article` with `title` (required string) and `body` (rich_text, optional).
+async fn create_article_with_rich_text(app: &TestApp) {
+    let resp = app
+        .admin(app.client.post(app.url("/admin/content-types")))
+        .json(&json!({
+            "name": "article",
+            "display_name": "Article",
+            "fields": [
+                {"name": "title", "kind": "string", "required": true},
+                {"name": "body", "kind": "rich_text", "kind_meta": {}}
+            ]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "{}", resp.text().await.unwrap());
+}
+
+#[tokio::test]
+async fn rich_text_round_trips_prosemirror_json() {
+    let app = TestApp::spawn().await;
+    create_article_with_rich_text(&app).await;
+
+    let doc = json!({
+        "type": "doc",
+        "content": [
+            {
+                "type": "paragraph",
+                "content": [{"type": "text", "text": "Hello world"}]
+            }
+        ]
+    });
+
+    let resp = app
+        .admin(app.client.post(app.url("/api/article")))
+        .json(&json!({"title": "Test", "body": doc}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "{}", resp.text().await.unwrap());
+    let created: Value = resp.json().await.unwrap();
+    let id = created["id"].as_str().unwrap();
+
+    let resp = app
+        .admin(app.client.get(app.url(&format!("/api/article/{id}"))))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let fetched: Value = resp.json().await.unwrap();
+    assert_eq!(fetched["body"], doc, "rich_text round-trip mismatch");
+}
+
+#[tokio::test]
+async fn rich_text_null_roundtrips() {
+    let app = TestApp::spawn().await;
+    create_article_with_rich_text(&app).await;
+
+    let resp = app
+        .admin(app.client.post(app.url("/api/article")))
+        .json(&json!({"title": "No body", "body": null}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "{}", resp.text().await.unwrap());
+    let created: Value = resp.json().await.unwrap();
+    assert!(created["body"].is_null(), "expected null body");
+}
+
+// ---------------------------------------------------------------------------
 // Mixed-kind round-trip
 // ---------------------------------------------------------------------------
 

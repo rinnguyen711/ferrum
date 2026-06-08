@@ -6,6 +6,7 @@ import { useResource } from "../hooks/useResource";
 import { listUsers } from "../api/endpoints";
 import { ROLES } from "../roles";
 import type { User } from "../api/types";
+import { initials, AVATAR_NEUTRAL } from "../util";
 
 export function Roles() {
   const navigate = useNavigate();
@@ -91,8 +92,8 @@ export function Roles() {
                           <Avatar
                             key={u.id}
                             name={u.email}
-                            initials={u.email.slice(0, 2).toUpperCase()}
-                            color="#52525B"
+                            initials={initials(u.email)}
+                            color={AVATAR_NEUTRAL}
                             size={26}
                           />
                         ))}

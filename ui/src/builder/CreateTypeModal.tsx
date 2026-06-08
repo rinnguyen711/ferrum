@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Notice } from "../components/ui";
 import { useBuilderDraft } from "./BuilderDraftContext";
 import { deriveApiId } from "./draftModel";
 
@@ -39,7 +40,7 @@ export function CreateTypeModal({ onClose }: { onClose: () => void }) {
           <h2>Create a collection type</h2>
         </div>
         <div className="rs-modal-body">
-          {err && <div className="rs-login-error" style={{ marginBottom: 12 }}>{err}</div>}
+          {err && <Notice>{err}</Notice>}
           <div className="rs-field">
             <div className="rs-field-label"><label>Display name</label></div>
             <input

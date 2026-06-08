@@ -359,6 +359,11 @@ fn decode_field(row: &PgRow, f: &Field) -> Result<Value, Error> {
                 row.try_get(f.name.as_str()).map_err(decode)?;
             Ok(v.map(|j| j.0).unwrap_or(Value::Null))
         }
+        FieldKind::RichText => {
+            let v: Option<sqlx::types::Json<Value>> =
+                row.try_get(f.name.as_str()).map_err(decode)?;
+            Ok(v.map(|j| j.0).unwrap_or(Value::Null))
+        }
         FieldKind::Uuid => {
             let v: Option<Uuid> = row.try_get(f.name.as_str()).map_err(decode)?;
             Ok(v.map(|u| Value::String(u.to_string())).unwrap_or(Value::Null))

@@ -6,3 +6,5 @@ Cargo.lock.bak
 /docs
 /.worktrees
 design
+CLAUDE.md
+DESIGN.md

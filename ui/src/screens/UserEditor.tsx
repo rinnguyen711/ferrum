@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Icons } from "../components/icons";
+import { Notice, EditorBar } from "../components/ui";
 import { useResource } from "../hooks/useResource";
 import { listUsers, createUser, updateUser, deleteUser } from "../api/endpoints";
 import { ApiError } from "../api/client";
@@ -74,26 +75,24 @@ export function UserEditor() {
 
   return (
     <div className="rs-editor">
-      <div className="rs-editor-bar">
-        <button className="rs-back" onClick={() => navigate("/users")}>
-          <Icons.arrowLeft size={18} />
-        </button>
-        <div className="rs-editor-titlewrap">
-          <h1>{isNew ? "Add a user" : email || "User"}</h1>
-        </div>
-        <div className="rs-editor-actions">
-          {!isNew && (
-            <button className="rs-btn rs-btn--ghost rs-danger" disabled={busy} onClick={remove}>
-              <Icons.trash size={15} /> Delete
+      <EditorBar
+        onBack={() => navigate("/users")}
+        title={isNew ? "Add a user" : email || "User"}
+        actions={
+          <>
+            {!isNew && (
+              <button className="rs-btn rs-btn--ghost rs-danger" disabled={busy} onClick={remove}>
+                <Icons.trash size={15} /> Delete
+              </button>
+            )}
+            <button className="rs-btn rs-btn--primary" disabled={busy || !email || (isNew && !password)} onClick={save}>
+              <Icons.check size={15} /> {isNew ? "Create user" : "Save user"}
             </button>
-          )}
-          <button className="rs-btn rs-btn--primary" disabled={busy || !email || (isNew && !password)} onClick={save}>
-            <Icons.check size={15} /> {isNew ? "Create user" : "Save user"}
-          </button>
-        </div>
-      </div>
+          </>
+        }
+      />
 
-      {error && <div className="rs-login-error" style={{ margin: "0 24px" }}>{error}</div>}
+      {error && <div style={{ margin: "0 24px" }}><Notice>{error}</Notice></div>}
 
       <div className="rs-editor-body">
         <div className="rs-editor-main">

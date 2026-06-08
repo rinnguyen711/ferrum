@@ -18,6 +18,7 @@ const KIND_ICON: Record<FieldKind, keyof typeof Icons> = {
   json: "braces",
   email: "mail",
   url: "link",
+  rich_text: "doc",
 };
 
 function metaText(f: DraftField): string {

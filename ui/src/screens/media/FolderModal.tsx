@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Modal } from "./Modal";
 import { Icons } from "../../components/icons";
+import { Notice } from "../../components/ui";
 import type { MediaFolder } from "../../api/types";
 
 export function FolderModal({
@@ -46,7 +47,7 @@ export function FolderModal({
         </button>
       </>}
     >
-      {error && <div className="rs-login-error" style={{ marginBottom: 12 }}>{error}</div>}
+      {error && <Notice>{error}</Notice>}
       <div className="rs-fields">
         <div className="rs-field">
           <div className="rs-field-label"><label>Name</label><span className="rs-field-hint">Shown in the media library</span></div>

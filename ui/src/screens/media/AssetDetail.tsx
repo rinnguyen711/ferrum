@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { Modal } from "./Modal";
+import { DeleteConfirmModal } from "./DeleteConfirmModal";
 import { AssetThumb } from "./AssetThumb";
 import { Icons } from "../../components/icons";
+import { Notice } from "../../components/ui";
 import type { MediaAsset, PatchAsset } from "../../api/types";
 
 export function AssetDetail({
@@ -17,6 +19,7 @@ export function AssetDetail({
   const [caption, setCaption] = useState(asset.caption ?? "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const save = async () => {
     if (busy || !fileName.trim()) return;
@@ -31,7 +34,6 @@ export function AssetDetail({
 
   const remove = async () => {
     if (busy) return;
-    if (!window.confirm(`Delete "${asset.file_name}"? This cannot be undone.`)) return;
     setBusy(true);
     try { await onDelete(); } catch (e) {
       setError(e instanceof Error ? e.message : "Could not delete.");
@@ -43,6 +45,7 @@ export function AssetDetail({
   const sizeMb = (asset.size_bytes / 1048576).toFixed(1) + " MB";
 
   return (
+    <>
     <Modal
       wide
       eyebrow="Asset"
@@ -50,7 +53,7 @@ export function AssetDetail({
       icon="image"
       onClose={onClose}
       footer={<>
-        <button className="rs-btn rs-btn--ghost rs-danger" onClick={remove} type="button"><Icons.trash size={15} /> Delete</button>
+        <button className="rs-btn rs-btn--ghost rs-danger" onClick={() => setConfirmDelete(true)} type="button"><Icons.trash size={15} /> Delete</button>
         <div className="rs-spacer" />
         <button className="rs-btn rs-btn--ghost" onClick={onClose} type="button">Cancel</button>
         <button className="rs-btn rs-btn--primary" disabled={busy || !fileName.trim()} onClick={save} type="button">
@@ -58,7 +61,7 @@ export function AssetDetail({
         </button>
       </>}
     >
-      {error && <div className="rs-login-error" style={{ marginBottom: 12 }}>{error}</div>}
+      {error && <Notice>{error}</Notice>}
       <div className="rs-asset-detail">
         <AssetThumb asset={asset} className="rs-asset-detail-preview" />
         <p className="rs-cell-muted rs-mono" style={{ marginTop: 8 }}>{asset.mime_type} · {dims}{sizeMb}</p>
@@ -78,5 +81,13 @@ export function AssetDetail({
         </div>
       </div>
     </Modal>
+    {confirmDelete && (
+      <DeleteConfirmModal
+        message={`Delete "${asset.file_name}"? This cannot be undone.`}
+        onConfirm={remove}
+        onCancel={() => setConfirmDelete(false)}
+      />
+    )}
+  </>
   );
 }

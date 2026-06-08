@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Icons } from "../components/icons";
+import { Notice } from "../components/ui";
 import { ApiError } from "../api/client";
 import {
   listMediaProviders, getMediaSettings, putMediaSettings, testMediaSettings,
@@ -138,8 +139,8 @@ export function MediaSettings() {
             <ProviderForm descriptor={descriptor} values={config} onChange={setField} fieldErrors={fieldErrors} />
           )}
 
-          {status.kind === "ok" && <div className="rs-settings-ok">{status.message}</div>}
-          {status.kind === "error" && <div className="rs-login-error">{status.message}</div>}
+          {status.kind === "ok" && <Notice tone="ok">{status.message}</Notice>}
+          {status.kind === "error" && <Notice>{status.message}</Notice>}
 
           <div className="rs-editor-actions" style={{ marginTop: 16 }}>
             <button className="rs-btn rs-btn--ghost" type="button" disabled={busy} onClick={onTest}>

@@ -7,6 +7,9 @@ pub fn bind_all<'q>(
     mut q: sqlx::query::Query<'q, Postgres, sqlx::postgres::PgArguments>,
     values: &'q [BoundValue],
 ) -> sqlx::query::Query<'q, Postgres, sqlx::postgres::PgArguments> {
+    // Dynamic SELECT * queries on user-defined tables must not be cached — the
+    // plan becomes stale after ALTER TABLE (e.g. adding a field).
+    q = q.persistent(false);
     for v in values {
         q = bind_one(q, v);
     }
@@ -17,6 +20,7 @@ pub fn bind_all_as<'q>(
     mut q: sqlx::query::QueryAs<'q, Postgres, (i64,), sqlx::postgres::PgArguments>,
     values: &'q [BoundValue],
 ) -> sqlx::query::QueryAs<'q, Postgres, (i64,), sqlx::postgres::PgArguments> {
+    q = q.persistent(false);
     for v in values {
         q = bind_one_as(q, v);
     }
@@ -66,7 +70,7 @@ fn bind_typed_null<'q>(
         FieldKind::Boolean => q.bind(Option::<bool>::None),
         FieldKind::Datetime => q.bind(Option::<chrono::DateTime<chrono::Utc>>::None),
         FieldKind::Uuid => q.bind(Option::<uuid::Uuid>::None),
-        FieldKind::Json => {
+        FieldKind::Json | FieldKind::RichText => {
             q.bind(Option::<sqlx::types::Json<serde_json::Value>>::None)
         }
         _ => q.bind(Option::<String>::None),
@@ -84,7 +88,7 @@ fn bind_typed_null_as<'q>(
         FieldKind::Boolean => q.bind(Option::<bool>::None),
         FieldKind::Datetime => q.bind(Option::<chrono::DateTime<chrono::Utc>>::None),
         FieldKind::Uuid => q.bind(Option::<uuid::Uuid>::None),
-        FieldKind::Json => {
+        FieldKind::Json | FieldKind::RichText => {
             q.bind(Option::<sqlx::types::Json<serde_json::Value>>::None)
         }
         _ => q.bind(Option::<String>::None),

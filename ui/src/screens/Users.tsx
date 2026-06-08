@@ -2,10 +2,11 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Icons } from "../components/icons";
 import { Avatar } from "../components/shell";
+import { LoadingState, EmptyState } from "../components/ui";
 import { useResource } from "../hooks/useResource";
 import { listUsers } from "../api/endpoints";
 import { ROLES, roleOf } from "../roles";
-import { shortId } from "../util";
+import { shortId, initials, AVATAR_NEUTRAL } from "../util";
 
 export function Users() {
   const navigate = useNavigate();
@@ -58,8 +59,8 @@ export function Users() {
         </button>
       </div>
 
-      {users.loading && <div className="rs-empty">Loading…</div>}
-      {users.error && <div className="rs-empty">Failed to load users.</div>}
+      {users.loading && <LoadingState />}
+      {users.error && <EmptyState>Couldn't load users.</EmptyState>}
 
       {!users.loading && !users.error && (
         <div className="rs-table-wrap">
@@ -79,7 +80,7 @@ export function Users() {
                   <td className="rs-col-id rs-mono">{shortId(u.id)}</td>
                   <td>
                     <span className="rs-user-cell">
-                      <Avatar name={u.email} initials={u.email.slice(0, 2).toUpperCase()} color="#52525B" size={34} />
+                      <Avatar name={u.email} initials={initials(u.email)} color={AVATAR_NEUTRAL} size={34} />
                       <span className="rs-user-id">
                         <strong>{u.email}</strong>
                       </span>

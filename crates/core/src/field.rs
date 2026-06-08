@@ -34,6 +34,9 @@ pub enum FieldKind {
     /// Configuration lives in `Field.kind_meta`; see `MediaMeta`. Single media is
     /// a nullable FK column; multiple media lives in an ordered join table.
     Media,
+    /// Rich text document stored as jsonb (ProseMirror JSON).
+    #[serde(rename = "rich_text")]
+    RichText,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -76,6 +79,7 @@ impl BoundValue {
             (FieldKind::Relation, _) => Err(CoerceError::TypeMismatch),
             (FieldKind::Media, _) => Err(CoerceError::TypeMismatch),
             (FieldKind::Json, v) => Ok(BoundValue::Json(v.clone())),
+            (FieldKind::RichText, v) => Ok(BoundValue::Json(v.clone())),
             (FieldKind::Email, V::String(s)) => {
                 if crate::validators::is_valid_email(s) {
                     Ok(BoundValue::Str(s.clone()))
@@ -709,7 +713,7 @@ impl Field {
             }
             return Ok(());
         }
-        if self.kind == FieldKind::Json {
+        if self.kind == FieldKind::Json || self.kind == FieldKind::RichText {
             if self.unique {
                 return Err(FieldError::JsonUniqueUnsupported);
             }
