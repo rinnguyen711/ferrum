@@ -285,7 +285,7 @@ function groupComponentsByCategory(
   const map = new Map<string, Component[]>();
   for (const c of components) {
     const dot = c.uid.indexOf(".");
-    const cat = dot >= 0 ? c.uid.slice(0, dot) : "other";
+    const cat = dot >= 0 ? c.uid.slice(0, dot) : "other"; // no dot → uncategorized
     if (!map.has(cat)) map.set(cat, []);
     map.get(cat)!.push(c);
   }
@@ -405,7 +405,7 @@ function TypePanel({
             )}
             {components && groupComponentsByCategory(components).map(({ category, items }) => (
               <div key={category}>
-                <div className="rs-panel-grouphead" style={{ marginTop: 4 }}>
+                <div className="rs-panel-grouphead">
                   <span>{categoryLabel(category)}</span>
                 </div>
                 {items.map((c) => (
