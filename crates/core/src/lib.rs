@@ -12,7 +12,7 @@ pub mod validators;
 pub use error::{DbInfo, Error, FieldValidation, ValidationErrors};
 pub use event::Event;
 pub use field::{
-    BoundValue, Cardinality, CoerceError, EnumMeta, Field, FieldError, FieldKind, RelationMeta,
+    BoundValue, Cardinality, CoerceError, ComponentMeta, EnumMeta, Field, FieldError, FieldKind, RelationMeta,
 };
 pub use principal::{role_allows, Action, Principal};
 pub use content_type::{

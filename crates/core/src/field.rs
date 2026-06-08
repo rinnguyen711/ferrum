@@ -37,6 +37,10 @@ pub enum FieldKind {
     /// Rich text document stored as jsonb (ProseMirror JSON).
     #[serde(rename = "rich_text")]
     RichText,
+    /// Phase N: structured sub-object backed by a registered component shape.
+    /// Configuration in `Field.kind_meta`; see `ComponentMeta`.
+    /// Stored as `jsonb` (single object or array when `multiple: true`).
+    Component,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -80,6 +84,7 @@ impl BoundValue {
             (FieldKind::Media, _) => Err(CoerceError::TypeMismatch),
             (FieldKind::Json, v) => Ok(BoundValue::Json(v.clone())),
             (FieldKind::RichText, v) => Ok(BoundValue::Json(v.clone())),
+            (FieldKind::Component, v) => Ok(BoundValue::Json(v.clone())),
             (FieldKind::Email, V::String(s)) => {
                 if crate::validators::is_valid_email(s) {
                     Ok(BoundValue::Str(s.clone()))
@@ -608,6 +613,37 @@ impl MediaMeta {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ComponentMeta {
+    pub component: String,
+    pub multiple: bool,
+}
+
+impl ComponentMeta {
+    pub fn from_value(v: &serde_json::Value) -> Result<Self, FieldError> {
+        let obj = v.as_object().ok_or(FieldError::ComponentMetaShape)?;
+        for key in obj.keys() {
+            if !matches!(key.as_str(), "component" | "multiple") {
+                return Err(FieldError::ComponentMetaShape);
+            }
+        }
+        let component = obj
+            .get("component")
+            .and_then(|x| x.as_str())
+            .ok_or(FieldError::ComponentMetaShape)?
+            .to_string();
+        if component.is_empty() {
+            return Err(FieldError::ComponentMetaShape);
+        }
+        let multiple = match obj.get("multiple") {
+            None => false,
+            Some(serde_json::Value::Bool(b)) => *b,
+            Some(_) => return Err(FieldError::ComponentMetaShape),
+        };
+        Ok(Self { component, multiple })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Field {
     pub name: String,
@@ -676,6 +712,12 @@ pub enum FieldError {
     MediaFieldDefaultUnsupported,
     #[error("media field cannot be required")]
     MediaFieldRequiredUnsupported,
+    #[error("component kind_meta must be {{component: \"uid\", multiple?: bool}}")]
+    ComponentMetaShape,
+    #[error("component field cannot be unique")]
+    ComponentFieldUniqueUnsupported,
+    #[error("component field cannot have a default")]
+    ComponentFieldDefaultUnsupported,
 }
 
 impl Field {
@@ -722,6 +764,16 @@ impl Field {
             }
             // Any JSON value is a valid default (including null, but null is the
             // "no default" sentinel here — accept anything else verbatim).
+            return Ok(());
+        }
+        if self.kind == FieldKind::Component {
+            if self.unique {
+                return Err(FieldError::ComponentFieldUniqueUnsupported);
+            }
+            if !self.default.is_null() {
+                return Err(FieldError::ComponentFieldDefaultUnsupported);
+            }
+            ComponentMeta::from_value(&self.kind_meta)?;
             return Ok(());
         }
         if self.kind == FieldKind::Media {
@@ -814,6 +866,14 @@ impl Field {
             None
         }
     }
+
+    pub fn component_meta(&self) -> Option<ComponentMeta> {
+        if self.kind == FieldKind::Component {
+            ComponentMeta::from_value(&self.kind_meta).ok()
+        } else {
+            None
+        }
+    }
 }
 
 #[cfg(test)]
@@ -876,6 +936,75 @@ mod field_tests {
         let mut x = f("count", FieldKind::Integer);
         x.default = json!(7);
         assert!(x.validate().is_ok());
+    }
+
+    #[test]
+    fn component_meta_parses_valid() {
+        let v = serde_json::json!({"component": "shared.hero", "multiple": false});
+        let m = ComponentMeta::from_value(&v).unwrap();
+        assert_eq!(m.component, "shared.hero");
+        assert!(!m.multiple);
+    }
+
+    #[test]
+    fn component_meta_defaults_multiple_false() {
+        let v = serde_json::json!({"component": "shared.hero"});
+        let m = ComponentMeta::from_value(&v).unwrap();
+        assert!(!m.multiple);
+    }
+
+    #[test]
+    fn component_meta_rejects_unknown_key() {
+        let v = serde_json::json!({"component": "shared.hero", "extra": 1});
+        assert_eq!(ComponentMeta::from_value(&v).unwrap_err(), FieldError::ComponentMetaShape);
+    }
+
+    #[test]
+    fn component_meta_rejects_empty_uid() {
+        let v = serde_json::json!({"component": ""});
+        assert_eq!(ComponentMeta::from_value(&v).unwrap_err(), FieldError::ComponentMetaShape);
+    }
+
+    #[test]
+    fn component_field_validate_rejects_unique() {
+        let f = Field {
+            name: "hero".into(),
+            kind: FieldKind::Component,
+            required: false,
+            unique: true,
+            default: serde_json::json!(null),
+            max_length: None,
+            kind_meta: serde_json::json!({"component": "shared.hero"}),
+        };
+        assert_eq!(f.validate().unwrap_err(), FieldError::ComponentFieldUniqueUnsupported);
+    }
+
+    #[test]
+    fn component_field_validate_rejects_default() {
+        let f = Field {
+            name: "hero".into(),
+            kind: FieldKind::Component,
+            required: false,
+            unique: false,
+            default: serde_json::json!({"title": "hi"}),
+            max_length: None,
+            kind_meta: serde_json::json!({"component": "shared.hero"}),
+        };
+        assert_eq!(f.validate().unwrap_err(), FieldError::ComponentFieldDefaultUnsupported);
+    }
+
+    #[test]
+    fn component_field_validate_ok() {
+        let f = Field {
+            name: "hero".into(),
+            kind: FieldKind::Component,
+            required: false,
+            unique: false,
+            default: serde_json::json!(null),
+            max_length: None,
+            kind_meta: serde_json::json!({"component": "shared.hero", "multiple": true}),
+        };
+        assert!(f.validate().is_ok());
     }
 }
 
