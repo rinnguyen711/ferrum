@@ -866,3 +866,81 @@ select.rs-input { appearance: none; background-image: url("data:image/svg+xml,%3
 /* Media settings */
 .rs-settings-card { max-width: 560px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
 .rs-field-error { display: block; margin-top: 4px; font-size: 12px; color: var(--danger); }
+
+/* Rich text editor */
+.rs-rich-text {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+
+.rs-rich-text-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  align-items: center;
+}
+
+.rs-toolbar-btn {
+  padding: 2px 5px;
+  min-width: 28px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+.rs-toolbar-btn.is-active {
+  background: var(--surface-3);
+  color: var(--accent);
+}
+
+.rs-toolbar-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+.rs-rich-text-content {
+  min-height: 200px;
+  padding: 12px;
+  background: var(--surface);
+}
+
+.rs-rich-text .ProseMirror {
+  outline: none;
+  min-height: 180px;
+}
+
+.rs-rich-text .ProseMirror h1 { font-size: 1.6em; font-weight: 700; margin: 0.5em 0; }
+.rs-rich-text .ProseMirror h2 { font-size: 1.3em; font-weight: 700; margin: 0.5em 0; }
+.rs-rich-text .ProseMirror h3 { font-size: 1.1em; font-weight: 700; margin: 0.5em 0; }
+.rs-rich-text .ProseMirror p { margin: 0.4em 0; }
+.rs-rich-text .ProseMirror ul, .rs-rich-text .ProseMirror ol { padding-left: 1.5em; margin: 0.4em 0; }
+.rs-rich-text .ProseMirror blockquote {
+  border-left: 3px solid var(--border);
+  margin: 0.5em 0;
+  padding-left: 12px;
+  color: var(--text-muted);
+}
+.rs-rich-text .ProseMirror code {
+  background: var(--surface-3);
+  border-radius: 3px;
+  padding: 0 3px;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.9em;
+}
+.rs-rich-text .ProseMirror pre {
+  background: var(--surface-3);
+  border-radius: var(--r-md);
+  padding: 8px 12px;
+  overflow-x: auto;
+}
+.rs-rich-text .ProseMirror pre code { background: none; padding: 0; }
+.rs-rich-text .ProseMirror img { max-width: 100%; height: auto; display: block; }
+.rs-rich-text .ProseMirror mark { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.rs-rich-text .ProseMirror a { color: var(--accent); text-decoration: underline; }
