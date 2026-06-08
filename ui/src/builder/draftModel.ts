@@ -154,7 +154,7 @@ function textToDefault(text: string, kind: FieldKind): unknown {
   return t;
 }
 
-function draftFieldToField(d: DraftField): Field {
+export function draftFieldToField(d: DraftField): Field {
   let kind_meta: Record<string, unknown> = {};
   if (d.kind === "relation") {
     kind_meta = {

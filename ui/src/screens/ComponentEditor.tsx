@@ -3,13 +3,15 @@ import { useNavigate, useParams } from "react-router-dom";
 import { Icons } from "../components/icons";
 import { Notice, LoadingState } from "../components/ui";
 import { useResource } from "../hooks/useResource";
-import { getComponent, updateComponent, deleteComponent } from "../api/endpoints";
-import type { Field, FieldKind } from "../api/types";
+import { getComponent, updateComponent, deleteComponent, listContentTypes } from "../api/endpoints";
+import type { FieldKind } from "../api/types";
+import { relationMeta, enumValues, mediaMeta } from "../api/types";
+import { ApiError } from "../api/client";
 import { useBuilderDraft } from "../builder/BuilderDraftContext";
 import { FieldRow } from "../builder/FieldRow";
 import { FieldPicker } from "../builder/FieldPicker";
 import { FieldConfigModal } from "../builder/FieldConfigModal";
-import { blankField, type DraftField } from "../builder/draftModel";
+import { blankField, draftFieldToField, type Cardinality, type DraftField } from "../builder/draftModel";
 
 function DeleteComponentModal({
   uid,
@@ -89,6 +91,8 @@ export function ComponentEditor() {
     [uid],
   );
 
+  const allTypes = useResource(() => listContentTypes(), []);
+
   const [fields, setFields] = useState<DraftField[]>([]);
   const [displayName, setDisplayName] = useState("");
   const [banner, setBanner] = useState<string | null>(null);
@@ -102,13 +106,26 @@ export function ComponentEditor() {
     if (component) {
       setDisplayName(component.display_name);
       setFields(
-        component.fields.map((f) => ({
-          ...blankField(f.kind),
-          name: f.name,
-          required: f.required,
-          unique: f.unique,
-          origin: "existing" as const,
-        })),
+        component.fields.map((f) => {
+          const rel = relationMeta(f);
+          return {
+            ...blankField(f.kind),
+            name: f.name,
+            kind: f.kind,
+            required: f.required,
+            unique: f.unique,
+            enumValues: enumValues(f),
+            target: rel?.target ?? "",
+            inverse: rel?.inverse ?? "",
+            cardinality: (rel?.cardinality as Cardinality) ?? "many_to_one",
+            mediaMultiple: mediaMeta(f)?.multiple ?? false,
+            componentUid: (f.kind_meta as Record<string, unknown>)?.component as string ?? "",
+            componentMultiple: (f.kind_meta as Record<string, unknown>)?.multiple === true,
+            defaultValue: "",
+            isPrivate: false,
+            origin: "existing" as const,
+          };
+        }),
       );
     }
   }, [component]);
@@ -126,18 +143,11 @@ export function ComponentEditor() {
     setSaving(true);
     setBanner(null);
     try {
-      const wireFields: Field[] = fields.map((d) => ({
-        name: d.name,
-        kind: d.kind,
-        required: d.required,
-        unique: d.unique,
-        default: null,
-        kind_meta: d.kind === "enum" ? { values: d.enumValues } : {},
-      }));
+      const wireFields = fields.map(draftFieldToField);
       await updateComponent(uid, { display_name: displayName, fields: wireFields });
       bumpNonce();
     } catch (e: unknown) {
-      setBanner((e as Error)?.message ?? "Save failed.");
+      setBanner(e instanceof ApiError ? e.message : "Save failed.");
     } finally {
       setSaving(false);
     }
@@ -152,7 +162,7 @@ export function ComponentEditor() {
       bumpNonce();
       navigate("/builder");
     } catch (e: unknown) {
-      setDelBanner((e as Error)?.message ?? "Delete failed.");
+      setDelBanner(e instanceof ApiError ? e.message : "Delete failed.");
     } finally {
       setDeleting(false);
     }
@@ -245,7 +255,7 @@ export function ComponentEditor() {
         <FieldConfigModal
           initial={modal.field}
           isNew={modal.isNew}
-          typeNames={[]}
+          typeNames={allTypes.data?.map((t) => t.name) ?? []}
           lockedEnumValues={[]}
           onSave={saveField}
           onBack={modal.isNew ? () => setModal({ step: "pick" }) : undefined}
