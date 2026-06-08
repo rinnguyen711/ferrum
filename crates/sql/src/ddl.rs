@@ -189,7 +189,7 @@ fn column_def(ct_name: &str, f: &Field) -> Result<String, DdlError> {
             "{col} text{default_clause}{not_null}{unique} CONSTRAINT {constraint_name} CHECK ({col} IS NULL OR {col} IN ({values_lit}))"
         ));
     }
-    if f.kind == FieldKind::Json || f.kind == FieldKind::RichText {
+    if f.kind == FieldKind::Json || f.kind == FieldKind::RichText || f.kind == FieldKind::Component {
         let col = quote_ident(&f.name)?;
         let default_clause = if !f.default.is_null() {
             format!(" DEFAULT {}", render_default(f))
@@ -286,6 +286,10 @@ fn render_default(f: &Field) -> String {
             format!("'{s}'::jsonb")
         }
         (FieldKind::RichText, v) if !v.is_null() => {
+            let s = v.to_string().replace('\'', "''");
+            format!("'{s}'::jsonb")
+        }
+        (FieldKind::Component, v) if !v.is_null() => {
             let s = v.to_string().replace('\'', "''");
             format!("'{s}'::jsonb")
         }

@@ -80,6 +80,9 @@ pub enum FilterValue {
 pub fn op_allows_kind(op: Op, kind: FieldKind) -> bool {
     use FieldKind::*;
     use Op::*;
+    if kind == FieldKind::Component {
+        return false;
+    }
     match op {
         Eq | Ne => matches!(
             kind,
