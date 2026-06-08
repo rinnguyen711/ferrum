@@ -6,7 +6,7 @@ import type { IconKey } from "../components/icons";
 
 export const KINDS: FieldKind[] = [
   "string", "text", "integer", "float", "boolean", "datetime",
-  "relation", "media", "enum", "json", "email", "url", "slug",
+  "relation", "media", "enum", "json", "email", "url", "slug", "rich_text",
 ];
 
 /** Picker cards — one per user-addable FieldKind, with a friendly label.
@@ -25,6 +25,7 @@ export const FIELD_CARDS: { kind: FieldKind; label: string; desc: string; icon: 
   { kind: "relation", label: "Relation",    desc: "Link entries across types",               icon: "relation" },
   { kind: "media",    label: "Media",       desc: "Files — images, video, audio, documents", icon: "image" },
   { kind: "json",     label: "JSON",        desc: "Raw, structured JSON data",               icon: "braces" },
+  { kind: "rich_text", label: "Rich Text", desc: "Formatted content with a visual editor", icon: "doc" },
 ];
 
 /** Friendly label for a kind; falls back to the raw kind string. */
@@ -140,7 +141,7 @@ function textToDefault(text: string, kind: FieldKind): unknown {
     const n = Number(t);
     return Number.isFinite(n) ? n : t;
   }
-  if (kind === "json") {
+  if (kind === "json" || kind === "rich_text") {
     try { return JSON.parse(t); } catch { return t; }
   }
   return t;

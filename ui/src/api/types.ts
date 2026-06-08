@@ -15,7 +15,8 @@ export type FieldKind =
   | "json"
   | "email"
   | "url"
-  | "slug";
+  | "slug"
+  | "rich_text";
 
 export interface Field {
   name: string;
