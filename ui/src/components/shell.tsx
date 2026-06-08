@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Icons, type IconKey } from "./icons";
-import { getHealth, listContentTypes } from "../api/endpoints";
-import type { Health, PatchContentType } from "../api/types";
+import { getHealth, listContentTypes, listComponents } from "../api/endpoints";
+import type { Health, PatchContentType, Component } from "../api/types";
 import { useResource } from "../hooks/useResource";
 import type { Section } from "../Layout";
 import { useBuilderDraft } from "../builder/BuilderDraftContext";
@@ -279,6 +279,27 @@ function UsersPanel() {
   );
 }
 
+function groupComponentsByCategory(
+  components: Component[],
+): { category: string; items: Component[] }[] {
+  const map = new Map<string, Component[]>();
+  for (const c of components) {
+    const dot = c.uid.indexOf(".");
+    const cat = dot >= 0 ? c.uid.slice(0, dot) : "other";
+    if (!map.has(cat)) map.set(cat, []);
+    map.get(cat)!.push(c);
+  }
+  return Array.from(map.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([category, items]) => ({ category, items }));
+}
+
+function categoryLabel(key: string): string {
+  return key
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 function TypePanel({
   base,
   isBuilder,
@@ -296,6 +317,10 @@ function TypePanel({
   // every collection click, which just changes the path suffix.
   const { data: types, loading, error } = useResource(
     () => listContentTypes(),
+    [base, builder.saveNonce],
+  );
+  const { data: components, loading: compLoading, error: compError } = useResource(
+    () => listComponents(),
     [base, builder.saveNonce],
   );
 
@@ -365,11 +390,39 @@ function TypePanel({
           <button className="rs-panel-item" disabled title="Coming soon">Global</button>
         </div>
         {isBuilder && (
-          <div className="rs-panel-group">
-            <div className="rs-panel-grouphead"><span>Components</span></div>
-            <button className="rs-panel-item" disabled title="Coming soon">SEO</button>
-            <button className="rs-panel-item" disabled title="Coming soon">Call to action</button>
-          </div>
+          <PanelGroup
+            label="Components"
+            count={components?.length ?? 0}
+            action
+            onAction={() => builder.guardedNavigate("/components/new")}
+          >
+            {compLoading && !components &&
+              [60, 44, 52].map((w, i) => (
+                <div key={i} className="rs-skel" style={{ width: `${w}%` }} />
+              ))}
+            {compError && !components && (
+              <div className="rs-panel-item rs-danger">Failed to load</div>
+            )}
+            {components && groupComponentsByCategory(components).map(({ category, items }) => (
+              <div key={category}>
+                <div className="rs-panel-grouphead" style={{ marginTop: 4 }}>
+                  <span>{categoryLabel(category)}</span>
+                </div>
+                {items.map((c) => (
+                  <button
+                    key={c.uid}
+                    className={
+                      "rs-panel-item rs-panel-item--btn" +
+                      (location.pathname === `/components/${encodeURIComponent(c.uid)}` ? " is-active" : "")
+                    }
+                    onClick={() => builder.guardedNavigate(`/components/${encodeURIComponent(c.uid)}`)}
+                  >
+                    {c.display_name}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </PanelGroup>
         )}
       </div>
       {modalOpen && <CreateTypeModal onClose={() => setModalOpen(false)} />}
