@@ -4,6 +4,7 @@ import { Icons } from "../components/icons";
 import { Notice, LoadingState, EmptyState, EditorBar } from "../components/ui";
 import { StatusBadge } from "../components/shell";
 import { useResource } from "../hooks/useResource";
+import { RichTextEditor } from "../components/RichTextEditor";
 import {
   createEntry,
   getContentType,
@@ -286,6 +287,8 @@ function FieldInput({
       return <RelationSelect field={field} value={str} onChange={onChange} />;
     case "media":
       return <MediaField field={field} value={value} onChange={onChange} />;
+    case "rich_text":
+      return <RichTextEditor value={value} onChange={onChange} />;
     default:
       return (
         <input className="rs-input" value={str} onChange={(e) => onChange(e.target.value)} />
