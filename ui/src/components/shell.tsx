@@ -404,7 +404,13 @@ function TypePanel({
             label="Components"
             count={components?.length ?? 0}
             action
-            onAction={() => setCreateComponentOpen(true)}
+            onAction={() => {
+              if (builder.dirty) {
+                if (!window.confirm("You have unsaved changes. Discard them?")) return;
+                builder.reset();
+              }
+              setCreateComponentOpen(true);
+            }}
           >
             {compLoading && !components &&
               [60, 44, 52].map((w, i) => (
@@ -418,7 +424,7 @@ function TypePanel({
                 <button
                   className="rs-panel-grouphead"
                   onClick={() => toggleCategory(category)}
-                  style={{ width: "100%", background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}
+                  style={{ width: "100%", background: "none", border: "none", cursor: "pointer" }}
                 >
                   <span>{categoryLabel(category)}</span>
                   <Icons.chevDown
@@ -445,20 +451,20 @@ function TypePanel({
               </div>
             ))}
           </PanelGroup>
-          {createComponentOpen && (
-            <CreateComponentModal
-              onClose={() => setCreateComponentOpen(false)}
-              onCreated={(uid) => {
-                setCreateComponentOpen(false);
-                setCompRefetchKey((k) => k + 1);
-                builder.guardedNavigate(`/builder/components/${encodeURIComponent(uid)}`);
-              }}
-            />
-          )}
           </>
         )}
       </div>
       {modalOpen && <CreateTypeModal onClose={() => setModalOpen(false)} />}
+      {createComponentOpen && (
+        <CreateComponentModal
+          onClose={() => setCreateComponentOpen(false)}
+          onCreated={(uid) => {
+            setCreateComponentOpen(false);
+            setCompRefetchKey((k) => k + 1);
+            builder.guardedNavigate(`/builder/components/${encodeURIComponent(uid)}`);
+          }}
+        />
+      )}
       {confirmPatch && (
         <SaveConfirmModal
           patch={confirmPatch}
