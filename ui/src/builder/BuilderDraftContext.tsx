@@ -25,6 +25,7 @@ interface BuilderDraftCtx {
   save(): Promise<void>;
   reset(): void;
   guardedNavigate(to: string): void;
+  bumpNonce(): void;
 }
 
 const Ctx = createContext<BuilderDraftCtx | null>(null);
@@ -145,13 +146,15 @@ export function BuilderDraftProvider({ children }: { children: ReactNode }) {
     [navigate, reset],
   );
 
+  const bumpNonce = useCallback(() => setSaveNonce((n) => n + 1), []);
+
   const value = useMemo<BuilderDraftCtx>(
     () => ({
       draft, dirty, saving, banner, fieldErrors, saveNonce,
-      startNew, loadExisting, setDraft, clearBanner, save, reset, guardedNavigate,
+      startNew, loadExisting, setDraft, clearBanner, save, reset, guardedNavigate, bumpNonce,
     }),
     [draft, dirty, saving, banner, fieldErrors, saveNonce, startNew, loadExisting,
-     setDraft, clearBanner, save, reset, guardedNavigate],
+     setDraft, clearBanner, save, reset, guardedNavigate, bumpNonce],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
