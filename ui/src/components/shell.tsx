@@ -9,6 +9,7 @@ import { useBuilderDraft } from "../builder/BuilderDraftContext";
 import { getClaims } from "../auth";
 import { diffToPatch } from "../builder/draftModel";
 import { CreateTypeModal } from "../builder/CreateTypeModal";
+import { CreateComponentModal } from "../builder/CreateComponentModal";
 import { SaveConfirmModal } from "../builder/SaveConfirmModal";
 import { initials, AVATAR_NEUTRAL } from "../util";
 
@@ -79,7 +80,6 @@ export function Sidebar({ section: _section }: { section: Section }) {
       : []),
     { to: "/content", label: "Content Manager", icon: "doc" },
     { to: "/builder", label: "Content-Type Builder", icon: "layers" },
-    { to: "/components", label: "Components", icon: "layers" },
     { to: "/media", label: "Media Library", icon: "image" },
   ];
   const isActive = (to: string, end?: boolean) =>
@@ -312,6 +312,15 @@ function TypePanel({
   const location = useLocation();
   const [modalOpen, setModalOpen] = useState(false);
   const [confirmPatch, setConfirmPatch] = useState<PatchContentType | null>(null);
+  const [createComponentOpen, setCreateComponentOpen] = useState(false);
+  const [compRefetchKey, setCompRefetchKey] = useState(0);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const toggleCategory = (cat: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      next.has(cat) ? next.delete(cat) : next.add(cat);
+      return next;
+    });
   const builder = useBuilderDraft();
   // Refetch only when entering this section (base) or after a save — not on
   // every collection click, which just changes the path suffix.
@@ -321,7 +330,7 @@ function TypePanel({
   );
   const { data: components, loading: compLoading, error: compError } = useResource(
     () => listComponents(),
-    [base, builder.saveNonce],
+    [base, builder.saveNonce, compRefetchKey],
   );
 
   const onSaveClick = () => {
@@ -390,11 +399,12 @@ function TypePanel({
           <button className="rs-panel-item" disabled title="Coming soon">Global</button>
         </div>
         {isBuilder && (
+          <>
           <PanelGroup
             label="Components"
             count={components?.length ?? 0}
             action
-            onAction={() => builder.guardedNavigate("/components/new")}
+            onAction={() => setCreateComponentOpen(true)}
           >
             {compLoading && !components &&
               [60, 44, 52].map((w, i) => (
@@ -405,17 +415,29 @@ function TypePanel({
             )}
             {components && groupComponentsByCategory(components).map(({ category, items }) => (
               <div key={category}>
-                <div className="rs-panel-grouphead">
+                <button
+                  className="rs-panel-grouphead"
+                  onClick={() => toggleCategory(category)}
+                  style={{ width: "100%", background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}
+                >
                   <span>{categoryLabel(category)}</span>
-                </div>
-                {items.map((c) => (
+                  <Icons.chevDown
+                    size={13}
+                    style={{
+                      transform: collapsed.has(category) ? "rotate(-90deg)" : "none",
+                      transition: "transform .14s",
+                      flexShrink: 0,
+                    }}
+                  />
+                </button>
+                {!collapsed.has(category) && items.map((c) => (
                   <button
                     key={c.uid}
                     className={
                       "rs-panel-item rs-panel-item--btn" +
-                      (location.pathname === `/components/${encodeURIComponent(c.uid)}` ? " is-active" : "")
+                      (location.pathname === `/builder/components/${encodeURIComponent(c.uid)}` ? " is-active" : "")
                     }
-                    onClick={() => builder.guardedNavigate(`/components/${encodeURIComponent(c.uid)}`)}
+                    onClick={() => builder.guardedNavigate(`/builder/components/${encodeURIComponent(c.uid)}`)}
                   >
                     {c.display_name}
                   </button>
@@ -423,6 +445,17 @@ function TypePanel({
               </div>
             ))}
           </PanelGroup>
+          {createComponentOpen && (
+            <CreateComponentModal
+              onClose={() => setCreateComponentOpen(false)}
+              onCreated={(uid) => {
+                setCreateComponentOpen(false);
+                setCompRefetchKey((k) => k + 1);
+                builder.guardedNavigate(`/builder/components/${encodeURIComponent(uid)}`);
+              }}
+            />
+          )}
+          </>
         )}
       </div>
       {modalOpen && <CreateTypeModal onClose={() => setModalOpen(false)} />}
