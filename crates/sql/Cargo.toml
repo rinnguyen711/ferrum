@@ -9,5 +9,7 @@ license.workspace = true
 rustapi-core = { path = "../core" }
 chrono.workspace = true
 uuid.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+sqlx.workspace = true

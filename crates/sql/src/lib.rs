@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+pub mod component;
 pub mod ddl;
 pub mod dml;
 pub mod filter;
@@ -19,3 +20,4 @@ pub use dml::{
 pub use filter::{op_allows_kind, Condition, Filter, FilterValue, Op};
 pub use ident::{join_table_name, media_join_table_name, quote_ident, table_name, IdentError};
 pub use sort::{Sort, SortDir};
+pub use component::{Component, ComponentStore};
