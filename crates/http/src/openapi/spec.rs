@@ -93,6 +93,8 @@ mod tests {
             .connect_lazy("postgres://invalid/never-used")
             .expect("lazy pool");
         let schemas = SchemaService::new(pool.clone(), registry);
+        let components =
+            rustapi_schema::ComponentService::new(pool.clone(), rustapi_schema::ComponentRegistry::new());
         let storage: Arc<RwLock<Arc<dyn rustapi_media::StorageProvider>>> =
             Arc::new(RwLock::new(Arc::new(rustapi_media::LocalProvider::new(
                 std::env::temp_dir(),
@@ -100,6 +102,7 @@ mod tests {
         let state = AppState {
             pool,
             schemas,
+            components,
             authz: Arc::new(AlwaysAllow),
             events: Arc::new(NoopSink),
             hooks: Arc::new(NoopHook),

@@ -58,14 +58,14 @@ impl ContentType {
 }
 
 impl NewContentType {
-    /// Resolve effective options for create: `draft_publish` defaults to true
+    /// Resolve effective options for create: `draft_publish` defaults to false
     /// when the client omitted it. Returns a normalized jsonb object.
     pub fn resolved_options(&self) -> serde_json::Value {
         let dp = self
             .options
             .get("draft_publish")
             .and_then(|v| v.as_bool())
-            .unwrap_or(true);
+            .unwrap_or(false);
         serde_json::json!({ "draft_publish": dp })
     }
 

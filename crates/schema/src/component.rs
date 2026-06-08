@@ -98,7 +98,7 @@ impl ComponentService {
             f.validate().map_err(|e| Error::Validation(ValidationErrors::field(&f.name, e.to_string())))?;
         }
         if self.registry.get(uid).await.is_some() {
-            return Err(Error::Conflict(format!("component `{}` already exists", uid)));
+            return Err(Error::Conflict(format!("component `{uid}` already exists")));
         }
         let c = self.store.create(uid, display_name, &fields).await.map_err(internal)?;
         self.registry.insert(c.clone()).await;

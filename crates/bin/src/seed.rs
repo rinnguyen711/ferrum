@@ -186,18 +186,6 @@ pub async fn seed_rows(pool: &PgPool, schemas: &SchemaService) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn seed_types_have_no_reserved_or_invalid_fields() {
-        for ct in [author_type(), category_type(), article_type()] {
-            ct.validate().unwrap_or_else(|e| panic!("seed type `{}` invalid: {e}", ct.name));
-        }
-    }
-}
-
 /// Top-level entry point: seed types + rows when the DB is empty and seeding
 /// is enabled. Non-fatal on row errors — logs and continues so the server boots.
 pub async fn seed_if_empty(pool: &PgPool, schemas: &SchemaService, enabled: bool) -> Result<()> {
@@ -221,4 +209,16 @@ pub async fn seed_if_empty(pool: &PgPool, schemas: &SchemaService, enabled: bool
     }
     tracing::info!("seed: created default types (author, category, article) + sample data");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn seed_types_have_no_reserved_or_invalid_fields() {
+        for ct in [author_type(), category_type(), article_type()] {
+            ct.validate().unwrap_or_else(|e| panic!("seed type `{}` invalid: {e}", ct.name));
+        }
+    }
 }

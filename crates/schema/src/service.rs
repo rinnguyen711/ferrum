@@ -486,9 +486,9 @@ mod tests {
 
     #[test]
     fn published_at_transition_rules() {
-        assert_eq!(published_at_transition(false, true).unwrap(), true);
-        assert_eq!(published_at_transition(true, true).unwrap(), false);
-        assert_eq!(published_at_transition(false, false).unwrap(), false);
+        assert!(published_at_transition(false, true).unwrap());
+        assert!(!published_at_transition(true, true).unwrap());
+        assert!(!published_at_transition(false, false).unwrap());
         assert!(published_at_transition(true, false).is_err());
     }
 

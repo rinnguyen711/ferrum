@@ -51,7 +51,7 @@ async fn seeds_default_types_and_data() {
     };
     assert_eq!(count("/api/author").await, 4);
     assert_eq!(count("/api/category").await, 5);
-    assert_eq!(count("/api/article").await, 10);
+    assert_eq!(count("/api/article?status=all").await, 10);
 
     // A populated article resolves its author to a real object.
     let r = app
