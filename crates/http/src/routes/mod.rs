@@ -6,6 +6,7 @@ use axum::routing::get;
 use axum::Router;
 use std::path::Path;
 
+pub mod components;
 pub mod content;
 pub mod health;
 pub mod media;
@@ -26,6 +27,7 @@ pub fn build_router(state: AppState, extra: Vec<Router<AppState>>) -> Router {
         .merge(content::router())
         .merge(users::router())
         .merge(media::router())
+        .merge(components::router())
         .merge(auth::protected_router());
 
     // Custom routers from the bin, merged after built-ins. Behind the same
