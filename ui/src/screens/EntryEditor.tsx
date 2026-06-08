@@ -19,7 +19,7 @@ import { Plus, Link2, Trash2, Check, GripVertical } from "lucide-react";
 import { AssetPicker } from "./media/AssetPicker";
 import { AssetThumb } from "./media/AssetThumb";
 import type { Entry, Field, MediaAsset } from "../api/types";
-import { draftPublishEnabled, enumValues, mediaMeta, relationMeta } from "../api/types";
+import { componentMeta, draftPublishEnabled, enumValues, mediaMeta, relationMeta } from "../api/types";
 import { relationLabel } from "../util";
 import { ApiError } from "../api/client";
 
@@ -293,6 +293,8 @@ function FieldInput({
       return <MediaField field={field} value={value} onChange={onChange} />;
     case "rich_text":
       return <RichTextEditor value={value} onChange={onChange} />;
+    case "component":
+      return <ComponentField field={field} value={value} onChange={onChange} />;
     default:
       return (
         <input className="rs-input" value={str} onChange={(e) => onChange(e.target.value)} />
@@ -464,6 +466,87 @@ function MediaField({
         </button>
       )}
       {open && <AssetPicker multiple={multiple} onClose={() => setOpen(false)} onPick={onPick} />}
+    </div>
+  );
+}
+
+function ComponentField({
+  field,
+  value,
+  onChange,
+}: {
+  field: Field;
+  value: unknown;
+  onChange: (v: unknown) => void;
+}) {
+  const meta = componentMeta(field);
+  const innerFields = field._component_fields ?? [];
+
+  if (!meta) return null;
+
+  if (meta.multiple) {
+    const arr = Array.isArray(value) ? (value as Record<string, unknown>[]) : [];
+    const setItem = (i: number, patch: Record<string, unknown>) => {
+      const next = arr.slice();
+      next[i] = { ...next[i], ...patch };
+      onChange(next);
+    };
+    const addItem = () => onChange([...arr, {}]);
+    const removeItem = (i: number) => onChange(arr.filter((_, idx) => idx !== i));
+    return (
+      <div className="rs-component-list">
+        {arr.map((item, i) => (
+          <div key={i} className="rs-component-card">
+            <div className="rs-component-card-head">
+              <span style={{ fontWeight: 500, fontSize: 12, color: "var(--rs-fg-muted)" }}>#{i + 1}</span>
+              <button type="button" className="rs-btn rs-btn--ghost rs-btn--sm" onClick={() => removeItem(i)}>
+                <Trash2 size={13} />
+              </button>
+            </div>
+            {innerFields.map((f) => (
+              <div key={f.name} className="rs-field">
+                <div className="rs-field-label">
+                  <label>{f.name}</label>
+                  <span className="rs-field-hint">{f.kind}</span>
+                </div>
+                <FieldInput
+                  field={f}
+                  value={item[f.name]}
+                  onChange={(v) => setItem(i, { [f.name]: v })}
+                  type=""
+                />
+              </div>
+            ))}
+          </div>
+        ))}
+        <button type="button" className="rs-btn rs-btn--ghost rs-btn--sm" onClick={addItem}>
+          <Plus size={13} /> Add item
+        </button>
+      </div>
+    );
+  }
+
+  const obj = (value && typeof value === "object" && !Array.isArray(value))
+    ? (value as Record<string, unknown>)
+    : {};
+  const setField = (name: string, v: unknown) => onChange({ ...obj, [name]: v });
+
+  return (
+    <div className="rs-component-card">
+      {innerFields.map((f) => (
+        <div key={f.name} className="rs-field">
+          <div className="rs-field-label">
+            <label>{f.name}</label>
+            <span className="rs-field-hint">{f.kind}</span>
+          </div>
+          <FieldInput
+            field={f}
+            value={obj[f.name]}
+            onChange={(v) => setField(f.name, v)}
+            type=""
+          />
+        </div>
+      ))}
     </div>
   );
 }
