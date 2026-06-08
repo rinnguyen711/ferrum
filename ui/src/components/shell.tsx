@@ -79,6 +79,7 @@ export function Sidebar({ section: _section }: { section: Section }) {
       : []),
     { to: "/content", label: "Content Manager", icon: "doc" },
     { to: "/builder", label: "Content-Type Builder", icon: "layers" },
+    { to: "/components", label: "Components", icon: "layers" },
     { to: "/media", label: "Media Library", icon: "image" },
   ];
   const isActive = (to: string, end?: boolean) =>
