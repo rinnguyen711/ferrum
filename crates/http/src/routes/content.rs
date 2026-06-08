@@ -123,6 +123,7 @@ async fn create(
         principal: &principal,
     };
     let body = state.hooks.before_write(&ctx, body).await.map_err(ApiError)?;
+    validate_component_fields(&state, &ct, &body).await?;
 
     let (binds_map, checks, links, media_checks, media_links) = body_to_binds(&ct, body, true)?;
     verify_relation_targets_exist(&state, &checks).await?;
@@ -199,6 +200,7 @@ async fn update(
         principal: &principal,
     };
     let body = state.hooks.before_write(&ctx, body).await.map_err(ApiError)?;
+    validate_component_fields(&state, &ct, &body).await?;
 
     let (mut binds_map, checks, links, media_checks, media_links) = body_to_binds(&ct, body, true)?;
     verify_relation_targets_exist(&state, &checks).await?;
@@ -631,6 +633,89 @@ async fn write_media_links(
         let (ins_sql, _) = rustapi_sql::insert_media_links(owner_type, &plan.field, owner_id)
             .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
         sqlx::query(&ins_sql).bind(owner_id).bind(&plan.ids).execute(&mut **tx).await.map_err(db)?;
+    }
+    Ok(())
+}
+
+/// Validate all component fields in the request body against their registered
+/// schemas. Called for both create and update before `body_to_binds`.
+async fn validate_component_fields(
+    state: &AppState,
+    ct: &rustapi_core::ContentType,
+    body: &serde_json::Map<String, serde_json::Value>,
+) -> Result<(), ApiError> {
+    for f in &ct.fields {
+        let Some(meta) = f.component_meta() else { continue };
+        let component = state
+            .components
+            .get(&meta.component)
+            .await
+            .ok_or_else(|| {
+                ApiError(Error::Validation(rustapi_core::ValidationErrors::field(
+                    &f.name,
+                    format!("component `{}` not found in registry", meta.component),
+                )))
+            })?;
+
+        let raw = body.get(&f.name);
+
+        if f.required && (raw.is_none() || raw == Some(&serde_json::Value::Null)) {
+            return Err(ApiError(Error::Validation(rustapi_core::ValidationErrors::field(
+                &f.name,
+                "field is required",
+            ))));
+        }
+
+        let Some(raw) = raw else { continue };
+        if raw.is_null() { continue; }
+
+        if meta.multiple {
+            let arr = raw.as_array().ok_or_else(|| {
+                ApiError(Error::Validation(rustapi_core::ValidationErrors::field(
+                    &f.name,
+                    "repeatable component field must be an array",
+                )))
+            })?;
+            for (i, item) in arr.iter().enumerate() {
+                validate_component_instance(item, &component.fields, &format!("{}[{}]", f.name, i))?;
+            }
+        } else {
+            validate_component_instance(raw, &component.fields, &f.name)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_component_instance(
+    value: &serde_json::Value,
+    fields: &[rustapi_core::Field],
+    path_prefix: &str,
+) -> Result<(), ApiError> {
+    let obj = value.as_object().ok_or_else(|| {
+        ApiError(Error::Validation(rustapi_core::ValidationErrors::field(
+            path_prefix,
+            "component instance must be an object",
+        )))
+    })?;
+
+    for f in fields {
+        let field_path = format!("{}.{}", path_prefix, f.name);
+        let v = obj.get(&f.name).unwrap_or(&serde_json::Value::Null);
+
+        if f.required && v.is_null() {
+            return Err(ApiError(Error::Validation(rustapi_core::ValidationErrors::field(
+                &field_path,
+                "field is required",
+            ))));
+        }
+        if !v.is_null() {
+            rustapi_core::BoundValue::from_json(f.kind, v).map_err(|_| {
+                ApiError(Error::Validation(rustapi_core::ValidationErrors::field(
+                    &field_path,
+                    format!("invalid value for kind {:?}", f.kind),
+                )))
+            })?;
+        }
     }
     Ok(())
 }
