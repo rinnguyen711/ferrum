@@ -49,6 +49,10 @@ export function FieldConfigModal({
 
   const save = () => {
     if (!field.name.trim()) { setErr("A field name is required."); setTab("basic"); return; }
+    if (field.kind === "component" && !field.componentUid.trim()) {
+      setErr("A component uid is required (e.g. shared.hero_block).");
+      return;
+    }
     const out = { ...field, name: field.name.trim() };
     if (requiredBlocked) out.required = false;
     onSave(out);
@@ -170,6 +174,27 @@ export function FieldConfigModal({
                       onChange={(v) => set({ mediaMultiple: v })}
                     />
                   </div>
+                </div>
+              )}
+
+              {field.kind === "component" && (
+                <div className="rs-field">
+                  <div className="rs-field-label"><label>Component</label></div>
+                  <input
+                    className="rs-input"
+                    placeholder="e.g. shared.hero_block"
+                    value={field.componentUid ?? ""}
+                    onChange={(e) => set({ componentUid: e.target.value })}
+                    disabled={locked}
+                  />
+                  <div className="rs-field-label" style={{ marginTop: 12 }}><label>Repeatable</label></div>
+                  <button
+                    type="button"
+                    className={"rs-toggle" + (field.componentMultiple ? " is-on" : "")}
+                    onClick={() => !locked && set({ componentMultiple: !field.componentMultiple })}
+                  >
+                    <span className="rs-toggle-knob" />
+                  </button>
                 </div>
               )}
             </div>

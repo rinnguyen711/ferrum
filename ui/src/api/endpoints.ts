@@ -1,5 +1,6 @@
 import { apiFetch, apiUpload, fetchBlob } from "./client";
 import type {
+  Component,
   ContentType,
   Entry,
   Health,
@@ -9,6 +10,7 @@ import type {
   MediaFolder,
   MediaProviderDescriptor,
   MediaSettings,
+  NewComponent,
   NewContentType,
   NewFolder,
   NewUser,
@@ -17,6 +19,7 @@ import type {
   PatchFolder,
   PatchUser,
   SetupStatus,
+  UpdateComponent,
   User,
 } from "./types";
 
@@ -199,4 +202,20 @@ export function putMediaSettings(body: MediaSettings): Promise<void> {
 
 export function testMediaSettings(body: MediaSettings): Promise<void> {
   return apiFetch<void>("/admin/media/settings/test", { method: "POST", body });
+}
+
+export function listComponents(): Promise<Component[]> {
+  return apiFetch<Component[]>("/admin/components");
+}
+export function getComponent(uid: string): Promise<Component> {
+  return apiFetch<Component>(`/admin/components/${encodeURIComponent(uid)}`);
+}
+export function createComponent(body: NewComponent): Promise<Component> {
+  return apiFetch<Component>("/admin/components", { method: "POST", body });
+}
+export function updateComponent(uid: string, body: UpdateComponent): Promise<Component> {
+  return apiFetch<Component>(`/admin/components/${encodeURIComponent(uid)}`, { method: "PUT", body });
+}
+export function deleteComponent(uid: string): Promise<void> {
+  return apiFetch<void>(`/admin/components/${encodeURIComponent(uid)}?confirm=true`, { method: "DELETE" });
 }

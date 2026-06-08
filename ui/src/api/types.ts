@@ -16,7 +16,8 @@ export type FieldKind =
   | "email"
   | "url"
   | "slug"
-  | "rich_text";
+  | "rich_text"
+  | "component";
 
 export interface Field {
   name: string;
@@ -26,6 +27,7 @@ export interface Field {
   default: unknown;
   max_length?: number;
   kind_meta: Record<string, unknown>;
+  _component_fields?: Field[];
 }
 
 export interface ContentType {
@@ -119,6 +121,20 @@ export function mediaMeta(f: Field): MediaMeta | null {
   return { multiple: m.multiple === true };
 }
 
+// Component kind_meta shape (when kind === "component").
+export interface ComponentMeta {
+  component: string;
+  multiple: boolean;
+}
+
+export function componentMeta(f: Field): ComponentMeta | null {
+  if (f.kind !== "component") return null;
+  const m = f.kind_meta as Partial<ComponentMeta>;
+  return typeof m.component === "string"
+    ? { component: m.component, multiple: m.multiple === true }
+    : null;
+}
+
 export interface LoginResponse {
   token: string;
   expires_at: number;
@@ -203,4 +219,21 @@ export interface MediaProviderDescriptor {
 export interface MediaSettings {
   provider: string;
   config: Record<string, string>;
+}
+
+export interface Component {
+  uid: string;
+  display_name: string;
+  fields: Field[];
+}
+
+export interface NewComponent {
+  uid: string;
+  display_name: string;
+  fields: Field[];
+}
+
+export interface UpdateComponent {
+  display_name: string;
+  fields: Field[];
 }

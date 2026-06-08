@@ -6,7 +6,7 @@ import type { IconKey } from "../components/icons";
 
 export const KINDS: FieldKind[] = [
   "string", "text", "integer", "float", "boolean", "datetime",
-  "relation", "media", "enum", "json", "email", "url", "slug", "rich_text",
+  "relation", "media", "enum", "json", "email", "url", "slug", "rich_text", "component",
 ];
 
 /** Picker cards — one per user-addable FieldKind, with a friendly label.
@@ -26,6 +26,7 @@ export const FIELD_CARDS: { kind: FieldKind; label: string; desc: string; icon: 
   { kind: "media",    label: "Media",       desc: "Files — images, video, audio, documents", icon: "image" },
   { kind: "json",     label: "JSON",        desc: "Raw, structured JSON data",               icon: "braces" },
   { kind: "rich_text", label: "Rich Text", desc: "Formatted content with a visual editor", icon: "doc" },
+  { kind: "component", label: "Component", desc: "Reusable structured sub-object", icon: "layers" },
 ];
 
 /** Friendly label for a kind; falls back to the raw kind string. */
@@ -46,6 +47,8 @@ export interface DraftField {
   inverse: string;               // kind === "relation" (optional)
   cardinality: Cardinality;      // kind === "relation"
   mediaMultiple: boolean;        // kind === "media"
+  componentUid: string;          // kind === "component"
+  componentMultiple: boolean;    // kind === "component"
   defaultValue: string;          // raw text; "" → null on the wire
   isPrivate: boolean;            // UI-only — not yet persisted by the server
   origin: "existing" | "new";
@@ -72,6 +75,8 @@ export function blankField(kind: FieldKind = "string"): DraftField {
     inverse: "",
     cardinality: "many_to_one",
     mediaMultiple: false,
+    componentUid: "",
+    componentMultiple: false,
     defaultValue: "",
     isPrivate: false,
     origin: "new",
@@ -109,6 +114,8 @@ export function seedFromContentType(ct: ContentType): Draft {
       inverse: rel?.inverse ?? "",
       cardinality: (rel?.cardinality as Cardinality) ?? "many_to_one",
       mediaMultiple: mediaMeta(f)?.multiple ?? false,
+      componentUid: (f.kind_meta as any)?.component ?? "",
+      componentMultiple: (f.kind_meta as any)?.multiple === true,
       defaultValue: defaultToText(f.default),
       isPrivate: false,
       origin: "existing",
@@ -159,6 +166,8 @@ function draftFieldToField(d: DraftField): Field {
     kind_meta = { values: d.enumValues };
   } else if (d.kind === "media") {
     kind_meta = { multiple: d.mediaMultiple };
+  } else if (d.kind === "component") {
+    kind_meta = { component: d.componentUid, multiple: d.componentMultiple };
   }
   return {
     name: d.name,

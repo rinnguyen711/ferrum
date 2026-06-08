@@ -19,6 +19,7 @@ const KIND_ICON: Record<FieldKind, keyof typeof Icons> = {
   email: "mail",
   url: "link",
   rich_text: "doc",
+  component: "layers",
 };
 
 function metaText(f: DraftField): string {
