@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use rustapi_core::{role_allows, Action, Error, Event, Principal};
 use rustapi_media::StorageProvider;
-use rustapi_schema::SchemaService;
+use rustapi_schema::{ComponentService, SchemaService};
 use serde_json::{Map, Value};
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -122,6 +122,7 @@ pub struct AppConfig {
 pub struct AppState {
     pub pool: PgPool,
     pub schemas: SchemaService,
+    pub components: ComponentService,
     pub authz: Arc<dyn Authz>,
     pub events: Arc<dyn EventSink>,
     pub hooks: Arc<dyn WriteHook>,

@@ -2,7 +2,7 @@
 //! and the rustapi router in-process, hitting it via reqwest.
 
 use rustapi_http::{build_router, resolve_provider, secret_key_from_env, AppConfig, AppState, NoopHook, NoopSink, RoleAuthz, WriteHook};
-use rustapi_schema::{SchemaRegistry, SchemaService, MIGRATOR};
+use rustapi_schema::{ComponentRegistry, ComponentService, SchemaRegistry, SchemaService, MIGRATOR};
 use sqlx::PgPool;
 use std::sync::Arc;
 use testcontainers::runners::AsyncRunner;
@@ -25,6 +25,7 @@ pub struct TestApp {
     /// The same SchemaService (and registry) the in-process router uses, so a
     /// test can mutate schema state and have the router observe it.
     pub schemas: SchemaService,
+    pub components: ComponentService,
     /// Bearer token for the seeded admin user (set by `spawn`).
     pub token: String,
     _pg: ContainerAsync<PgImage>,
@@ -74,6 +75,10 @@ impl TestApp {
         registry.reload_from_db(&pool).await.expect("hydrate");
         let schemas = SchemaService::new(pool.clone(), registry.clone());
 
+        let component_registry = ComponentRegistry::new();
+        component_registry.reload_from_db(&pool).await.expect("hydrate components");
+        let components = ComponentService::new(pool.clone(), component_registry);
+
         let media_dir = std::env::temp_dir().join(format!("rustapi-media-test-{}", uuid::Uuid::new_v4()));
         std::env::set_var("RUSTAPI_MEDIA_BASE_DIR", media_dir.to_string_lossy().to_string());
         std::env::set_var("RUSTAPI_MEDIA_PROVIDER", "local");
@@ -83,6 +88,7 @@ impl TestApp {
         let state = AppState {
             pool: pool.clone(),
             schemas: schemas.clone(),
+            components: components.clone(),
             authz: Arc::new(RoleAuthz),
             events: Arc::new(NoopSink),
             hooks: hook,
@@ -142,6 +148,7 @@ impl TestApp {
             pool,
             client,
             schemas,
+            components,
             token,
             _pg: pg,
             _shutdown: tx,

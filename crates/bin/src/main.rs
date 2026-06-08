@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use rustapi::config::Config;
 use rustapi::seed;
 use rustapi_http::{build_router, mount_studio, resolve_provider, secret_key_from_env, AppConfig, AppState, NoopHook, NoopSink, RoleAuthz};
-use rustapi_schema::{SchemaRegistry, SchemaService, MIGRATOR};
+use rustapi_schema::{ComponentRegistry, ComponentService, SchemaRegistry, SchemaService, MIGRATOR};
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -31,6 +31,10 @@ async fn main() -> Result<()> {
 
     let schemas = SchemaService::new(pool.clone(), registry.clone());
 
+    let component_registry = ComponentRegistry::new();
+    component_registry.reload_from_db(&pool).await.context("hydrate component registry")?;
+    let components = ComponentService::new(pool.clone(), component_registry);
+
     seed::seed_if_empty(&pool, &schemas, cfg.seed)
         .await
         .context("seed default content")?;
@@ -41,6 +45,7 @@ async fn main() -> Result<()> {
     let state = AppState {
         pool,
         schemas,
+        components,
         authz: Arc::new(RoleAuthz),
         events: Arc::new(NoopSink),
         hooks: Arc::new(NoopHook),
