@@ -2323,7 +2323,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "rustapi-core",
+ "serde",
  "serde_json",
+ "sqlx",
  "thiserror 1.0.69",
  "uuid",
 ]
