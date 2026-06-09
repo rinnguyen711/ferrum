@@ -20,7 +20,7 @@ export function CreateTypeModal({ onClose }: { onClose: () => void }) {
   const cont = () => {
     if (!display.trim()) return setErr("Display name is required.");
     if (!apiId.trim()) return setErr("API ID is required.");
-    startNew(apiId.trim(), display.trim());
+    startNew(apiId.trim(), display.trim(), "collection");
     onClose();
     navigate("/builder/new");
   };

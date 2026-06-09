@@ -1,5 +1,5 @@
 import type {
-  ContentType, Field, FieldKind, NewContentType, PatchContentType, EnumExtension,
+  ContentType, ContentTypeKind, Field, FieldKind, NewContentType, PatchContentType, EnumExtension,
 } from "../api/types";
 import { draftPublishEnabled, enumValues, relationMeta, mediaMeta } from "../api/types";
 import type { IconKey } from "../components/icons";
@@ -60,6 +60,7 @@ export interface Draft {
   fields: DraftField[];
   mode: "new" | "existing";
   draft_publish: boolean;
+  kind: ContentTypeKind;
   serverSnapshot?: ContentType;  // existing only — diff baseline
 }
 
@@ -96,8 +97,8 @@ export function deriveApiId(display: string): string {
   return s.slice(0, 63);
 }
 
-export function newDraft(name: string, display_name: string): Draft {
-  return { name, display_name, fields: [], mode: "new", draft_publish: true };
+export function newDraft(name: string, display_name: string, kind: ContentTypeKind = "collection"): Draft {
+  return { name, display_name, fields: [], mode: "new", draft_publish: true, kind };
 }
 
 export function seedFromContentType(ct: ContentType): Draft {
@@ -127,6 +128,7 @@ export function seedFromContentType(ct: ContentType): Draft {
     fields,
     mode: "existing",
     draft_publish: draftPublishEnabled(ct),
+    kind: ct.kind,
     serverSnapshot: ct,
   };
 }
@@ -185,6 +187,7 @@ export function toNewContentType(draft: Draft): NewContentType {
     display_name: draft.display_name,
     fields: draft.fields.map(draftFieldToField),
     options: { draft_publish: draft.draft_publish },
+    kind: draft.kind,
   };
 }
 

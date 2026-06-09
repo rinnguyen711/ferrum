@@ -5,7 +5,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { createContentType, patchContentType } from "../api/endpoints";
-import type { ContentType } from "../api/types";
+import type { ContentType, ContentTypeKind } from "../api/types";
 import {
   type Draft, diffToPatch, isDirty, newDraft, seedFromContentType,
   toNewContentType,
@@ -18,7 +18,7 @@ interface BuilderDraftCtx {
   banner: string | null;
   fieldErrors: Record<string, string>;
   saveNonce: number;
-  startNew(name: string, display: string): void;
+  startNew(name: string, display: string, kind?: ContentTypeKind): void;
   loadExisting(ct: ContentType): void;
   setDraft(updater: (d: Draft) => Draft): void;
   clearBanner(): void;
@@ -60,10 +60,10 @@ export function BuilderDraftProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("beforeunload", handler);
   }, []);
 
-  const startNew = useCallback((name: string, display: string) => {
+  const startNew = useCallback((name: string, display: string, kind: ContentTypeKind = "collection") => {
     setBanner(null);
     setFieldErrors({});
-    setDraftState(newDraft(name, display));
+    setDraftState(newDraft(name, display, kind));
   }, []);
 
   const loadExisting = useCallback((ct: ContentType) => {
