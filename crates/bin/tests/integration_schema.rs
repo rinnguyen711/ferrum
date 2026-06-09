@@ -4,6 +4,28 @@ use rustapi_core::{ContentTypeKind, FieldKind, NewContentType, Field};
 use serde_json::json;
 
 #[tokio::test]
+async fn create_single_type_kind_roundtrips() {
+    let app = TestApp::spawn().await;
+
+    let resp = app
+        .admin(app.client.post(app.url("/admin/content-types")))
+        .json(&json!({
+            "name": "homepage",
+            "display_name": "Homepage",
+            "kind": "single",
+            "fields": [
+                {"name": "title", "kind": "string"}
+            ]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "{}", resp.text().await.unwrap());
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["kind"], "single");
+}
+
+#[tokio::test]
 async fn create_list_get_delete_content_type() {
     let app = TestApp::spawn().await;
 

@@ -2,6 +2,44 @@ mod common;
 use common::TestApp;
 use serde_json::json;
 
+#[tokio::test]
+async fn single_type_rejected_on_collection_routes() {
+    let app = TestApp::spawn().await;
+
+    // Create a single-kind content type via HTTP.
+    let resp = app
+        .admin(app.client.post(app.url("/admin/content-types")))
+        .json(&json!({
+            "name": "homepage",
+            "display_name": "Homepage",
+            "kind": "single",
+            "fields": [
+                {"name": "title", "kind": "string"}
+            ]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "{}", resp.text().await.unwrap());
+
+    // GET /api/<name> on a single type must return 422.
+    let resp = app
+        .admin(app.client.get(app.url("/api/homepage")))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 422, "{}", resp.text().await.unwrap());
+
+    // POST /api/<name> on a single type must return 422.
+    let resp = app
+        .admin(app.client.post(app.url("/api/homepage")))
+        .json(&json!({"title": "Hello"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 422, "{}", resp.text().await.unwrap());
+}
+
 async fn make_post_type(app: &TestApp) {
     let resp = app
         .admin(app.client.post(app.url("/admin/content-types")))

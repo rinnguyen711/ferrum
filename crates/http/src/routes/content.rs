@@ -48,6 +48,13 @@ async fn list(
 ) -> Result<Json<Value>, ApiError> {
     ensure(&state, &principal, Action::ContentRead, &ct_name).await?;
     let ct = state.schemas.registry().get(&ct_name).await.ok_or(ApiError(Error::NotFound))?;
+    if ct.kind == rustapi_core::ContentTypeKind::Single {
+        return Err(ApiError(Error::Validation(
+            rustapi_core::ValidationErrors::single(
+                "use /api/single-types/:name for single types",
+            ),
+        )));
+    }
     let populate_param = params.populate.clone();
     let status = params.status.clone();
     let opts = parse_list(&ct, params, state.config.page_size_max)?;
@@ -116,6 +123,13 @@ async fn create(
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     ensure(&state, &principal, Action::ContentWrite, &ct_name).await?;
     let ct = state.schemas.registry().get(&ct_name).await.ok_or(ApiError(Error::NotFound))?;
+    if ct.kind == rustapi_core::ContentTypeKind::Single {
+        return Err(ApiError(Error::Validation(
+            rustapi_core::ValidationErrors::single(
+                "use /api/single-types/:name for single types",
+            ),
+        )));
+    }
 
     let ctx = WriteContext {
         content_type: &ct.name,
@@ -161,6 +175,13 @@ async fn get_one(
 ) -> Result<Json<Value>, ApiError> {
     ensure(&state, &principal, Action::ContentRead, &ct_name).await?;
     let ct = state.schemas.registry().get(&ct_name).await.ok_or(ApiError(Error::NotFound))?;
+    if ct.kind == rustapi_core::ContentTypeKind::Single {
+        return Err(ApiError(Error::Validation(
+            rustapi_core::ValidationErrors::single(
+                "use /api/single-types/:name for single types",
+            ),
+        )));
+    }
     let (sql, binds) = rustapi_sql::select_by_id(&ct.name, id)
         .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
     let q = bind_all(sqlx::query(&sql), &binds);
@@ -193,6 +214,13 @@ async fn update(
 ) -> Result<Json<Value>, ApiError> {
     ensure(&state, &principal, Action::ContentWrite, &ct_name).await?;
     let ct = state.schemas.registry().get(&ct_name).await.ok_or(ApiError(Error::NotFound))?;
+    if ct.kind == rustapi_core::ContentTypeKind::Single {
+        return Err(ApiError(Error::Validation(
+            rustapi_core::ValidationErrors::single(
+                "use /api/single-types/:name for single types",
+            ),
+        )));
+    }
 
     let ctx = WriteContext {
         content_type: &ct.name,
@@ -263,6 +291,13 @@ async fn delete_one(
 ) -> Result<StatusCode, ApiError> {
     ensure(&state, &principal, Action::ContentWrite, &ct_name).await?;
     let _ct = state.schemas.registry().get(&ct_name).await.ok_or(ApiError(Error::NotFound))?;
+    if _ct.kind == rustapi_core::ContentTypeKind::Single {
+        return Err(ApiError(Error::Validation(
+            rustapi_core::ValidationErrors::single(
+                "use /api/single-types/:name for single types",
+            ),
+        )));
+    }
     let (sql, binds) = rustapi_sql::delete(&ct_name, id)
         .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
     let q = bind_all(sqlx::query(&sql), &binds);
@@ -596,6 +631,13 @@ async fn set_publish_state(
 ) -> Result<Json<Value>, ApiError> {
     ensure(&state, &principal, Action::ContentWrite, &ct_name).await?;
     let ct = state.schemas.registry().get(&ct_name).await.ok_or(ApiError(Error::NotFound))?;
+    if ct.kind == rustapi_core::ContentTypeKind::Single {
+        return Err(ApiError(Error::Validation(
+            rustapi_core::ValidationErrors::single(
+                "use /api/single-types/:name for single types",
+            ),
+        )));
+    }
     if !ct.draft_publish() {
         return Err(ApiError(Error::Validation(
             rustapi_core::ValidationErrors::single(
