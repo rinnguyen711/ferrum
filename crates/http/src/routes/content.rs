@@ -309,7 +309,7 @@ async fn delete_one(
     Ok(StatusCode::NO_CONTENT)
 }
 
-fn db(e: sqlx::Error) -> ApiError {
+pub(crate) fn db(e: sqlx::Error) -> ApiError {
     if let sqlx::Error::Database(d) = &e {
         if let Some(code) = d.code() {
             match code.as_ref() {

@@ -11,6 +11,7 @@ pub mod content;
 pub mod health;
 pub mod media;
 pub mod schema;
+pub mod single_type;
 pub mod users;
 
 pub fn build_router(state: AppState, extra: Vec<Router<AppState>>) -> Router {
@@ -25,6 +26,7 @@ pub fn build_router(state: AppState, extra: Vec<Router<AppState>>) -> Router {
     let mut protected = Router::new()
         .merge(schema::router())
         .merge(content::router())
+        .merge(single_type::router())
         .merge(users::router())
         .merge(media::router())
         .merge(components::router())
