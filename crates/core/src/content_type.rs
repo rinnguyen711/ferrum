@@ -6,6 +6,19 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ContentTypeKind {
+    Collection,
+    Single,
+}
+
+impl Default for ContentTypeKind {
+    fn default() -> Self {
+        ContentTypeKind::Collection
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ContentType {
     pub id: Uuid,
@@ -14,6 +27,8 @@ pub struct ContentType {
     pub fields: Vec<Field>,
     #[serde(default)]
     pub options: serde_json::Value,
+    #[serde(default)]
+    pub kind: ContentTypeKind,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -25,6 +40,8 @@ pub struct NewContentType {
     pub fields: Vec<Field>,
     #[serde(default)]
     pub options: serde_json::Value,
+    #[serde(default)]
+    pub kind: ContentTypeKind,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq)]
@@ -126,6 +143,7 @@ mod tests {
             display_name: "Display".into(),
             fields,
             options: json!({}),
+            kind: ContentTypeKind::Collection,
         }
     }
 
@@ -253,12 +271,43 @@ mod tests {
             display_name: "Post".into(),
             fields: vec![field("title")],
             options: json!({}),
+            kind: ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
         assert!(!ct.draft_publish());
         ct.options = json!({ "draft_publish": true });
         assert!(ct.draft_publish());
+    }
+
+    #[test]
+    fn kind_defaults_collection_on_new() {
+        let nct = NewContentType {
+            name: "post".into(),
+            display_name: "Post".into(),
+            fields: vec![field("title")],
+            options: serde_json::json!({}),
+            kind: ContentTypeKind::Collection,
+        };
+        assert_eq!(nct.kind, ContentTypeKind::Collection);
+    }
+
+    #[test]
+    fn kind_single_roundtrips_json() {
+        let ct = ContentType {
+            id: Uuid::nil(),
+            name: "homepage".into(),
+            display_name: "Homepage".into(),
+            fields: vec![],
+            options: serde_json::json!({}),
+            kind: ContentTypeKind::Single,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let json = serde_json::to_string(&ct).unwrap();
+        assert!(json.contains("\"single\""));
+        let rt: ContentType = serde_json::from_str(&json).unwrap();
+        assert_eq!(rt.kind, ContentTypeKind::Single);
     }
 }
 
@@ -436,6 +485,7 @@ mod patch_tests {
                 kind_meta: json!({}),
             }],
             options: json!({}),
+            kind: ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -579,6 +629,7 @@ mod patch_tests {
                 kind_meta: json!({"values": ["draft", "published"]}),
             }],
             options: json!({}),
+            kind: ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -611,6 +662,7 @@ mod patch_tests {
                 kind_meta: json!({"values": ["draft", "published"]}),
             }],
             options: json!({}),
+            kind: ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -644,6 +696,7 @@ mod patch_tests {
                 kind_meta: json!({}),
             }],
             options: json!({}),
+            kind: ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -677,6 +730,7 @@ mod patch_tests {
                 kind_meta: json!({"values": ["draft", "published"]}),
             }],
             options: json!({}),
+            kind: ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -710,6 +764,7 @@ mod patch_tests {
                 kind_meta: json!({"values": ["draft", "published"]}),
             }],
             options: json!({}),
+            kind: ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -743,6 +798,7 @@ mod patch_tests {
                 kind_meta: json!({"values": ["draft", "published"]}),
             }],
             options: json!({}),
+            kind: ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };

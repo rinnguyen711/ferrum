@@ -16,6 +16,6 @@ pub use field::{
 };
 pub use principal::{role_allows, Action, Principal};
 pub use content_type::{
-    ContentType, ContentTypeError, EnumExtension, NewContentType, PatchContentType, PatchError,
+    ContentType, ContentTypeError, ContentTypeKind, EnumExtension, NewContentType, PatchContentType, PatchError,
 };
 pub use system::{SystemColumn, SYSTEM_COLUMNS, is_system_column};
