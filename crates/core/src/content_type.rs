@@ -6,17 +6,12 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ContentTypeKind {
+    #[default]
     Collection,
     Single,
-}
-
-impl Default for ContentTypeKind {
-    fn default() -> Self {
-        ContentTypeKind::Collection
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
