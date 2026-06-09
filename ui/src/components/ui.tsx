@@ -50,16 +50,18 @@ export function EditorBar({
   status,
   actions,
 }: {
-  onBack: () => void;
+  onBack?: () => void;
   title: ReactNode;
   status?: ReactNode;
   actions?: ReactNode;
 }) {
   return (
     <div className="rs-editor-bar">
-      <button type="button" className="rs-back" onClick={onBack} aria-label="Back">
-        <Icons.arrowLeft size={18} />
-      </button>
+      {onBack && (
+        <button type="button" className="rs-back" onClick={onBack} aria-label="Back">
+          <Icons.arrowLeft size={18} />
+        </button>
+      )}
       <div className="rs-editor-titlewrap">
         <h1>{title}</h1>
         {status}

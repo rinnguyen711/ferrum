@@ -1,31 +1,24 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { Notice, LoadingState, EmptyState, EditorBar } from "../components/ui";
 import { StatusBadge } from "../components/shell";
 import { useResource } from "../hooks/useResource";
 import { FieldRow } from "../components/FieldInput";
 import {
-  createEntry,
   getContentType,
-  getEntry,
+  getSingleType,
+  putSingleType,
   publishEntry,
   unpublishEntry,
-  updateEntry,
 } from "../api/endpoints";
 import { draftPublishEnabled } from "../api/types";
 import { ApiError } from "../api/client";
 
-export function EntryEditor() {
-  const { type = "", id = "new" } = useParams<{ type: string; id: string }>();
-  const navigate = useNavigate();
-  const isNew = id === "new";
-  const onBack = () => navigate(`/content/${type}`);
+export function SingleTypeEdit() {
+  const { type = "" } = useParams<{ type: string }>();
 
   const schema = useResource(() => getContentType(type), [type]);
-  const existing = useResource(
-    () => (isNew ? Promise.resolve(null) : getEntry(type, id)),
-    [type, id, isNew],
-  );
+  const existing = useResource(() => getSingleType(type), [type]);
 
   const [form, setForm] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
@@ -40,14 +33,14 @@ export function EntryEditor() {
 
   // Seed the form once data is available.
   useEffect(() => {
-    if (schema.data && (isNew || existing.data)) {
+    if (schema.data && !existing.loading) {
       const seed: Record<string, unknown> = {};
       for (const f of schema.data.fields) {
         seed[f.name] = existing.data ? existing.data[f.name] ?? "" : "";
       }
       setForm(seed);
     }
-  }, [schema.data, existing.data, isNew]);
+  }, [schema.data, existing.data, existing.loading]);
 
   if (schema.loading || existing.loading) return <LoadingState />;
   if (schema.error) return <EmptyState>Couldn't load type. {schema.error.message}</EmptyState>;
@@ -55,19 +48,20 @@ export function EntryEditor() {
   const ct = schema.data;
   if (!ct) return <EmptyState>Unknown content type.</EmptyState>;
 
-  const dp = ct ? draftPublishEnabled(ct) : false;
+  const dp = draftPublishEnabled(ct);
   const isPublished = publishedAt != null;
+  const entryId = existing.data?.id as string | undefined;
 
   const set = (name: string, value: unknown) =>
     setForm((f) => ({ ...f, [name]: value }));
 
   const togglePublish = async () => {
-    if (!ct) return;
+    if (!entryId) return;
     setPublishing(true);
     try {
       const updated = isPublished
-        ? await unpublishEntry(ct.name, id)
-        : await publishEntry(ct.name, id);
+        ? await unpublishEntry(ct.name, entryId)
+        : await publishEntry(ct.name, entryId);
       setPublishedAt((updated.published_at as string | null) ?? null);
     } catch {
       setBanner("Publish action failed.");
@@ -76,18 +70,18 @@ export function EntryEditor() {
     }
   };
 
-  const save = async (publishAfter = false) => {
+  const save = async () => {
     setSaving(true);
     setFieldErrors({});
     setBanner(null);
-    // Build a body: omit empty strings (treated as "no value"); coerce numbers.
+    // Build body: omit empty strings; coerce numbers.
     const body: Record<string, unknown> = {};
     for (const f of ct.fields) {
       const v = form[f.name];
       if (f.kind === "media") {
-        if (Array.isArray(v)) { body[f.name] = v; }            // multiple: always send (even [])
+        if (Array.isArray(v)) { body[f.name] = v; }
         else if (v == null || v === "") { /* single unset: omit */ }
-        else { body[f.name] = v; }                              // single: id string
+        else { body[f.name] = v; }
         continue;
       }
       if (v === "" || v === undefined) continue;
@@ -106,13 +100,9 @@ export function EntryEditor() {
       }
     }
     try {
-      if (isNew) {
-        const created = await createEntry(type, body);
-        if (publishAfter) await publishEntry(type, created.id);
-      } else {
-        await updateEntry(type, id, body);
-      }
-      navigate(`/content/${type}`);
+      const saved = await putSingleType(type, body);
+      setPublishedAt((saved.published_at as string | null) ?? null);
+      setBanner("Saved.");
     } catch (e) {
       if (e instanceof ApiError) {
         if (e.fieldErrors.length) {
@@ -133,12 +123,11 @@ export function EntryEditor() {
   return (
     <div className="rs-editor">
       <EditorBar
-        onBack={onBack}
-        title={isNew ? `Create ${ct.display_name}` : `Edit ${ct.display_name}`}
-        status={dp && !isNew ? <StatusBadge status={isPublished ? "published" : "draft"} /> : undefined}
+        title={ct.display_name}
+        status={dp ? <StatusBadge status={isPublished ? "published" : "draft"} /> : undefined}
         actions={
           <>
-            {dp && !isNew && (
+            {dp && entryId && (
               <button
                 className={"rs-btn " + (isPublished ? "rs-btn--ghost" : "rs-btn--primary")}
                 onClick={togglePublish}
@@ -148,17 +137,12 @@ export function EntryEditor() {
               </button>
             )}
             <button
-              className={"rs-btn " + (dp && isNew ? "rs-btn--ghost" : "rs-btn--primary")}
-              onClick={() => save(false)}
+              className={"rs-btn " + (dp ? "rs-btn--ghost" : "rs-btn--primary")}
+              onClick={save}
               disabled={saving}
             >
-              {saving ? "Saving…" : isNew ? "Create" : "Save"}
+              {saving ? "Saving…" : "Save"}
             </button>
-            {dp && isNew && (
-              <button className="rs-btn rs-btn--primary" onClick={() => save(true)} disabled={saving}>
-                {saving ? "…" : "Create & Publish"}
-              </button>
-            )}
           </>
         }
       />

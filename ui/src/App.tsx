@@ -21,6 +21,7 @@ import { Roles } from "./screens/Roles";
 import { RoleDetail } from "./screens/RoleDetail";
 import { MediaSettings } from "./screens/MediaSettings";
 import { ComponentEditor } from "./screens/ComponentEditor";
+import { SingleTypeEdit } from "./screens/SingleTypeEdit";
 import { getToken, clearToken } from "./auth";
 import { setAuthErrorHandler } from "./api/client";
 import { useResource } from "./hooks/useResource";
@@ -113,6 +114,7 @@ export default function App() {
           <Route path="content" element={<PickType kind="content" />} />
           <Route path="content/:type" element={<ContentList />} />
           <Route path="content/:type/:id" element={<EntryEditor />} />
+          <Route path="content/single/:type" element={<SingleTypeEdit />} />
           <Route path="builder" element={<PickType kind="builder" />} />
           <Route path="builder/new" element={<SchemaEditor />} />
           <Route path="builder/:type" element={<SchemaEditor />} />
