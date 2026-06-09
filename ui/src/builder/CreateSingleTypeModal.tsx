@@ -1,0 +1,75 @@
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Notice } from "../components/ui";
+import { useBuilderDraft } from "./BuilderDraftContext";
+import { deriveApiId } from "./draftModel";
+
+export function CreateSingleTypeModal({ onClose }: { onClose: () => void }) {
+  const { startNew } = useBuilderDraft();
+  const navigate = useNavigate();
+  const [display, setDisplay] = useState("");
+  const [apiId, setApiId] = useState("");
+  const [apiIdTouched, setApiIdTouched] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const onDisplayChange = (v: string) => {
+    setDisplay(v);
+    if (!apiIdTouched) setApiId(deriveApiId(v));
+  };
+
+  const cont = () => {
+    if (!display.trim()) return setErr("Display name is required.");
+    if (!apiId.trim()) return setErr("API ID is required.");
+    startNew(apiId.trim(), display.trim(), "single");
+    onClose();
+    navigate("/builder/new");
+  };
+
+  return (
+    <div className="rs-modal-backdrop" onClick={onClose}>
+      <div
+        className="rs-modal"
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
+      >
+        <div className="rs-modal-head">
+          <h2>Create a single type</h2>
+        </div>
+        <div className="rs-modal-body">
+          {err && <Notice>{err}</Notice>}
+          <div className="rs-field">
+            <div className="rs-field-label"><label>Display name</label></div>
+            <input
+              className="rs-input"
+              autoFocus
+              value={display}
+              onChange={(e) => onDisplayChange(e.target.value)}
+              placeholder="Homepage"
+            />
+          </div>
+          <div className="rs-field">
+            <div className="rs-field-label">
+              <label>API ID</label>
+              <span className="rs-field-hint">lowercase letters, digits, underscore</span>
+            </div>
+            <input
+              className="rs-input rs-mono"
+              value={apiId}
+              onChange={(e) => {
+                setApiIdTouched(true);
+                setApiId(e.target.value);
+              }}
+              placeholder="homepage"
+            />
+          </div>
+        </div>
+        <div className="rs-modal-foot">
+          <button className="rs-btn rs-btn--ghost" onClick={onClose}>Cancel</button>
+          <button className="rs-btn rs-btn--primary" onClick={cont}>Continue</button>
+        </div>
+      </div>
+    </div>
+  );
+}
