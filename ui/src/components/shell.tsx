@@ -9,6 +9,7 @@ import { useBuilderDraft } from "../builder/BuilderDraftContext";
 import { getClaims } from "../auth";
 import { diffToPatch } from "../builder/draftModel";
 import { CreateTypeModal } from "../builder/CreateTypeModal";
+import { CreateSingleTypeModal } from "../builder/CreateSingleTypeModal";
 import { CreateComponentModal } from "../builder/CreateComponentModal";
 import { SaveConfirmModal } from "../builder/SaveConfirmModal";
 import { initials, AVATAR_NEUTRAL } from "../util";
@@ -311,6 +312,7 @@ function TypePanel({
 }) {
   const location = useLocation();
   const [modalOpen, setModalOpen] = useState(false);
+  const [singleModalOpen, setSingleModalOpen] = useState(false);
   const [confirmPatch, setConfirmPatch] = useState<PatchContentType | null>(null);
   const [createComponentOpen, setCreateComponentOpen] = useState(false);
   const [compRefetchKey, setCompRefetchKey] = useState(0);
@@ -328,6 +330,8 @@ function TypePanel({
     () => listContentTypes(),
     [base, builder.saveNonce],
   );
+  const collectionTypes = types?.filter((t) => t.kind === "collection") ?? [];
+  const singleTypes = types?.filter((t) => t.kind === "single") ?? [];
   const { data: components, loading: compLoading, error: compError } = useResource(
     () => listComponents(),
     [base, builder.saveNonce, compRefetchKey],
@@ -368,7 +372,7 @@ function TypePanel({
         </div>
         <PanelGroup
           label="Collection types"
-          count={types?.length ?? 0}
+          count={collectionTypes.length}
           action={isBuilder}
           onAction={() => {
             if (builder.dirty) {
@@ -383,7 +387,7 @@ function TypePanel({
               <div key={i} className="rs-skel" style={{ width: `${w}%` }} />
             ))}
           {error && !types && <div className="rs-panel-item rs-danger">Failed to load</div>}
-          {types?.map((t) => (
+          {collectionTypes.map((t) => (
             <button
               key={t.name}
               onClick={() => builder.guardedNavigate(`${base}/${t.name}`)}
@@ -393,11 +397,33 @@ function TypePanel({
             </button>
           ))}
         </PanelGroup>
-        <div className="rs-panel-group">
-          <div className="rs-panel-grouphead"><span>Single types</span></div>
-          <button className="rs-panel-item" disabled title="Coming soon">Homepage</button>
-          <button className="rs-panel-item" disabled title="Coming soon">Global</button>
-        </div>
+        <PanelGroup
+          label="Single types"
+          count={singleTypes.length}
+          action={isBuilder}
+          onAction={() => {
+            if (builder.dirty) {
+              if (!window.confirm("You have unsaved changes. Discard them and create a new type?")) return;
+              builder.reset();
+            }
+            setSingleModalOpen(true);
+          }}
+        >
+          {loading && !types &&
+            [60, 44].map((w, i) => (
+              <div key={i} className="rs-skel" style={{ width: `${w}%` }} />
+            ))}
+          {error && !types && <div className="rs-panel-item rs-danger">Failed to load</div>}
+          {singleTypes.map((t) => (
+            <button
+              key={t.name}
+              onClick={() => builder.guardedNavigate(`${isBuilder ? "/builder" : "/content/single"}/${t.name}`)}
+              className={"rs-panel-item rs-panel-item--btn" + (collection === t.name ? " is-active" : "")}
+            >
+              {t.display_name}
+            </button>
+          ))}
+        </PanelGroup>
         {isBuilder && (
           <>
           <PanelGroup
@@ -455,6 +481,7 @@ function TypePanel({
         )}
       </div>
       {modalOpen && <CreateTypeModal onClose={() => setModalOpen(false)} />}
+      {singleModalOpen && <CreateSingleTypeModal onClose={() => setSingleModalOpen(false)} />}
       {createComponentOpen && (
         <CreateComponentModal
           onClose={() => setCreateComponentOpen(false)}
