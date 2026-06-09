@@ -219,3 +219,14 @@ export function updateComponent(uid: string, body: UpdateComponent): Promise<Com
 export function deleteComponent(uid: string): Promise<void> {
   return apiFetch<void>(`/admin/components/${encodeURIComponent(uid)}?confirm=true`, { method: "DELETE" });
 }
+
+export function getSingleType(name: string): Promise<Entry | null> {
+  return apiFetch<Entry | null>(`/api/single-types/${encodeURIComponent(name)}`);
+}
+
+export function putSingleType(name: string, body: Record<string, unknown>): Promise<Entry> {
+  return apiFetch<Entry>(`/api/single-types/${encodeURIComponent(name)}`, {
+    method: "PUT",
+    body,
+  });
+}

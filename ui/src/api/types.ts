@@ -1,6 +1,8 @@
 // TS mirrors of the Rust API wire shapes. `kind` strings match the
 // serde lowercase rename on `rustapi_core::FieldKind`.
 
+export type ContentTypeKind = "collection" | "single";
+
 export type FieldKind =
   | "string"
   | "text"
@@ -36,6 +38,7 @@ export interface ContentType {
   display_name: string;
   fields: Field[];
   options?: { draft_publish?: boolean };
+  kind: ContentTypeKind;
   created_at: string;
   updated_at: string;
 }
@@ -45,6 +48,7 @@ export interface NewContentType {
   display_name: string;
   fields: Field[];
   options?: { draft_publish?: boolean };
+  kind?: ContentTypeKind;
 }
 
 // PATCH /admin/content-types/{name} wire shape — mirrors rustapi_core.
