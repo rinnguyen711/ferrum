@@ -154,8 +154,9 @@ struct RawCt {
 impl RawCt {
     fn into_content_type(self) -> ContentType {
         let kind = match self.kind.as_str() {
+            "collection" => rustapi_core::ContentTypeKind::Collection,
             "single" => rustapi_core::ContentTypeKind::Single,
-            _ => rustapi_core::ContentTypeKind::Collection,
+            other => panic!("unknown content_type kind in database: {other:?}"),
         };
         ContentType {
             id: self.id,
