@@ -1022,6 +1022,7 @@ mod tests {
                 },
             ],
             options: json!({}),
+            kind: rustapi_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -1098,6 +1099,7 @@ mod tests {
                 kind_meta: json!({"target": "tag", "cardinality": "many_to_many"}),
             }],
             options: json!({}),
+            kind: rustapi_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -1651,6 +1653,7 @@ mod tests {
                 kind_meta,
             }],
             options: json!({}),
+            kind: rustapi_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

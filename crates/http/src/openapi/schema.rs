@@ -356,6 +356,7 @@ mod tests {
                 Field { name: "views".into(), kind: FieldKind::Integer, required: false, unique: false, default: Value::Null, max_length: None, kind_meta: json!({}) },
             ],
             options: json!({}),
+            kind: rustapi_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

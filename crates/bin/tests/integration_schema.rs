@@ -1,5 +1,6 @@
 mod common;
 use common::TestApp;
+use rustapi_core::{ContentTypeKind, FieldKind, NewContentType, Field};
 use serde_json::json;
 
 #[tokio::test]
@@ -96,4 +97,45 @@ async fn rejects_duplicate_create() {
     assert_eq!(resp.status(), 201);
     let resp = app.admin(app.client.post(app.url("/admin/content-types"))).json(&payload).send().await.unwrap();
     assert_eq!(resp.status(), 409);
+}
+
+#[tokio::test]
+async fn create_single_type_has_kind() {
+    let app = TestApp::spawn().await;
+
+    // Create via service directly (bypasses HTTP layer, tests SQL round-trip).
+    let ct = app
+        .schemas
+        .create(NewContentType {
+            name: "homepage".into(),
+            display_name: "Homepage".into(),
+            fields: vec![Field {
+                name: "title".into(),
+                kind: FieldKind::String,
+                required: false,
+                unique: false,
+                default: serde_json::json!(null),
+                max_length: None,
+                kind_meta: serde_json::json!({}),
+            }],
+            options: serde_json::json!({}),
+            kind: ContentTypeKind::Single,
+        })
+        .await
+        .unwrap();
+    assert_eq!(ct.kind, ContentTypeKind::Single);
+
+    // Verify kind persisted to DB and reloaded via registry.
+    let fetched = app.schemas.registry().get("homepage").await.unwrap();
+    assert_eq!(fetched.kind, ContentTypeKind::Single);
+
+    // Also verify via HTTP API — response JSON should contain `"kind": "single"`.
+    let resp = app
+        .admin(app.client.get(app.url("/admin/content-types/homepage")))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["kind"], "single");
 }

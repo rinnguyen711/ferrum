@@ -45,6 +45,7 @@ fn author_type() -> NewContentType {
             field("bio", FieldKind::Text, false),
         ],
         options: serde_json::Value::Null,
+        kind: rustapi_core::ContentTypeKind::Collection,
     }
 }
 
@@ -59,6 +60,7 @@ fn category_type() -> NewContentType {
             field("description", FieldKind::Text, false),
         ],
         options: serde_json::Value::Null,
+        kind: rustapi_core::ContentTypeKind::Collection,
     }
 }
 
@@ -76,6 +78,7 @@ fn article_type() -> NewContentType {
         // Draft & Publish replaces the old `status` enum: publish state lives in
         // the system `published_at` column.
         options: serde_json::json!({ "draft_publish": true }),
+        kind: rustapi_core::ContentTypeKind::Collection,
     }
 }
 

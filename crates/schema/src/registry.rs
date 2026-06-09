@@ -39,7 +39,7 @@ impl SchemaRegistry {
     /// Used at boot and (eventually) on LISTEN/NOTIFY in phase 7.
     pub async fn reload_from_db(&self, pool: &PgPool) -> Result<(), sqlx::Error> {
         let rows = sqlx::query_as::<_, RawCt>(
-            "SELECT id, name, display_name, fields, options, created_at, updated_at FROM _content_types",
+            "SELECT id, name, display_name, fields, options, kind, created_at, updated_at FROM _content_types",
         )
         .fetch_all(pool)
         .await?;
@@ -146,18 +146,24 @@ struct RawCt {
     display_name: String,
     fields: sqlx::types::Json<Vec<rustapi_core::Field>>,
     options: sqlx::types::Json<serde_json::Value>,
+    kind: String,
     created_at: chrono::DateTime<chrono::Utc>,
     updated_at: chrono::DateTime<chrono::Utc>,
 }
 
 impl RawCt {
     fn into_content_type(self) -> ContentType {
+        let kind = match self.kind.as_str() {
+            "single" => rustapi_core::ContentTypeKind::Single,
+            _ => rustapi_core::ContentTypeKind::Collection,
+        };
         ContentType {
             id: self.id,
             name: self.name,
             display_name: self.display_name,
             fields: self.fields.0,
             options: self.options.0,
+            kind,
             created_at: self.created_at,
             updated_at: self.updated_at,
         }
@@ -168,7 +174,7 @@ impl RawCt {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use rustapi_core::{Field, FieldKind};
+    use rustapi_core::{ContentTypeKind, Field, FieldKind};
     use serde_json::json;
     use uuid::Uuid;
 
@@ -187,6 +193,7 @@ mod tests {
                 kind_meta: json!({}),
             }],
             options: json!({}),
+            kind: ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -221,6 +228,7 @@ mod tests {
             display_name: "User".into(),
             fields: vec![],
             options: json!({}),
+            kind: ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -242,6 +250,7 @@ mod tests {
                 }),
             }],
             options: json!({}),
+            kind: ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -269,6 +278,7 @@ mod tests {
             display_name: "User".into(),
             fields: vec![],
             options: json!({}),
+            kind: ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         })
@@ -287,6 +297,7 @@ mod tests {
                 kind_meta: json!({"target":"user","cardinality":"many_to_one"}),
             }],
             options: json!({}),
+            kind: ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         })
@@ -397,6 +408,7 @@ mod tests {
                 kind_meta: json!({}),
             }],
             options: json!({}),
+            kind: ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         })

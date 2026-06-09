@@ -496,6 +496,7 @@ mod tests {
                 },
             ],
             options: serde_json::json!({}),
+            kind: rustapi_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -516,6 +517,7 @@ mod tests {
                 kind_meta: json!({}),
             }],
             options: serde_json::json!({}),
+            kind: rustapi_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -672,6 +674,7 @@ mod tests {
                 kind_meta: json!({"target":"tag","cardinality":"many_to_many","inverse":"posts"}),
             }],
             options: serde_json::json!({}),
+            kind: rustapi_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -692,6 +695,7 @@ mod tests {
                 kind_meta: json!({}),
             }],
             options: serde_json::json!({}),
+            kind: rustapi_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

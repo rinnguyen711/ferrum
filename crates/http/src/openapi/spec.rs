@@ -83,6 +83,7 @@ mod tests {
                     kind_meta: json!({}),
                 }],
                 options: json!({}),
+                kind: rustapi_core::ContentTypeKind::Collection,
                 created_at: chrono::Utc::now(),
                 updated_at: chrono::Utc::now(),
             })

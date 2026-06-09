@@ -323,6 +323,7 @@ mod tests {
             display_name: "Post".into(),
             fields,
             options: json!({}),
+            kind: rustapi_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

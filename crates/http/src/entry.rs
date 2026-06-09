@@ -418,6 +418,7 @@ mod tests {
                 },
             ],
             options: json!({}),
+            kind: rustapi_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -497,6 +498,7 @@ mod tests {
                 kind_meta: json!({}),
             }],
             options: json!({ "draft_publish": true }),
+            kind: rustapi_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -523,6 +525,7 @@ mod tests {
                 kind_meta: json!({"target":"user","cardinality":"many_to_one"}),
             }],
             options: json!({}),
+            kind: rustapi_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -628,6 +631,7 @@ mod tests {
                 },
             ],
             options: json!({}),
+            kind: rustapi_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -729,6 +733,7 @@ mod tests {
                 Field { name: "gallery".into(), kind: FieldKind::Media, required: false, unique: false, default: json!(null), max_length: None, kind_meta: json!({"multiple": true}) },
             ],
             options: json!({}),
+            kind: rustapi_core::ContentTypeKind::Collection,
             created_at: Utc::now(), updated_at: Utc::now(),
         }
     }

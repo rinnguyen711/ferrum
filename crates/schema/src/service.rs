@@ -54,12 +54,17 @@ impl SchemaService {
 
         let id = Uuid::new_v4();
         let now = Utc::now();
+        let kind_str = match payload.kind {
+            rustapi_core::ContentTypeKind::Collection => "collection",
+            rustapi_core::ContentTypeKind::Single => "single",
+        };
         let ct = ContentType {
             id,
             name: payload.name.clone(),
             display_name: payload.display_name.clone(),
             fields: payload.fields.clone(),
             options: payload.resolved_options(),
+            kind: payload.kind,
             created_at: now,
             updated_at: now,
         };
@@ -70,14 +75,15 @@ impl SchemaService {
         let mut tx: Transaction<'_, Postgres> = self.pool.begin().await.map_err(internal)?;
 
         sqlx::query(
-            "INSERT INTO _content_types (id, name, display_name, fields, options, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+            "INSERT INTO _content_types (id, name, display_name, fields, options, kind, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
         )
         .bind(ct.id)
         .bind(&ct.name)
         .bind(&ct.display_name)
         .bind(sqlx::types::Json(&ct.fields))
         .bind(sqlx::types::Json(&ct.options))
+        .bind(kind_str)
         .bind(ct.created_at)
         .bind(ct.updated_at)
         .execute(&mut *tx)
@@ -243,6 +249,7 @@ impl SchemaService {
             display_name: new_display,
             fields: new_fields,
             options: new_options,
+            kind: existing.kind,
             created_at: existing.created_at,
             updated_at: now,
         };
@@ -426,7 +433,7 @@ async fn exec_create_media_join_table(
 mod tests {
     use super::*;
     use chrono::Utc;
-    use rustapi_core::{ContentType, Field, FieldKind};
+    use rustapi_core::{ContentType, ContentTypeKind, Field, FieldKind};
     use serde_json::json;
 
     fn user_ct() -> ContentType {
@@ -444,6 +451,7 @@ mod tests {
                 kind_meta: json!({}),
             }],
             options: json!({}),
+            kind: ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -543,6 +551,7 @@ mod tests {
             display_name: "Post".into(),
             fields: vec![relation_field("author", "user", Some("posts"))],
             options: json!({}),
+            kind: ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         })
