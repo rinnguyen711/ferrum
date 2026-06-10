@@ -1,7 +1,7 @@
 //! Application state and pluggable traits (authz, event sink).
 
 use async_trait::async_trait;
-use rustapi_core::{role_allows, Action, Error, Event, Principal};
+use rustapi_core::{action_to_scope, role_allows, Action, Error, Event, Principal};
 use rustapi_media::StorageProvider;
 use rustapi_schema::{ComponentService, SchemaService};
 use serde_json::{Map, Value};
@@ -31,6 +31,7 @@ impl Authz for RoleAuthz {
     async fn can(&self, principal: &Principal, action: Action, _content_type: &str) -> bool {
         match principal {
             Principal::User { roles, .. } => roles.iter().any(|r| role_allows(r, action)),
+            Principal::ApiToken { scopes, .. } => scopes.iter().any(|s| s == action_to_scope(action)),
         }
     }
 }

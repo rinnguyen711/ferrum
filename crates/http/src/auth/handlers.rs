@@ -100,8 +100,10 @@ pub async fn login(
 
 /// GET /auth/me — echo the current principal.
 pub async fn me(Extension(principal): Extension<Principal>) -> Json<UserView> {
-    let Principal::User { id, email, roles } = principal;
-    Json(UserView { id, email, roles })
+    match principal {
+        Principal::User { id, email, roles } => Json(UserView { id, email, roles }),
+        Principal::ApiToken { id, .. } => Json(UserView { id, email: String::new(), roles: vec![] }),
+    }
 }
 
 /// GET /auth/setup — public. Reports whether first-run setup is still open.

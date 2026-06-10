@@ -10,6 +10,11 @@ pub enum Principal {
         email: String,
         roles: Vec<String>,
     },
+    /// An API token, built from a DB lookup. Carries explicit action scopes.
+    ApiToken {
+        id: Uuid,
+        scopes: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,7 +31,20 @@ impl Principal {
     pub fn kind(&self) -> &'static str {
         match self {
             Principal::User { .. } => "user",
+            Principal::ApiToken { .. } => "api_token",
         }
+    }
+}
+
+/// Maps an `Action` to its wire scope string.
+pub fn action_to_scope(action: Action) -> &'static str {
+    match action {
+        Action::ContentRead  => "content:read",
+        Action::ContentWrite => "content:write",
+        Action::SchemaRead   => "schema:read",
+        Action::SchemaWrite  => "schema:write",
+        Action::UserRead     => "user:read",
+        Action::UserWrite    => "user:write",
     }
 }
 
@@ -90,12 +108,18 @@ mod tests {
     }
 
     #[test]
-    fn user_principal_carries_roles() {
-        let p = Principal::User {
-            id: uuid::Uuid::nil(),
-            email: "a@b.c".into(),
-            roles: vec!["admin".into()],
-        };
-        assert_eq!(p.kind(), "user");
+    fn action_to_scope_round_trips() {
+        assert_eq!(action_to_scope(Action::ContentRead), "content:read");
+        assert_eq!(action_to_scope(Action::ContentWrite), "content:write");
+        assert_eq!(action_to_scope(Action::SchemaRead), "schema:read");
+        assert_eq!(action_to_scope(Action::SchemaWrite), "schema:write");
+        assert_eq!(action_to_scope(Action::UserRead), "user:read");
+        assert_eq!(action_to_scope(Action::UserWrite), "user:write");
+    }
+
+    #[test]
+    fn api_token_kind() {
+        let p = Principal::ApiToken { id: Uuid::nil(), scopes: vec![] };
+        assert_eq!(p.kind(), "api_token");
     }
 }

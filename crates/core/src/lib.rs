@@ -14,7 +14,7 @@ pub use event::Event;
 pub use field::{
     BoundValue, Cardinality, CoerceError, ComponentMeta, EnumMeta, Field, FieldError, FieldKind, RelationMeta,
 };
-pub use principal::{role_allows, Action, Principal};
+pub use principal::{action_to_scope, role_allows, Action, Principal};
 pub use content_type::{
     ContentType, ContentTypeError, ContentTypeKind, EnumExtension, NewContentType, PatchContentType, PatchError,
 };

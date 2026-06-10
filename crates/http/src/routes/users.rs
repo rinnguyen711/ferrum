@@ -56,6 +56,7 @@ async fn ensure(state: &AppState, principal: &Principal, action: Action) -> Resu
 fn principal_id(p: &Principal) -> Uuid {
     match p {
         Principal::User { id, .. } => *id,
+        Principal::ApiToken { id, .. } => *id,
     }
 }
 
