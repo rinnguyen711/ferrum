@@ -22,6 +22,7 @@ import { RoleDetail } from "./screens/RoleDetail";
 import { MediaSettings } from "./screens/MediaSettings";
 import { ComponentEditor } from "./screens/ComponentEditor";
 import { SingleTypeEdit } from "./screens/SingleTypeEdit";
+import { ApiTokens } from "./screens/ApiTokens";
 import { getToken, clearToken } from "./auth";
 import { setAuthErrorHandler } from "./api/client";
 import { useResource } from "./hooks/useResource";
@@ -120,6 +121,7 @@ export default function App() {
           <Route path="builder/:type" element={<SchemaEditor />} />
           <Route path="builder/components/:uid" element={<ComponentEditor />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="settings/api-tokens" element={<ApiTokens />} />
           <Route path="settings/media" element={<MediaSettings />} />
           <Route path="users" element={<Users />} />
           <Route path="users/new" element={<UserEditor />} />

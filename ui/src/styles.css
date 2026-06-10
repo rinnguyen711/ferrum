@@ -200,6 +200,11 @@ h1, h2 { margin: 0; }
 
 /* ============ Content Manager ============ */
 .rs-cm { max-width: 1160px; margin: 0 auto; }
+.rs-cm-flash { padding: 10px 16px; margin-bottom: 16px; border-radius: 6px; font-size: 13.5px; background: color-mix(in srgb, #22c55e 12%, transparent); color: #16a34a; border: 1px solid color-mix(in srgb, #22c55e 30%, transparent); }
+[data-theme="dark"] .rs-cm-flash { color: #4ade80; background: color-mix(in srgb, #22c55e 15%, transparent); border-color: color-mix(in srgb, #22c55e 25%, transparent); }
+.rs-cm-flash-link { color: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+.rs-token-reveal { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--surface-3); border: 1px solid var(--border); border-radius: 6px; margin-top: 12px; overflow-x: auto; }
+.rs-token-reveal code { flex: 1; font-size: 12px; word-break: break-all; }
 .rs-cm-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; gap: 16px; }
 .rs-cm-head h1 { font-size: 25px; font-weight: 680; letter-spacing: -.025em; }
 .rs-cm-sub { margin: 5px 0 0; color: var(--text-muted); font-size: 13.5px; }
