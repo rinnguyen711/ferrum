@@ -166,7 +166,7 @@ pub async fn mark_delivery_failed(
         sqlx::query(
             "UPDATE _webhook_deliveries
              SET attempt=$2, last_error=$3,
-                 next_try_at = now() + ($4 || ' seconds')::interval
+                 next_try_at = now() + make_interval(secs => $4)
              WHERE id=$1",
         )
         .bind(id)
