@@ -188,7 +188,7 @@ function SettingsPanel() {
         { label: "Overview" },
         { label: "API tokens", to: "/settings/api-tokens" },
         { label: "Media storage", to: "/settings/media" },
-        { label: "Webhooks" },
+        { label: "Webhooks", to: "/settings/webhooks" },
         { label: "Internationalization" },
       ],
     },
