@@ -34,7 +34,9 @@ export function Layout({
   const roleDetailMatch = useMatch("/roles/:key");
   const tokenNewMatch = useMatch("/settings/api-tokens/new");
   const tokenDetailMatch = useMatch("/settings/api-tokens/:id");
-  const showEditorBare = Boolean(editorMatch || userNewMatch || userEditMatch || roleDetailMatch || tokenNewMatch || tokenDetailMatch);
+  const webhookNewMatch = useMatch("/settings/webhooks/new");
+  const webhookDetailMatch = useMatch("/settings/webhooks/:id");
+  const showEditorBare = Boolean(editorMatch || userNewMatch || userEditMatch || roleDetailMatch || tokenNewMatch || tokenDetailMatch || webhookNewMatch || webhookDetailMatch);
 
   const navigate = useNavigate();
   const email = getClaims()?.email ?? null;
