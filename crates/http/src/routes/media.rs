@@ -133,7 +133,7 @@ async fn delete_folder(
     Extension(principal): Extension<Principal>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
-    ensure(&state, &principal, Action::ContentWrite).await?;
+    ensure(&state, &principal, Action::ContentDelete).await?;
     if store::folder_has_children(&state.pool, id).await.map_err(internal)? {
         return Err(ApiError(Error::Conflict("folder is not empty".into())));
     }
@@ -452,7 +452,7 @@ async fn delete_asset(
     Extension(principal): Extension<Principal>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
-    ensure(&state, &principal, Action::ContentWrite).await?;
+    ensure(&state, &principal, Action::ContentDelete).await?;
     let row = store::get_asset(&state.pool, id).await.map_err(internal)?
         .ok_or(ApiError(Error::NotFound))?;
     let provider = state.storage.read().await.clone();

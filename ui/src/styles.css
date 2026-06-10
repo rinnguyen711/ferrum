@@ -609,7 +609,7 @@ select.rs-input { appearance: none; background-image: url("data:image/svg+xml,%3
   padding: 14px 20px;
   border-top: 1px solid var(--border);
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 8px;
 }
 .rs-change-list {
@@ -995,3 +995,50 @@ select.rs-input { appearance: none; background-image: url("data:image/svg+xml,%3
 .rs-rich-text .ProseMirror img { max-width: 100%; height: auto; display: block; }
 .rs-rich-text .ProseMirror mark { background: color-mix(in srgb, var(--accent) 20%, transparent); }
 .rs-rich-text .ProseMirror a { color: var(--accent); text-decoration: underline; }
+
+/* ── Token editor ────────────────────────────────────────────────────────── */
+.rs-label { font-size: 12.5px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 7px; }
+.rs-label-req { color: var(--accent); margin-left: 3px; }
+.rs-label-hint { font-weight: 400; color: var(--text-subtle); }
+.rs-fields--token { grid-template-columns: 1fr; max-width: 680px; }
+.rs-field-row { display: flex; flex-direction: column; }
+.rs-field-span2 { grid-column: span 2; }
+.rs-segment--lg .rs-seg { padding: 8px 12px; font-size: 12.5px; }
+.rs-radio-cards--3 { grid-template-columns: repeat(3, 1fr); }
+.rs-token-card { cursor: pointer; }
+.rs-token-card strong { display: flex; align-items: center; gap: 6px; }
+
+/* Token reveal (full-page edition) */
+.rs-token-reveal--success { display: block; padding: 16px 18px; background: color-mix(in srgb, var(--ok) 8%, transparent); border: 1px solid color-mix(in srgb, var(--ok) 25%, transparent); border-radius: var(--r-md); margin-bottom: 22px; }
+.rs-token-reveal--success .rs-token-reveal-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+.rs-token-reveal--success .rs-token-reveal-head strong { font-size: 13.5px; font-weight: 650; color: var(--ok); }
+.rs-token-reveal--success .rs-token-reveal-head p { font-size: 12.5px; color: var(--text-muted); margin-top: 3px; }
+.rs-token-reveal-icon { width: 28px; height: 28px; border-radius: 50%; background: color-mix(in srgb, var(--ok) 18%, transparent); display: grid; place-items: center; color: var(--ok); flex-shrink: 0; }
+.rs-token-key { margin-top: 0; }
+.rs-token-key .rs-input { font-size: 12.5px; }
+
+/* Permissions accordion */
+.rs-perm-list { border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; }
+.rs-perm-list--locked { opacity: .85; pointer-events: none; }
+.rs-perm-list--locked .rs-perm-type-head { pointer-events: auto; }
+.rs-perm-type { border-bottom: 1px solid var(--border); }
+.rs-perm-type:last-child { border-bottom: none; }
+.rs-perm-type-head { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 14px; background: none; border: none; cursor: pointer; text-align: left; transition: background .12s; }
+.rs-perm-type-head:hover { background: var(--surface-2); }
+.rs-perm-chev { color: var(--text-subtle); transition: transform .15s; flex-shrink: 0; }
+.rs-perm-type.is-open .rs-perm-chev { transform: rotate(90deg); }
+.rs-perm-type-icon { color: var(--text-muted); flex-shrink: 0; }
+.rs-perm-type-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.rs-perm-type-meta strong { font-size: 13px; font-weight: 650; }
+.rs-perm-type-meta code { font-size: 11px; color: var(--text-subtle); }
+.rs-perm-tally { font-size: 12px; font-weight: 600; color: var(--text-subtle); font-variant-numeric: tabular-nums; }
+.rs-perm-tally.is-full { color: var(--ok); }
+.rs-perm-type-body { padding: 6px 14px 10px 44px; display: flex; flex-direction: column; gap: 4px; background: var(--surface-2); }
+.rs-perm-action { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+.rs-perm-action input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent); flex-shrink: 0; cursor: pointer; }
+.rs-perm-action label { font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.rs-perm-scope-key { font-size: 11.5px; color: var(--text-subtle); margin-left: auto; font-family: var(--mono-font); }
+
+/* Rail note */
+.rs-rail-note { font-size: 12.5px; color: var(--text-muted); line-height: 1.55; margin: 0; }
+

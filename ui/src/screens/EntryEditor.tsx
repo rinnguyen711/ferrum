@@ -109,10 +109,11 @@ export function EntryEditor() {
       if (isNew) {
         const created = await createEntry(type, body);
         if (publishAfter) await publishEntry(type, created.id);
+        navigate(`/content/${type}`, { state: { flash: "created", flashId: created.id } });
       } else {
         await updateEntry(type, id, body);
+        navigate(`/content/${type}`, { state: { flash: "saved", flashId: id } });
       }
-      navigate(`/content/${type}`);
     } catch (e) {
       if (e instanceof ApiError) {
         if (e.fieldErrors.length) {

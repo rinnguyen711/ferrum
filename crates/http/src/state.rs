@@ -28,10 +28,17 @@ pub struct RoleAuthz;
 
 #[async_trait]
 impl Authz for RoleAuthz {
-    async fn can(&self, principal: &Principal, action: Action, _content_type: &str) -> bool {
+    async fn can(&self, principal: &Principal, action: Action, content_type: &str) -> bool {
         match principal {
             Principal::User { roles, .. } => roles.iter().any(|r| role_allows(r, action)),
-            Principal::ApiToken { scopes, .. } => scopes.iter().any(|s| s == action_to_scope(action)),
+            Principal::ApiToken { scopes, .. } => {
+                let base = action_to_scope(action); // e.g. "content:read"
+                scopes.iter().any(|s| {
+                    s == base  // wildcard: content:read grants all types
+                        || (!content_type.is_empty()
+                            && s == &format!("{}:{}", base, content_type)) // specific: content:read:article
+                })
+            }
         }
     }
 }

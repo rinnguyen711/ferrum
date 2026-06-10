@@ -289,7 +289,7 @@ async fn delete_one(
     Path((ct_name, id)): Path<(String, Uuid)>,
     axum::extract::Extension(principal): axum::extract::Extension<Principal>,
 ) -> Result<StatusCode, ApiError> {
-    ensure(&state, &principal, Action::ContentWrite, &ct_name).await?;
+    ensure(&state, &principal, Action::ContentDelete, &ct_name).await?;
     let _ct = state.schemas.registry().get(&ct_name).await.ok_or(ApiError(Error::NotFound))?;
     if _ct.kind == rustapi_core::ContentTypeKind::Single {
         return Err(ApiError(Error::Validation(

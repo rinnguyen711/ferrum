@@ -154,7 +154,7 @@ async fn remove(
     Extension(principal): Extension<Principal>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
-    ensure(&state, &principal, Action::UserWrite).await?;
+    ensure(&state, &principal, Action::UserDelete).await?;
 
     // Lockout guard: cannot delete your own account.
     if id == principal_id(&principal) {

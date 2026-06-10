@@ -1,0 +1,1 @@
+ALTER TABLE _api_tokens ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';

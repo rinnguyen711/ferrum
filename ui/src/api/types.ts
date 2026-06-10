@@ -245,6 +245,7 @@ export interface UpdateComponent {
 export interface ApiToken {
   id: string;
   name: string;
+  description: string;
   scopes: string[];
   expires_at: string | null;
   last_used_at: string | null;
@@ -253,6 +254,7 @@ export interface ApiToken {
 
 export interface NewApiToken {
   name: string;
+  description?: string;
   scopes: string[];
   expires_at?: string | null;
 }

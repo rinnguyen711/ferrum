@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { Icons } from "../components/icons";
 import { Avatar, StatusBadge } from "../components/shell";
 import { Checkbox, LoadingState, EmptyState } from "../components/ui";
@@ -26,6 +26,19 @@ const PUBLISH_TABS: [("published" | "draft" | "all"), string][] = [
 export function ContentList() {
   const { type = "" } = useParams<{ type: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  type FlashState = { flash?: string; flashId?: string } | null;
+  const locState = location.state as FlashState;
+  const [flash, setFlash] = useState<{ verb: string; id: string } | null>(() =>
+    locState?.flash && locState?.flashId ? { verb: locState.flash, id: locState.flashId } : null
+  );
+
+  useEffect(() => {
+    if (!flash) return;
+    const t = setTimeout(() => setFlash(null), 5000);
+    window.history.replaceState({ ...window.history.state, usr: {} }, "");
+    return () => clearTimeout(t);
+  }, [flash]);
 
   const schema = useResource(() => getContentType(type), [type]);
   const allTypes = useResource(() => listContentTypes(), []);
@@ -159,6 +172,15 @@ export function ContentList() {
 
   return (
     <div className="rs-cm">
+      {flash && (
+        <div className="rs-cm-flash">
+          Object{" "}
+          <Link className="rs-cm-flash-link" to={`/content/${type}/${flash.id}`}>
+            #{shortId(flash.id)}
+          </Link>{" "}
+          has been {flash.verb} successfully.
+        </div>
+      )}
       <div className="rs-cm-head">
         <div>
           <h1>{ct.display_name}</h1>
