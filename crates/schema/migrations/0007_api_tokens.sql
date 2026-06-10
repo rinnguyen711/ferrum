@@ -1,4 +1,4 @@
-CREATE TABLE _api_tokens (
+CREATE TABLE IF NOT EXISTS _api_tokens (
   id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   name         TEXT        NOT NULL,
   token_hash   TEXT        NOT NULL UNIQUE,
