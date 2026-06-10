@@ -654,7 +654,12 @@ async fn set_publish_state(
     let q = bind_all(sqlx::query(&sql), &binds);
     let row = q.fetch_optional(&state.pool).await.map_err(db)?;
     let row = row.ok_or(ApiError(Error::NotFound))?;
-    state.events.emit(Event::EntryUpdated { content_type: ct.name.clone(), id }).await;
+    let ev = if publish {
+        Event::EntryPublished { content_type: ct.name.clone(), id }
+    } else {
+        Event::EntryUnpublished { content_type: ct.name.clone(), id }
+    };
+    state.events.emit(ev).await;
     Ok(Json(row_to_json(&ct, &row)?))
 }
 
