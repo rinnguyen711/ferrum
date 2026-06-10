@@ -1,7 +1,9 @@
 import { apiFetch, apiUpload, fetchBlob } from "./client";
 import type {
+  ApiToken,
   Component,
   ContentType,
+  CreatedApiToken,
   Entry,
   Health,
   ListResponse,
@@ -10,6 +12,7 @@ import type {
   MediaFolder,
   MediaProviderDescriptor,
   MediaSettings,
+  NewApiToken,
   NewComponent,
   NewContentType,
   NewFolder,
@@ -229,4 +232,16 @@ export function putSingleType(name: string, body: Record<string, unknown>): Prom
     method: "PUT",
     body,
   });
+}
+
+export function listApiTokens(): Promise<ApiToken[]> {
+  return apiFetch<ApiToken[]>("/api/admin/tokens");
+}
+
+export function createApiToken(body: NewApiToken): Promise<CreatedApiToken> {
+  return apiFetch<CreatedApiToken>("/api/admin/tokens", { method: "POST", body });
+}
+
+export function revokeApiToken(id: string): Promise<void> {
+  return apiFetch<void>(`/api/admin/tokens/${encodeURIComponent(id)}`, { method: "DELETE" });
 }

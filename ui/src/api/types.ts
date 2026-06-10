@@ -241,3 +241,22 @@ export interface UpdateComponent {
   display_name: string;
   fields: Field[];
 }
+
+export interface ApiToken {
+  id: string;
+  name: string;
+  scopes: string[];
+  expires_at: string | null;
+  last_used_at: string | null;
+  created_at: string;
+}
+
+export interface NewApiToken {
+  name: string;
+  scopes: string[];
+  expires_at?: string | null;
+}
+
+export interface CreatedApiToken extends ApiToken {
+  token: string;
+}
