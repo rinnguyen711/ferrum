@@ -1,4 +1,4 @@
-//! /api/admin/webhooks — CRUD for webhooks (admin-only).
+//! /admin/webhooks — CRUD for webhooks (admin-only).
 
 use crate::error::ApiError;
 use crate::routes::content::db;
@@ -18,14 +18,14 @@ use uuid::Uuid;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/api/admin/webhooks", get(list).post(create))
+        .route("/admin/webhooks", get(list).post(create))
         .route(
-            "/api/admin/webhooks/:id",
+            "/admin/webhooks/:id",
             axum::routing::patch(update).delete(delete),
         )
-        .route("/api/admin/webhooks/:id/deliveries", get(deliveries))
+        .route("/admin/webhooks/:id/deliveries", get(deliveries))
         .route(
-            "/api/admin/webhooks/:id/test",
+            "/admin/webhooks/:id/test",
             axum::routing::post(test_ping),
         )
 }

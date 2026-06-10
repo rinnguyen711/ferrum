@@ -61,7 +61,7 @@ impl MockServer {
 
 async fn create_webhook(app: &TestApp, hook_url: &str, events: &[&str]) -> Value {
     let resp = app
-        .admin(app.client.post(app.url("/api/admin/webhooks")))
+        .admin(app.client.post(app.url("/admin/webhooks")))
         .json(&json!({
             "name": "test-hook",
             "url": hook_url,
@@ -86,7 +86,7 @@ async fn webhook_crud_list_create_update_delete() {
     let id = hook["id"].as_str().unwrap();
 
     let list: Vec<Value> = app
-        .admin(app.client.get(app.url("/api/admin/webhooks")))
+        .admin(app.client.get(app.url("/admin/webhooks")))
         .send()
         .await
         .unwrap()
@@ -98,7 +98,7 @@ async fn webhook_crud_list_create_update_delete() {
     let resp = app
         .admin(
             app.client
-                .patch(app.url(&format!("/api/admin/webhooks/{id}"))),
+                .patch(app.url(&format!("/admin/webhooks/{id}"))),
         )
         .json(&json!({
             "name": "renamed",
@@ -117,7 +117,7 @@ async fn webhook_crud_list_create_update_delete() {
     let resp = app
         .admin(
             app.client
-                .delete(app.url(&format!("/api/admin/webhooks/{id}"))),
+                .delete(app.url(&format!("/admin/webhooks/{id}"))),
         )
         .send()
         .await
@@ -125,7 +125,7 @@ async fn webhook_crud_list_create_update_delete() {
     assert_eq!(resp.status(), 204);
 
     let list: Vec<Value> = app
-        .admin(app.client.get(app.url("/api/admin/webhooks")))
+        .admin(app.client.get(app.url("/admin/webhooks")))
         .send()
         .await
         .unwrap()
@@ -143,7 +143,7 @@ async fn worker_delivers_pending_row_to_mock_server() {
     create_webhook(&app, &mock.url("/hook"), &["entry.created"]).await;
 
     let hooks: Vec<Value> = app
-        .admin(app.client.get(app.url("/api/admin/webhooks")))
+        .admin(app.client.get(app.url("/admin/webhooks")))
         .send()
         .await
         .unwrap()
@@ -182,7 +182,7 @@ async fn delivery_marked_failed_after_max_attempts() {
     create_webhook(&app, "http://127.0.0.1:1/unreachable", &["entry.created"]).await;
 
     let hooks: Vec<Value> = app
-        .admin(app.client.get(app.url("/api/admin/webhooks")))
+        .admin(app.client.get(app.url("/admin/webhooks")))
         .send()
         .await
         .unwrap()
@@ -226,7 +226,7 @@ async fn disabled_webhook_gets_no_delivery_row() {
 
     app.admin(
         app.client
-            .patch(app.url(&format!("/api/admin/webhooks/{id}"))),
+            .patch(app.url(&format!("/admin/webhooks/{id}"))),
     )
     .json(&json!({
         "name": "test-hook",
@@ -287,7 +287,7 @@ async fn hmac_signature_header_present_when_secret_set() {
 
     let app = TestApp::spawn().await;
     let resp = app
-        .admin(app.client.post(app.url("/api/admin/webhooks")))
+        .admin(app.client.post(app.url("/admin/webhooks")))
         .json(&json!({
             "name": "signed",
             "url": hook_url,
@@ -355,7 +355,7 @@ async fn delete_webhook_cascades_deliveries() {
 
     app.admin(
         app.client
-            .delete(app.url(&format!("/api/admin/webhooks/{id}"))),
+            .delete(app.url(&format!("/admin/webhooks/{id}"))),
     )
     .send()
     .await
