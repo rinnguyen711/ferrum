@@ -126,7 +126,8 @@ pub async fn poll_pending(pool: &PgPool, limit: i64) -> Result<Vec<PendingDelive
          JOIN _webhooks w ON w.id = d.webhook_id
          WHERE d.status = 'pending' AND d.next_try_at <= now()
          ORDER BY d.next_try_at
-         LIMIT $1",
+         LIMIT $1
+         FOR UPDATE OF d SKIP LOCKED",
     )
     .bind(limit)
     .fetch_all(pool)

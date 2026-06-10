@@ -101,21 +101,25 @@ pub fn spawn_worker(pool: PgPool) {
             match poll_pending(&pool, 20).await {
                 Ok(rows) => {
                     for row in rows {
-                        let result = deliver(&client, &row).await;
-                        match result {
-                            Ok(()) => {
-                                if let Err(e) = mark_delivery_success(&pool, row.id).await {
-                                    tracing::warn!(error = %e, "mark_delivery_success failed");
+                        let pool2 = pool.clone();
+                        let client2 = client.clone();
+                        tokio::task::spawn(async move {
+                            let result = deliver(&client2, &row).await;
+                            match result {
+                                Ok(()) => {
+                                    if let Err(e) = mark_delivery_success(&pool2, row.id).await {
+                                        tracing::warn!(error = %e, "mark_delivery_success failed");
+                                    }
+                                }
+                                Err(msg) => {
+                                    if let Err(e) =
+                                        mark_delivery_failed(&pool2, row.id, row.attempt, &msg).await
+                                    {
+                                        tracing::warn!(error = %e, "mark_delivery_failed failed");
+                                    }
                                 }
                             }
-                            Err(msg) => {
-                                if let Err(e) =
-                                    mark_delivery_failed(&pool, row.id, row.attempt, &msg).await
-                                {
-                                    tracing::warn!(error = %e, "mark_delivery_failed failed");
-                                }
-                            }
-                        }
+                        });
                     }
                 }
                 Err(e) => tracing::warn!(error = %e, "webhook poll_pending failed"),
