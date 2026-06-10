@@ -356,15 +356,22 @@ function TypePanel({
         <h2>{isBuilder ? "Content-Type Builder" : "Content Manager"}</h2>
         {isBuilder && (
           <button
-            className={"rs-btn rs-btn--sm " + (builder.dirty ? "rs-btn--primary" : "rs-btn--ghost")}
+            className={"rs-btn rs-btn--primary rs-btn--sm rs-panel-save" + (builder.saving ? " is-saving" : "")}
             disabled={!builder.dirty || builder.saving}
             onClick={onSaveClick}
-            title="Save schema changes"
+            title={builder.dirty ? "Save schema changes" : "No unsaved changes"}
           >
-            {builder.saving ? "Saving…" : "Save"}
+            {builder.saving
+              ? <><Icons.spinner size={14} className="rs-spin" /> Saving…</>
+              : <><Icons.save size={14} /> Save</>}
           </button>
         )}
       </div>
+      {isBuilder && builder.dirty && !builder.saving && (
+        <div className="rs-panel-dirty">
+          <span className="rs-dot" /> Unsaved schema changes
+        </div>
+      )}
       <div className="rs-panel-scroll">
         <div className="rs-panel-search">
           <Icons.search size={15} />

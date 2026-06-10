@@ -142,6 +142,12 @@ export const Icons = {
   braces: (p: IconProps) => (
     <Ic {...p} d={<g><path d="M8 4a3 3 0 0 0-3 3v2a2 2 0 0 1-2 2 2 2 0 0 1 2 2v2a3 3 0 0 0 3 3"/><path d="M16 4a3 3 0 0 1 3 3v2a2 2 0 0 0 2 2 2 2 0 0 0-2 2v2a3 3 0 0 1-3 3"/></g>} />
   ),
+  save: (p: IconProps) => (
+    <Ic {...p} d={<g><path d="M5 4h11l3 3v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"/><rect x="8" y="4" width="8" height="5" rx=".5"/><rect x="7" y="13" width="10" height="6" rx="1"/></g>} />
+  ),
+  spinner: (p: IconProps) => (
+    <Ic {...p} d={<path d="M12 3a9 9 0 1 0 9 9" strokeLinecap="round" />} />
+  ),
 } as const;
 
 export type IconKey = keyof typeof Icons;
