@@ -1,7 +1,7 @@
 //! Shared integration-test plumbing. Spins a real Postgres via testcontainers
 //! and the rustapi router in-process, hitting it via reqwest.
 
-use rustapi_http::{build_router, resolve_provider, secret_key_from_env, AppConfig, AppState, NoopHook, NoopSink, RoleAuthz, WriteHook};
+use rustapi_http::{build_router, resolve_provider, secret_key_from_env, AppConfig, AppState, EventSink, NoopHook, NoopSink, RoleAuthz, WriteHook};
 use rustapi_schema::{ComponentRegistry, ComponentService, SchemaRegistry, SchemaService, MIGRATOR};
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -54,10 +54,25 @@ impl TestApp {
         Self::spawn_full(true, Arc::new(NoopHook), routers).await
     }
 
+    /// Spawn with a custom `EventSink` injected into `AppState`.
+    #[allow(dead_code)]
+    pub async fn spawn_with_sink(sink: Arc<dyn EventSink>) -> Self {
+        Self::spawn_full_with_sink(true, Arc::new(NoopHook), vec![], sink).await
+    }
+
     async fn spawn_full(
         docs_enabled: bool,
         hook: Arc<dyn WriteHook>,
         routers: Vec<axum::Router<AppState>>,
+    ) -> Self {
+        Self::spawn_full_with_sink(docs_enabled, hook, routers, Arc::new(NoopSink)).await
+    }
+
+    async fn spawn_full_with_sink(
+        docs_enabled: bool,
+        hook: Arc<dyn WriteHook>,
+        routers: Vec<axum::Router<AppState>>,
+        sink: Arc<dyn EventSink>,
     ) -> Self {
         let pg = PgImage::default().start().await.expect("pg start");
         let port = pg.get_host_port_ipv4(5432).await.expect("pg port");
@@ -90,7 +105,7 @@ impl TestApp {
             schemas: schemas.clone(),
             components: components.clone(),
             authz: Arc::new(RoleAuthz),
-            events: Arc::new(NoopSink),
+            events: sink,
             hooks: hook,
             config: AppConfig {
                 jwt_secret: JWT_SECRET.into(),
