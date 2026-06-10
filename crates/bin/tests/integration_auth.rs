@@ -21,12 +21,7 @@ async fn setup_is_self_closing() {
 async fn setup_status_flips_after_setup() {
     // spawn() runs setup once, so by the time we get the app, setup is closed.
     let app = TestApp::spawn().await;
-    let resp = app
-        .client
-        .get(app.url("/auth/setup"))
-        .send()
-        .await
-        .unwrap();
+    let resp = app.client.get(app.url("/auth/setup")).send().await.unwrap();
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["setup_required"], false);
@@ -133,6 +128,11 @@ async fn me_returns_principal_with_token() {
 async fn protected_route_rejects_missing_token() {
     let app = TestApp::spawn().await;
     // /api/<type> is behind require_auth; no token → 401.
-    let resp = app.client.get(app.url("/api/article")).send().await.unwrap();
+    let resp = app
+        .client
+        .get(app.url("/api/article"))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 401);
 }

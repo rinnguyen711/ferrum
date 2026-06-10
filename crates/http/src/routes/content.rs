@@ -10,8 +10,8 @@ use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Json, Router};
 use rustapi_core::{Action, ContentType, Error, Event, Principal, ValidationErrors};
-use rustapi_sql::PublishFilter;
 use rustapi_schema::bind::{bind_all, bind_all_as};
+use rustapi_sql::PublishFilter;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use sqlx::Row;
@@ -27,12 +27,23 @@ struct GetParams {
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/:type", get(list).post(create))
-        .route("/api/:type/:id", get(get_one).put(update).delete(delete_one))
+        .route(
+            "/api/:type/:id",
+            get(get_one).put(update).delete(delete_one),
+        )
         .route("/api/:type/:id/publish", axum::routing::post(publish_entry))
-        .route("/api/:type/:id/unpublish", axum::routing::post(unpublish_entry))
+        .route(
+            "/api/:type/:id/unpublish",
+            axum::routing::post(unpublish_entry),
+        )
 }
 
-async fn ensure(state: &AppState, principal: &Principal, action: Action, ct: &str) -> Result<(), ApiError> {
+async fn ensure(
+    state: &AppState,
+    principal: &Principal,
+    action: Action,
+    ct: &str,
+) -> Result<(), ApiError> {
     if !state.authz.can(principal, action, ct).await {
         return Err(ApiError(Error::Forbidden));
     }
@@ -47,12 +58,15 @@ async fn list(
     axum::extract::Extension(principal): axum::extract::Extension<Principal>,
 ) -> Result<Json<Value>, ApiError> {
     ensure(&state, &principal, Action::ContentRead, &ct_name).await?;
-    let ct = state.schemas.registry().get(&ct_name).await.ok_or(ApiError(Error::NotFound))?;
+    let ct = state
+        .schemas
+        .registry()
+        .get(&ct_name)
+        .await
+        .ok_or(ApiError(Error::NotFound))?;
     if ct.kind == rustapi_core::ContentTypeKind::Single {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::single(
-                "use /api/single-types/:name for single types",
-            ),
+            rustapi_core::ValidationErrors::single("use /api/single-types/:name for single types"),
         )));
     }
     let populate_param = params.populate.clone();
@@ -96,7 +110,9 @@ async fn list(
     if let Some(raw) = populate_param.as_deref() {
         apply_populate(&state, &ct, raw, &mut maps).await?;
     }
-    crate::media_embed::apply_media_embed(&state.pool, &ct, &mut maps).await.map_err(ApiError)?;
+    crate::media_embed::apply_media_embed(&state.pool, &ct, &mut maps)
+        .await
+        .map_err(ApiError)?;
 
     let data: Vec<Value> = maps.into_iter().map(Value::Object).collect();
 
@@ -122,12 +138,15 @@ async fn create(
     Json(body): Json<Map<String, Value>>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     ensure(&state, &principal, Action::ContentWrite, &ct_name).await?;
-    let ct = state.schemas.registry().get(&ct_name).await.ok_or(ApiError(Error::NotFound))?;
+    let ct = state
+        .schemas
+        .registry()
+        .get(&ct_name)
+        .await
+        .ok_or(ApiError(Error::NotFound))?;
     if ct.kind == rustapi_core::ContentTypeKind::Single {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::single(
-                "use /api/single-types/:name for single types",
-            ),
+            rustapi_core::ValidationErrors::single("use /api/single-types/:name for single types"),
         )));
     }
 
@@ -136,7 +155,11 @@ async fn create(
         operation: WriteOp::Create,
         principal: &principal,
     };
-    let body = state.hooks.before_write(&ctx, body).await.map_err(ApiError)?;
+    let body = state
+        .hooks
+        .before_write(&ctx, body)
+        .await
+        .map_err(ApiError)?;
     validate_component_fields(&state, &ct, &body).await?;
 
     let (binds_map, checks, links, media_checks, media_links) = body_to_binds(&ct, body, true)?;
@@ -150,7 +173,10 @@ async fn create(
 
     let mut tx = state.pool.begin().await.map_err(db)?;
     let q = bind_all(sqlx::query(&sql), &binds);
-    let row = q.fetch_one(&mut *tx).await.map_err(|e| db_with_relation_context(e, &checks))?;
+    let row = q
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| db_with_relation_context(e, &checks))?;
     let record = row_to_json(&ct, &row)?;
     let new_id = record
         .get("id")
@@ -162,8 +188,18 @@ async fn create(
     write_media_links(&mut tx, &ct.name, &media_links, new_id).await?;
     tx.commit().await.map_err(db)?;
 
-    state.hooks.after_write(&ctx, &record).await.map_err(ApiError)?;
-    state.events.emit(Event::EntryCreated { content_type: ct.name.clone(), id: new_id }).await;
+    state
+        .hooks
+        .after_write(&ctx, &record)
+        .await
+        .map_err(ApiError)?;
+    state
+        .events
+        .emit(Event::EntryCreated {
+            content_type: ct.name.clone(),
+            id: new_id,
+        })
+        .await;
     Ok((StatusCode::CREATED, Json(record)))
 }
 
@@ -174,12 +210,15 @@ async fn get_one(
     axum::extract::Extension(principal): axum::extract::Extension<Principal>,
 ) -> Result<Json<Value>, ApiError> {
     ensure(&state, &principal, Action::ContentRead, &ct_name).await?;
-    let ct = state.schemas.registry().get(&ct_name).await.ok_or(ApiError(Error::NotFound))?;
+    let ct = state
+        .schemas
+        .registry()
+        .get(&ct_name)
+        .await
+        .ok_or(ApiError(Error::NotFound))?;
     if ct.kind == rustapi_core::ContentTypeKind::Single {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::single(
-                "use /api/single-types/:name for single types",
-            ),
+            rustapi_core::ValidationErrors::single("use /api/single-types/:name for single types"),
         )));
     }
     let (sql, binds) = rustapi_sql::select_by_id(&ct.name, id)
@@ -200,7 +239,9 @@ async fn get_one(
     }
     {
         let mut one = vec![std::mem::take(&mut map)];
-        crate::media_embed::apply_media_embed(&state.pool, &ct, &mut one).await.map_err(ApiError)?;
+        crate::media_embed::apply_media_embed(&state.pool, &ct, &mut one)
+            .await
+            .map_err(ApiError)?;
         map = one.pop().unwrap_or_default();
     }
     Ok(Json(Value::Object(map)))
@@ -213,12 +254,15 @@ async fn update(
     Json(body): Json<Map<String, Value>>,
 ) -> Result<Json<Value>, ApiError> {
     ensure(&state, &principal, Action::ContentWrite, &ct_name).await?;
-    let ct = state.schemas.registry().get(&ct_name).await.ok_or(ApiError(Error::NotFound))?;
+    let ct = state
+        .schemas
+        .registry()
+        .get(&ct_name)
+        .await
+        .ok_or(ApiError(Error::NotFound))?;
     if ct.kind == rustapi_core::ContentTypeKind::Single {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::single(
-                "use /api/single-types/:name for single types",
-            ),
+            rustapi_core::ValidationErrors::single("use /api/single-types/:name for single types"),
         )));
     }
 
@@ -227,7 +271,11 @@ async fn update(
         operation: WriteOp::Update,
         principal: &principal,
     };
-    let body = state.hooks.before_write(&ctx, body).await.map_err(ApiError)?;
+    let body = state
+        .hooks
+        .before_write(&ctx, body)
+        .await
+        .map_err(ApiError)?;
     validate_component_fields(&state, &ct, &body).await?;
 
     let (mut binds_map, checks, links, media_checks, media_links) = body_to_binds(&ct, body, true)?;
@@ -279,8 +327,18 @@ async fn update(
     tx.commit().await.map_err(db)?;
 
     let record = row_to_json(&ct, &row)?;
-    state.hooks.after_write(&ctx, &record).await.map_err(ApiError)?;
-    state.events.emit(Event::EntryUpdated { content_type: ct.name.clone(), id }).await;
+    state
+        .hooks
+        .after_write(&ctx, &record)
+        .await
+        .map_err(ApiError)?;
+    state
+        .events
+        .emit(Event::EntryUpdated {
+            content_type: ct.name.clone(),
+            id,
+        })
+        .await;
     Ok(Json(record))
 }
 
@@ -290,12 +348,15 @@ async fn delete_one(
     axum::extract::Extension(principal): axum::extract::Extension<Principal>,
 ) -> Result<StatusCode, ApiError> {
     ensure(&state, &principal, Action::ContentDelete, &ct_name).await?;
-    let _ct = state.schemas.registry().get(&ct_name).await.ok_or(ApiError(Error::NotFound))?;
+    let _ct = state
+        .schemas
+        .registry()
+        .get(&ct_name)
+        .await
+        .ok_or(ApiError(Error::NotFound))?;
     if _ct.kind == rustapi_core::ContentTypeKind::Single {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::single(
-                "use /api/single-types/:name for single types",
-            ),
+            rustapi_core::ValidationErrors::single("use /api/single-types/:name for single types"),
         )));
     }
     let (sql, binds) = rustapi_sql::delete(&ct_name, id)
@@ -305,7 +366,13 @@ async fn delete_one(
     if result.rows_affected() == 0 {
         return Err(ApiError(Error::NotFound));
     }
-    state.events.emit(Event::EntryDeleted { content_type: ct_name.clone(), id }).await;
+    state
+        .events
+        .emit(Event::EntryDeleted {
+            content_type: ct_name.clone(),
+            id,
+        })
+        .await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -353,15 +420,8 @@ async fn apply_populate(
                 source,
                 fk_col,
             } => {
-                populate::apply_inverse(
-                    &state.pool,
-                    registry,
-                    rows,
-                    &field_name,
-                    &source,
-                    &fk_col,
-                )
-                .await?;
+                populate::apply_inverse(&state.pool, registry, rows, &field_name, &source, &fk_col)
+                    .await?;
             }
             PopulateField::InverseOne {
                 field_name,
@@ -429,7 +489,9 @@ async fn verify_relation_targets_exist(
             .await
             .map_err(db)?;
         for r in &rows {
-            let id: Uuid = r.try_get("id").map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e))))?;
+            let id: Uuid = r
+                .try_get("id")
+                .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e))))?;
             found.insert(id);
         }
     }
@@ -505,10 +567,16 @@ async fn verify_link_targets_exist(
         let table = rustapi_sql::table_name(&plan.target)
             .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
         let sql = format!("SELECT id FROM {table} WHERE id = ANY($1)");
-        let rows = sqlx::query(&sql).bind(&plan.ids).fetch_all(&state.pool).await.map_err(db)?;
+        let rows = sqlx::query(&sql)
+            .bind(&plan.ids)
+            .fetch_all(&state.pool)
+            .await
+            .map_err(db)?;
         let mut found = std::collections::HashSet::new();
         for r in &rows {
-            let id: Uuid = r.try_get("id").map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e))))?;
+            let id: Uuid = r
+                .try_get("id")
+                .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e))))?;
             found.insert(id);
         }
         let missing: Vec<String> = plan
@@ -542,7 +610,11 @@ async fn write_links(
         }
         let (del_sql, _) = rustapi_sql::delete_links(owner_type, &plan.field, owner_id)
             .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
-        sqlx::query(&del_sql).bind(owner_id).execute(&mut **tx).await.map_err(db)?;
+        sqlx::query(&del_sql)
+            .bind(owner_id)
+            .execute(&mut **tx)
+            .await
+            .map_err(db)?;
         if plan.ids.is_empty() {
             continue;
         }
@@ -562,13 +634,24 @@ async fn write_links(
 /// Existence pre-check for single-media ids. All target `_media_assets`, so one
 /// batched SELECT covers every check. Returns 422 naming the first field with a
 /// missing id (payload order).
-async fn verify_media_targets_exist(state: &AppState, checks: &[crate::entry::MediaCheck]) -> Result<(), ApiError> {
-    if checks.is_empty() { return Ok(()); }
+async fn verify_media_targets_exist(
+    state: &AppState,
+    checks: &[crate::entry::MediaCheck],
+) -> Result<(), ApiError> {
+    if checks.is_empty() {
+        return Ok(());
+    }
     let ids: Vec<Uuid> = checks.iter().map(|c| c.id).collect();
-    let rows = sqlx::query("SELECT id FROM \"_media_assets\" WHERE id = ANY($1)").bind(&ids).fetch_all(&state.pool).await.map_err(db)?;
+    let rows = sqlx::query("SELECT id FROM \"_media_assets\" WHERE id = ANY($1)")
+        .bind(&ids)
+        .fetch_all(&state.pool)
+        .await
+        .map_err(db)?;
     let mut found = std::collections::HashSet::new();
     for r in &rows {
-        let id: Uuid = r.try_get("id").map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e))))?;
+        let id: Uuid = r
+            .try_get("id")
+            .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e))))?;
         found.insert(id);
     }
     let mut current_field: Option<&str> = None;
@@ -576,31 +659,54 @@ async fn verify_media_targets_exist(state: &AppState, checks: &[crate::entry::Me
     for c in checks {
         if !found.contains(&c.id) {
             match current_field {
-                None => { current_field = Some(&c.field); missing.push(c.id.to_string()); }
+                None => {
+                    current_field = Some(&c.field);
+                    missing.push(c.id.to_string());
+                }
                 Some(name) if name == c.field => missing.push(c.id.to_string()),
                 Some(_) => break,
             }
         }
     }
     if let Some(field) = current_field {
-        return Err(ApiError(Error::Validation(ValidationErrors::relation_target_missing(field, missing))));
+        return Err(ApiError(Error::Validation(
+            ValidationErrors::relation_target_missing(field, missing),
+        )));
     }
     Ok(())
 }
 
 /// Existence pre-check for multiple-media ids, per field.
-async fn verify_media_link_targets_exist(state: &AppState, links: &[crate::entry::MediaLinkPlan]) -> Result<(), ApiError> {
+async fn verify_media_link_targets_exist(
+    state: &AppState,
+    links: &[crate::entry::MediaLinkPlan],
+) -> Result<(), ApiError> {
     for plan in links {
-        if plan.ids.is_empty() { continue; }
-        let rows = sqlx::query("SELECT id FROM \"_media_assets\" WHERE id = ANY($1)").bind(&plan.ids).fetch_all(&state.pool).await.map_err(db)?;
+        if plan.ids.is_empty() {
+            continue;
+        }
+        let rows = sqlx::query("SELECT id FROM \"_media_assets\" WHERE id = ANY($1)")
+            .bind(&plan.ids)
+            .fetch_all(&state.pool)
+            .await
+            .map_err(db)?;
         let mut found = std::collections::HashSet::new();
         for r in &rows {
-            let id: Uuid = r.try_get("id").map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e))))?;
+            let id: Uuid = r
+                .try_get("id")
+                .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e))))?;
             found.insert(id);
         }
-        let missing: Vec<String> = plan.ids.iter().filter(|id| !found.contains(id)).map(|id| id.to_string()).collect();
+        let missing: Vec<String> = plan
+            .ids
+            .iter()
+            .filter(|id| !found.contains(id))
+            .map(|id| id.to_string())
+            .collect();
         if !missing.is_empty() {
-            return Err(ApiError(Error::Validation(ValidationErrors::relation_target_missing(&plan.field, missing))));
+            return Err(ApiError(Error::Validation(
+                ValidationErrors::relation_target_missing(&plan.field, missing),
+            )));
         }
     }
     Ok(())
@@ -630,12 +736,15 @@ async fn set_publish_state(
     publish: bool,
 ) -> Result<Json<Value>, ApiError> {
     ensure(&state, &principal, Action::ContentWrite, &ct_name).await?;
-    let ct = state.schemas.registry().get(&ct_name).await.ok_or(ApiError(Error::NotFound))?;
+    let ct = state
+        .schemas
+        .registry()
+        .get(&ct_name)
+        .await
+        .ok_or(ApiError(Error::NotFound))?;
     if ct.kind == rustapi_core::ContentTypeKind::Single {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::single(
-                "use /api/single-types/:name for single types",
-            ),
+            rustapi_core::ValidationErrors::single("use /api/single-types/:name for single types"),
         )));
     }
     if !ct.draft_publish() {
@@ -655,9 +764,15 @@ async fn set_publish_state(
     let row = q.fetch_optional(&state.pool).await.map_err(db)?;
     let row = row.ok_or(ApiError(Error::NotFound))?;
     let ev = if publish {
-        Event::EntryPublished { content_type: ct.name.clone(), id }
+        Event::EntryPublished {
+            content_type: ct.name.clone(),
+            id,
+        }
     } else {
-        Event::EntryUnpublished { content_type: ct.name.clone(), id }
+        Event::EntryUnpublished {
+            content_type: ct.name.clone(),
+            id,
+        }
     };
     state.events.emit(ev).await;
     Ok(Json(row_to_json(&ct, &row)?))
@@ -672,14 +787,27 @@ async fn write_media_links(
     owner_id: Uuid,
 ) -> Result<(), ApiError> {
     for plan in links {
-        if !plan.present { continue; }
+        if !plan.present {
+            continue;
+        }
         let (del_sql, _) = rustapi_sql::delete_media_links(owner_type, &plan.field, owner_id)
             .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
-        sqlx::query(&del_sql).bind(owner_id).execute(&mut **tx).await.map_err(db)?;
-        if plan.ids.is_empty() { continue; }
+        sqlx::query(&del_sql)
+            .bind(owner_id)
+            .execute(&mut **tx)
+            .await
+            .map_err(db)?;
+        if plan.ids.is_empty() {
+            continue;
+        }
         let (ins_sql, _) = rustapi_sql::insert_media_links(owner_type, &plan.field, owner_id)
             .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
-        sqlx::query(&ins_sql).bind(owner_id).bind(&plan.ids).execute(&mut **tx).await.map_err(db)?;
+        sqlx::query(&ins_sql)
+            .bind(owner_id)
+            .bind(&plan.ids)
+            .execute(&mut **tx)
+            .await
+            .map_err(db)?;
     }
     Ok(())
 }
@@ -692,29 +820,28 @@ async fn validate_component_fields(
     body: &serde_json::Map<String, serde_json::Value>,
 ) -> Result<(), ApiError> {
     for f in &ct.fields {
-        let Some(meta) = f.component_meta() else { continue };
-        let component = state
-            .components
-            .get(&meta.component)
-            .await
-            .ok_or_else(|| {
-                ApiError(Error::Validation(rustapi_core::ValidationErrors::field(
-                    &f.name,
-                    format!("component `{}` not found in registry", meta.component),
-                )))
-            })?;
+        let Some(meta) = f.component_meta() else {
+            continue;
+        };
+        let component = state.components.get(&meta.component).await.ok_or_else(|| {
+            ApiError(Error::Validation(rustapi_core::ValidationErrors::field(
+                &f.name,
+                format!("component `{}` not found in registry", meta.component),
+            )))
+        })?;
 
         let raw = body.get(&f.name);
 
         if f.required && (raw.is_none() || raw == Some(&serde_json::Value::Null)) {
-            return Err(ApiError(Error::Validation(rustapi_core::ValidationErrors::field(
-                &f.name,
-                "field is required",
-            ))));
+            return Err(ApiError(Error::Validation(
+                rustapi_core::ValidationErrors::field(&f.name, "field is required"),
+            )));
         }
 
         let Some(raw) = raw else { continue };
-        if raw.is_null() { continue; }
+        if raw.is_null() {
+            continue;
+        }
 
         if meta.multiple {
             let arr = raw.as_array().ok_or_else(|| {
@@ -724,7 +851,11 @@ async fn validate_component_fields(
                 )))
             })?;
             for (i, item) in arr.iter().enumerate() {
-                validate_component_instance(item, &component.fields, &format!("{}[{}]", f.name, i))?;
+                validate_component_instance(
+                    item,
+                    &component.fields,
+                    &format!("{}[{}]", f.name, i),
+                )?;
             }
         } else {
             validate_component_instance(raw, &component.fields, &f.name)?;
@@ -750,10 +881,9 @@ fn validate_component_instance(
         let v = obj.get(&f.name).unwrap_or(&serde_json::Value::Null);
 
         if f.required && v.is_null() {
-            return Err(ApiError(Error::Validation(rustapi_core::ValidationErrors::field(
-                &field_path,
-                "field is required",
-            ))));
+            return Err(ApiError(Error::Validation(
+                rustapi_core::ValidationErrors::field(&field_path, "field is required"),
+            )));
         }
         if !v.is_null() {
             rustapi_core::BoundValue::from_json(f.kind, v).map_err(|_| {

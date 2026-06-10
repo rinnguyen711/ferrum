@@ -95,7 +95,11 @@ async fn implicit_and_combines() {
     let app = TestApp::spawn().await;
     make_type(&app).await;
     seed(&app).await;
-    let body = list_body(&app, "filters[category][$eq]=x&filters[published][$eq]=true").await;
+    let body = list_body(
+        &app,
+        "filters[category][$eq]=x&filters[published][$eq]=true",
+    )
+    .await;
     assert_eq!(body["meta"]["total"], 1);
     assert_eq!(body["data"][0]["title"], "a");
 }
@@ -149,7 +153,10 @@ async fn eq_on_system_id_column() {
     let id = body["data"][0]["id"].as_str().unwrap().to_string();
 
     let resp = app
-        .admin(app.client.get(app.url(&format!("/api/post?filters[id][$eq]={id}"))))
+        .admin(
+            app.client
+                .get(app.url(&format!("/api/post?filters[id][$eq]={id}"))),
+        )
         .send()
         .await
         .unwrap();
@@ -176,7 +183,10 @@ async fn unknown_op_rejected_422() {
     let app = TestApp::spawn().await;
     make_type(&app).await;
     let resp = app
-        .admin(app.client.get(app.url("/api/post?filters[title][$bogus]=1")))
+        .admin(
+            app.client
+                .get(app.url("/api/post?filters[title][$bogus]=1")),
+        )
         .send()
         .await
         .unwrap();
@@ -200,7 +210,10 @@ async fn duplicate_col_op_rejected_422() {
     let app = TestApp::spawn().await;
     make_type(&app).await;
     let resp = app
-        .admin(app.client.get(app.url("/api/post?filters[views][$eq]=1&filters[views][$eq]=2")))
+        .admin(
+            app.client
+                .get(app.url("/api/post?filters[views][$eq]=1&filters[views][$eq]=2")),
+        )
         .send()
         .await
         .unwrap();

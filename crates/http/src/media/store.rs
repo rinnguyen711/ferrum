@@ -17,13 +17,22 @@ pub struct FolderRow {
 type FolderTuple = (Uuid, Option<Uuid>, String, DateTime<Utc>, DateTime<Utc>);
 
 fn folder_from(t: FolderTuple) -> FolderRow {
-    FolderRow { id: t.0, parent_id: t.1, name: t.2, created_at: t.3, updated_at: t.4 }
+    FolderRow {
+        id: t.0,
+        parent_id: t.1,
+        name: t.2,
+        created_at: t.3,
+        updated_at: t.4,
+    }
 }
 
 const FOLDER_COLS: &str = "id, parent_id, name, created_at, updated_at";
 
 /// List folders under `parent_id` (None = root level), name-sorted.
-pub async fn list_folders(pool: &PgPool, parent_id: Option<Uuid>) -> Result<Vec<FolderRow>, sqlx::Error> {
+pub async fn list_folders(
+    pool: &PgPool,
+    parent_id: Option<Uuid>,
+) -> Result<Vec<FolderRow>, sqlx::Error> {
     let rows = sqlx::query_as::<_, FolderTuple>(&format!(
         "SELECT {FOLDER_COLS} FROM _media_folders \
          WHERE parent_id IS NOT DISTINCT FROM $1 ORDER BY name"
@@ -44,7 +53,11 @@ pub async fn list_all_folders(pool: &PgPool) -> Result<Vec<FolderRow>, sqlx::Err
     Ok(rows.into_iter().map(folder_from).collect())
 }
 
-pub async fn create_folder(pool: &PgPool, parent_id: Option<Uuid>, name: &str) -> Result<FolderRow, sqlx::Error> {
+pub async fn create_folder(
+    pool: &PgPool,
+    parent_id: Option<Uuid>,
+    name: &str,
+) -> Result<FolderRow, sqlx::Error> {
     let t = sqlx::query_as::<_, FolderTuple>(&format!(
         "INSERT INTO _media_folders (parent_id, name) VALUES ($1, $2) RETURNING {FOLDER_COLS}"
     ))
@@ -131,23 +144,50 @@ pub struct AssetRow {
 }
 
 type AssetTuple = (
-    Uuid, Option<Uuid>, String, String, String, Option<String>, Option<String>,
-    String, i64, Option<i32>, Option<i32>, String, Option<String>,
-    DateTime<Utc>, DateTime<Utc>,
+    Uuid,
+    Option<Uuid>,
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    String,
+    i64,
+    Option<i32>,
+    Option<i32>,
+    String,
+    Option<String>,
+    DateTime<Utc>,
+    DateTime<Utc>,
 );
 
 fn asset_from(t: AssetTuple) -> AssetRow {
     AssetRow {
-        id: t.0, folder_id: t.1, provider: t.2, storage_key: t.3, file_name: t.4,
-        alt_text: t.5, caption: t.6, mime_type: t.7, size_bytes: t.8, width: t.9,
-        height: t.10, original_filename: t.11, checksum: t.12, created_at: t.13, updated_at: t.14,
+        id: t.0,
+        folder_id: t.1,
+        provider: t.2,
+        storage_key: t.3,
+        file_name: t.4,
+        alt_text: t.5,
+        caption: t.6,
+        mime_type: t.7,
+        size_bytes: t.8,
+        width: t.9,
+        height: t.10,
+        original_filename: t.11,
+        checksum: t.12,
+        created_at: t.13,
+        updated_at: t.14,
     }
 }
 
 const ASSET_COLS: &str = "id, folder_id, provider, storage_key, file_name, alt_text, caption, \
     mime_type, size_bytes, width, height, original_filename, checksum, created_at, updated_at";
 
-pub async fn list_assets(pool: &PgPool, folder_id: Option<Uuid>) -> Result<Vec<AssetRow>, sqlx::Error> {
+pub async fn list_assets(
+    pool: &PgPool,
+    folder_id: Option<Uuid>,
+) -> Result<Vec<AssetRow>, sqlx::Error> {
     let rows = sqlx::query_as::<_, AssetTuple>(&format!(
         "SELECT {ASSET_COLS} FROM _media_assets \
          WHERE folder_id IS NOT DISTINCT FROM $1 ORDER BY created_at DESC"
@@ -269,7 +309,11 @@ pub async fn get_settings(pool: &PgPool) -> Result<Option<SettingsRow>, sqlx::Er
 }
 
 /// Upsert the singleton settings row.
-pub async fn put_settings(pool: &PgPool, provider: &str, config: &serde_json::Value) -> Result<(), sqlx::Error> {
+pub async fn put_settings(
+    pool: &PgPool,
+    provider: &str,
+    config: &serde_json::Value,
+) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO _media_settings (id, provider, config, updated_at) \
          VALUES (TRUE, $1, $2, now()) \

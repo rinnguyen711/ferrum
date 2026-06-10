@@ -17,9 +17,9 @@ fn event_name(ev: &Event) -> Option<&'static str> {
         Event::EntryDeleted { .. } => Some("entry.deleted"),
         Event::EntryPublished { .. } => Some("entry.published"),
         Event::EntryUnpublished { .. } => Some("entry.unpublished"),
-        Event::SchemaCreated { .. }
-        | Event::SchemaUpdated { .. }
-        | Event::SchemaDeleted { .. } => None,
+        Event::SchemaCreated { .. } | Event::SchemaUpdated { .. } | Event::SchemaDeleted { .. } => {
+            None
+        }
     }
 }
 
@@ -37,11 +37,7 @@ async fn entry_payload(
         Err(_) => return serde_json::json!({ "id": id }),
     };
     let sql = format!("SELECT row_to_json(t) AS data FROM {table} t WHERE id = $1");
-    match sqlx::query(&sql)
-        .bind(id)
-        .fetch_optional(pool)
-        .await
-    {
+    match sqlx::query(&sql).bind(id).fetch_optional(pool).await {
         Ok(Some(row)) => {
             use sqlx::Row;
             row.try_get::<serde_json::Value, _>("data")
@@ -113,7 +109,8 @@ pub fn spawn_worker(pool: PgPool) {
                                 }
                                 Err(msg) => {
                                     if let Err(e) =
-                                        mark_delivery_failed(&pool2, row.id, row.attempt, &msg).await
+                                        mark_delivery_failed(&pool2, row.id, row.attempt, &msg)
+                                            .await
                                     {
                                         tracing::warn!(error = %e, "mark_delivery_failed failed");
                                     }

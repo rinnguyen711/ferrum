@@ -27,8 +27,16 @@ async fn injected_route_is_reachable_with_auth() {
         .await
         .expect("probe request");
 
-    assert_eq!(resp.status(), 200, "authed probe should reach injected route");
-    assert_eq!(resp.text().await.expect("body"), "test", "probe returns api_version from AppState");
+    assert_eq!(
+        resp.status(),
+        200,
+        "authed probe should reach injected route"
+    );
+    assert_eq!(
+        resp.text().await.expect("body"),
+        "test",
+        "probe returns api_version from AppState"
+    );
 }
 
 #[tokio::test]
@@ -42,5 +50,9 @@ async fn injected_route_requires_auth() {
         .await
         .expect("probe request");
 
-    assert_eq!(resp.status(), 401, "unauthed probe should be rejected by require_auth");
+    assert_eq!(
+        resp.status(),
+        401,
+        "unauthed probe should be rejected by require_auth"
+    );
 }

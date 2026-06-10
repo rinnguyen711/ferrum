@@ -91,26 +91,43 @@ impl ComponentService {
         self.registry.get(uid).await
     }
 
-    pub async fn create(&self, uid: &str, display_name: &str, fields: Vec<Field>) -> Result<Component, Error> {
+    pub async fn create(
+        &self,
+        uid: &str,
+        display_name: &str,
+        fields: Vec<Field>,
+    ) -> Result<Component, Error> {
         validate_uid(uid)?;
         validate_inner_fields(&fields)?;
         for f in &fields {
-            f.validate().map_err(|e| Error::Validation(ValidationErrors::field(&f.name, e.to_string())))?;
+            f.validate()
+                .map_err(|e| Error::Validation(ValidationErrors::field(&f.name, e.to_string())))?;
         }
         if self.registry.get(uid).await.is_some() {
             return Err(Error::Conflict(format!("component `{uid}` already exists")));
         }
-        let c = self.store.create(uid, display_name, &fields).await.map_err(internal)?;
+        let c = self
+            .store
+            .create(uid, display_name, &fields)
+            .await
+            .map_err(internal)?;
         self.registry.insert(c.clone()).await;
         Ok(c)
     }
 
-    pub async fn update(&self, uid: &str, display_name: &str, fields: Vec<Field>) -> Result<Component, Error> {
+    pub async fn update(
+        &self,
+        uid: &str,
+        display_name: &str,
+        fields: Vec<Field>,
+    ) -> Result<Component, Error> {
         validate_inner_fields(&fields)?;
         for f in &fields {
-            f.validate().map_err(|e| Error::Validation(ValidationErrors::field(&f.name, e.to_string())))?;
+            f.validate()
+                .map_err(|e| Error::Validation(ValidationErrors::field(&f.name, e.to_string())))?;
         }
-        let c = self.store
+        let c = self
+            .store
             .update(uid, display_name, &fields)
             .await
             .map_err(internal)?

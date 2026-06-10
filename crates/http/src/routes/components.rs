@@ -13,7 +13,10 @@ use serde::Deserialize;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/admin/components", get(list).post(create))
-        .route("/admin/components/:uid", get(get_one).put(update_one).delete(delete_one))
+        .route(
+            "/admin/components/:uid",
+            get(get_one).put(update_one).delete(delete_one),
+        )
 }
 
 async fn list(State(state): State<AppState>) -> Result<Json<Vec<Component>>, ApiError> {
@@ -51,7 +54,10 @@ async fn create(
     State(state): State<AppState>,
     Json(payload): Json<ComponentPayload>,
 ) -> Result<(StatusCode, Json<Component>), ApiError> {
-    let c = state.components.create(&payload.uid, &payload.display_name, payload.fields).await?;
+    let c = state
+        .components
+        .create(&payload.uid, &payload.display_name, payload.fields)
+        .await?;
     Ok((StatusCode::CREATED, Json(c)))
 }
 
@@ -60,7 +66,10 @@ async fn update_one(
     Path(uid): Path<String>,
     Json(payload): Json<UpdatePayload>,
 ) -> Result<Json<Component>, ApiError> {
-    let c = state.components.update(&uid, &payload.display_name, payload.fields).await?;
+    let c = state
+        .components
+        .update(&uid, &payload.display_name, payload.fields)
+        .await?;
     Ok(Json(c))
 }
 

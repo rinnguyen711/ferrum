@@ -81,9 +81,7 @@ pub fn mount_studio(router: Router, dir: impl AsRef<Path>) -> Router {
         async move {
             let safe_rest = sanitize_relative_path(&rest);
             let candidate = dir.join(&safe_rest);
-            if tokio::fs::try_exists(&candidate).await.unwrap_or(false)
-                && candidate.is_file()
-            {
+            if tokio::fs::try_exists(&candidate).await.unwrap_or(false) && candidate.is_file() {
                 return serve_file_or_404(candidate, guess_mime(&safe_rest)).await;
             }
             serve_file_or_404(dir.join("index.html"), "text/html; charset=utf-8").await
@@ -92,12 +90,7 @@ pub fn mount_studio(router: Router, dir: impl AsRef<Path>) -> Router {
 
     async fn serve_file_or_404(path: std::path::PathBuf, mime: &'static str) -> Response {
         match tokio::fs::read(&path).await {
-            Ok(bytes) => (
-                StatusCode::OK,
-                [(header::CONTENT_TYPE, mime)],
-                bytes,
-            )
-                .into_response(),
+            Ok(bytes) => (StatusCode::OK, [(header::CONTENT_TYPE, mime)], bytes).into_response(),
             Err(_) => (StatusCode::NOT_FOUND, "not found").into_response(),
         }
     }

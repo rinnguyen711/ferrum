@@ -12,7 +12,10 @@ use serde::Deserialize;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/admin/content-types", get(list).post(create))
-        .route("/admin/content-types/:name", get(get_one).delete(delete_one))
+        .route(
+            "/admin/content-types/:name",
+            get(get_one).delete(delete_one),
+        )
         .route("/admin/content-types/:name", patch(patch_one))
 }
 
@@ -43,7 +46,12 @@ async fn create(
     Json(payload): Json<NewContentType>,
 ) -> Result<(StatusCode, Json<ContentType>), ApiError> {
     let ct = state.schemas.create(payload).await?;
-    state.events.emit(Event::SchemaCreated { name: ct.name.clone() }).await;
+    state
+        .events
+        .emit(Event::SchemaCreated {
+            name: ct.name.clone(),
+        })
+        .await;
     Ok((StatusCode::CREATED, Json(ct)))
 }
 
@@ -53,7 +61,12 @@ async fn patch_one(
     Json(payload): Json<PatchContentType>,
 ) -> Result<Json<ContentType>, ApiError> {
     let ct = state.schemas.patch(&name, payload).await?;
-    state.events.emit(Event::SchemaUpdated { name: ct.name.clone() }).await;
+    state
+        .events
+        .emit(Event::SchemaUpdated {
+            name: ct.name.clone(),
+        })
+        .await;
     Ok(Json(ct))
 }
 
@@ -86,8 +99,12 @@ async fn inject_component_fields(
     use serde_json::json;
 
     for f in &mut ct.fields {
-        if f.kind != FieldKind::Component { continue; }
-        let Some(meta) = f.component_meta() else { continue };
+        if f.kind != FieldKind::Component {
+            continue;
+        }
+        let Some(meta) = f.component_meta() else {
+            continue;
+        };
         if let Some(comp) = state.components.get(&meta.component).await {
             let fields_json = serde_json::to_value(&comp.fields).unwrap_or(json!([]));
             if let serde_json::Value::Object(ref mut m) = f.kind_meta {

@@ -129,7 +129,9 @@ impl SchemaRegistry {
         let map = self.inner.read().await;
         for ct in map.values() {
             for f in &ct.fields {
-                let Some(meta) = f.relation_meta() else { continue };
+                let Some(meta) = f.relation_meta() else {
+                    continue;
+                };
                 if meta.target == target_name && meta.inverse.as_deref() == Some(inverse_name) {
                     return Some((ct.name.clone(), f.physical_column()));
                 }

@@ -121,8 +121,10 @@ async fn patch_add_required_no_default_on_populated_table_surfaces_db_error() {
     assert_eq!(resp.status(), 422, "{}", resp.text().await.unwrap());
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["error"]["code"], "validation_failed");
-    assert!(body["error"]["details"]["db"]["code"].is_string(),
-        "expected details.db.code present, body={body}");
+    assert!(
+        body["error"]["details"]["db"]["code"].is_string(),
+        "expected details.db.code present, body={body}"
+    );
 }
 
 #[tokio::test]

@@ -36,7 +36,7 @@ impl Authz for RoleAuthz {
                 scopes.iter().any(|s| {
                     s == base  // wildcard: content:read grants all types
                         || (!content_type.is_empty()
-                            && s == &format!("{}:{}", base, content_type)) // specific: content:read:article
+                            && s == &format!("{base}:{content_type}")) // specific: content:read:article
                 })
             }
         }
@@ -95,11 +95,7 @@ pub trait WriteHook: Send + Sync + 'static {
     /// would tell the client the request was rejected even though it persisted.
     /// For fire-and-forget fan-out (webhooks, cache bust) use `EventSink`
     /// instead.
-    async fn after_write(
-        &self,
-        ctx: &WriteContext<'_>,
-        record: &Value,
-    ) -> Result<(), Error> {
+    async fn after_write(&self, ctx: &WriteContext<'_>, record: &Value) -> Result<(), Error> {
         let _ = (ctx, record);
         Ok(())
     }
@@ -173,7 +169,13 @@ mod tests {
     async fn role_authz_union_of_roles() {
         let az = RoleAuthz;
         // editor + viewer → still no schema write
-        assert!(!az.can(&user(&["editor", "viewer"]), Action::SchemaWrite, "x").await);
-        assert!(az.can(&user(&["editor", "viewer"]), Action::ContentWrite, "x").await);
+        assert!(
+            !az.can(&user(&["editor", "viewer"]), Action::SchemaWrite, "x")
+                .await
+        );
+        assert!(
+            az.can(&user(&["editor", "viewer"]), Action::ContentWrite, "x")
+                .await
+        );
     }
 }

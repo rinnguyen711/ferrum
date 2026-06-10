@@ -78,13 +78,21 @@ async fn full_entry_lifecycle() {
     assert_eq!(entry["published"], false);
 
     // List
-    let resp = app.admin(app.client.get(app.url("/api/post"))).send().await.unwrap();
+    let resp = app
+        .admin(app.client.get(app.url("/api/post")))
+        .send()
+        .await
+        .unwrap();
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["meta"]["total"], 1);
     assert_eq!(body["data"][0]["id"], id);
 
     // Get one
-    let resp = app.admin(app.client.get(app.url(&format!("/api/post/{id}")))).send().await.unwrap();
+    let resp = app
+        .admin(app.client.get(app.url(&format!("/api/post/{id}"))))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 200);
 
     // Update
@@ -100,10 +108,18 @@ async fn full_entry_lifecycle() {
     assert_eq!(updated["published"], true);
 
     // Delete
-    let resp = app.admin(app.client.delete(app.url(&format!("/api/post/{id}")))).send().await.unwrap();
+    let resp = app
+        .admin(app.client.delete(app.url(&format!("/api/post/{id}"))))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 204);
 
-    let resp = app.admin(app.client.get(app.url(&format!("/api/post/{id}")))).send().await.unwrap();
+    let resp = app
+        .admin(app.client.get(app.url(&format!("/api/post/{id}"))))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 404);
 }
 
@@ -146,7 +162,10 @@ async fn put_full_replace_nulls_absent_optional_fields() {
         .await
         .unwrap();
     assert_eq!(resp.status(), 201);
-    let id = resp.json::<serde_json::Value>().await.unwrap()["id"].as_str().unwrap().to_string();
+    let id = resp.json::<serde_json::Value>().await.unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
     // PUT without `views` — full replace should null it
     let resp = app
@@ -158,7 +177,11 @@ async fn put_full_replace_nulls_absent_optional_fields() {
     assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
     let updated: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(updated["title"], "Hi v2");
-    assert!(updated["views"].is_null(), "views should be nulled by PUT, got {:?}", updated["views"]);
+    assert!(
+        updated["views"].is_null(),
+        "views should be nulled by PUT, got {:?}",
+        updated["views"]
+    );
     assert_eq!(updated["published"], false);
 }
 
@@ -193,7 +216,10 @@ async fn pagination_and_sort() {
         assert_eq!(resp.status(), 201);
     }
     let resp = app
-        .admin(app.client.get(app.url("/api/post?page=1&pageSize=2&sort=views:desc")))
+        .admin(
+            app.client
+                .get(app.url("/api/post?page=1&pageSize=2&sort=views:desc")),
+        )
         .send()
         .await
         .unwrap();

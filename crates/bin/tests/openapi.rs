@@ -35,21 +35,41 @@ async fn openapi_reflects_created_content_type() {
         .expect("openapi json");
 
     assert_eq!(doc["openapi"], "3.1.0");
-    assert!(doc["paths"]["/api/widget"]["get"].is_object(), "dynamic path present");
-    assert!(doc["components"]["schemas"]["Widget"].is_object(), "response schema present");
+    assert!(
+        doc["paths"]["/api/widget"]["get"].is_object(),
+        "dynamic path present"
+    );
+    assert!(
+        doc["components"]["schemas"]["Widget"].is_object(),
+        "response schema present"
+    );
     assert!(
         doc["components"]["schemas"]["WidgetInput"]["properties"]["id"].is_null(),
         "request schema omits system id"
     );
-    assert!(doc["paths"]["/auth/login"]["post"].is_object(), "static path present");
+    assert!(
+        doc["paths"]["/auth/login"]["post"].is_object(),
+        "static path present"
+    );
 }
 
 #[tokio::test]
 async fn docs_ui_served_as_html() {
     let app = TestApp::spawn().await;
-    let resp = app.client.get(app.url("/docs")).send().await.expect("docs request");
+    let resp = app
+        .client
+        .get(app.url("/docs"))
+        .send()
+        .await
+        .expect("docs request");
     assert_eq!(resp.status(), 200);
-    let ct = resp.headers().get("content-type").unwrap().to_str().unwrap().to_string();
+    let ct = resp
+        .headers()
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
     assert!(ct.starts_with("text/html"), "got content-type {ct}");
     let body = resp.text().await.expect("body");
     assert!(body.contains("swagger-ui"), "page loads Swagger UI");
@@ -59,9 +79,23 @@ async fn docs_ui_served_as_html() {
 async fn docs_disabled_returns_404() {
     let app = TestApp::spawn_with_docs(false).await;
 
-    let spec = app.client.get(app.url("/openapi.json")).send().await.expect("spec request");
-    assert_eq!(spec.status(), 404, "/openapi.json must 404 when docs disabled");
+    let spec = app
+        .client
+        .get(app.url("/openapi.json"))
+        .send()
+        .await
+        .expect("spec request");
+    assert_eq!(
+        spec.status(),
+        404,
+        "/openapi.json must 404 when docs disabled"
+    );
 
-    let ui = app.client.get(app.url("/docs")).send().await.expect("docs request");
+    let ui = app
+        .client
+        .get(app.url("/docs"))
+        .send()
+        .await
+        .expect("docs request");
     assert_eq!(ui.status(), 404, "/docs must 404 when docs disabled");
 }

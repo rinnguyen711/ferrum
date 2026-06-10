@@ -43,7 +43,11 @@ async fn seeds_default_types_and_data() {
         let app = &app;
         let path = path.to_string();
         async move {
-            let r = app.admin(app.client.get(app.url(&path))).send().await.unwrap();
+            let r = app
+                .admin(app.client.get(app.url(&path)))
+                .send()
+                .await
+                .unwrap();
             assert_eq!(r.status(), 200, "{path}");
             let v: Value = r.json().await.unwrap();
             v["meta"]["total"].as_i64().unwrap()
@@ -55,7 +59,10 @@ async fn seeds_default_types_and_data() {
 
     // A populated article resolves its author to a real object.
     let r = app
-        .admin(app.client.get(app.url("/api/article?populate=author&pageSize=1")))
+        .admin(
+            app.client
+                .get(app.url("/api/article?populate=author&pageSize=1")),
+        )
         .send()
         .await
         .unwrap();

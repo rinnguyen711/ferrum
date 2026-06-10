@@ -205,9 +205,11 @@ async fn or_gap_rejected_422() {
     let app = TestApp::spawn().await;
     make_type(&app).await;
     let resp = app
-        .admin(app.client.get(
-            app.url("/api/post?filters[$or][0][title][$eq]=a&filters[$or][2][title][$eq]=b"),
-        ))
+        .admin(
+            app.client.get(
+                app.url("/api/post?filters[$or][0][title][$eq]=a&filters[$or][2][title][$eq]=b"),
+            ),
+        )
         .send()
         .await
         .unwrap();
@@ -219,9 +221,10 @@ async fn not_with_index_rejected_422() {
     let app = TestApp::spawn().await;
     make_type(&app).await;
     let resp = app
-        .admin(app.client.get(
-            app.url("/api/post?filters[$not][0][title][$eq]=a"),
-        ))
+        .admin(
+            app.client
+                .get(app.url("/api/post?filters[$not][0][title][$eq]=a")),
+        )
         .send()
         .await
         .unwrap();

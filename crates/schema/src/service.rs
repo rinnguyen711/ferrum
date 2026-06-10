@@ -2,7 +2,9 @@
 
 use crate::registry::SchemaRegistry;
 use chrono::Utc;
-use rustapi_core::{Cardinality, ContentType, Error, Field, NewContentType, PatchContentType, ValidationErrors};
+use rustapi_core::{
+    Cardinality, ContentType, Error, Field, NewContentType, PatchContentType, ValidationErrors,
+};
 use sqlx::{PgPool, Postgres, Transaction};
 use tracing::instrument;
 use uuid::Uuid;
@@ -10,17 +12,12 @@ use uuid::Uuid;
 /// Decide the published_at DDL action when options change on PATCH.
 /// Returns Ok(true) when the column must be added (enable), Ok(false) when
 /// nothing changes, Err when an unsupported disable is requested.
-pub(crate) fn published_at_transition(
-    was_enabled: bool,
-    now_enabled: bool,
-) -> Result<bool, Error> {
+pub(crate) fn published_at_transition(was_enabled: bool, now_enabled: bool) -> Result<bool, Error> {
     match (was_enabled, now_enabled) {
         (false, true) => Ok(true),
-        (true, false) => Err(Error::Validation(
-            rustapi_core::ValidationErrors::single(
-                "disabling Draft & Publish is not supported",
-            ),
-        )),
+        (true, false) => Err(Error::Validation(rustapi_core::ValidationErrors::single(
+            "disabling Draft & Publish is not supported",
+        ))),
         _ => Ok(false),
     }
 }
@@ -118,16 +115,8 @@ impl SchemaService {
     }
 
     #[instrument(skip(self, payload), fields(name = %name))]
-    pub async fn patch(
-        &self,
-        name: &str,
-        payload: PatchContentType,
-    ) -> Result<ContentType, Error> {
-        let existing = self
-            .registry
-            .get(name)
-            .await
-            .ok_or(Error::NotFound)?;
+    pub async fn patch(&self, name: &str, payload: PatchContentType) -> Result<ContentType, Error> {
+        let existing = self.registry.get(name).await.ok_or(Error::NotFound)?;
         payload.validate(&existing).map_err(Error::from)?;
         validate_relation_cross_refs(&self.registry, name, &payload.add_fields, true).await?;
 
@@ -153,17 +142,28 @@ impl SchemaService {
             if is_m2m {
                 let sql = rustapi_sql::drop_join_table(name, drop_name)
                     .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
-                sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
+                sqlx::query(&sql)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_db_err)?;
             } else if is_multi_media {
                 let sql = rustapi_sql::drop_media_join_table(name, drop_name)
                     .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
-                sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
+                sqlx::query(&sql)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_db_err)?;
             } else {
                 // Single media fields store a FK column named `<field>_id`, not `<field>`.
-                let col = dropped.map(|f| f.physical_column()).unwrap_or_else(|| drop_name.clone());
+                let col = dropped
+                    .map(|f| f.physical_column())
+                    .unwrap_or_else(|| drop_name.clone());
                 let sql = rustapi_sql::drop_column(name, &col)
                     .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
-                sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
+                sqlx::query(&sql)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_db_err)?;
             }
         }
         for f in &payload.add_fields {
@@ -181,7 +181,10 @@ impl SchemaService {
             }
             let sql = rustapi_sql::add_column(name, f)
                 .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
-            sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
+            sqlx::query(&sql)
+                .execute(&mut *tx)
+                .await
+                .map_err(map_db_err)?;
         }
 
         for ext in &payload.extend_enum_values {
@@ -201,7 +204,10 @@ impl SchemaService {
             // alter_enum_values returns two statements joined by "; ". Split and
             // execute each on the same transaction.
             for stmt in sql.split("; ").filter(|s| !s.trim().is_empty()) {
-                sqlx::query(stmt).execute(&mut *tx).await.map_err(map_db_err)?;
+                sqlx::query(stmt)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_db_err)?;
             }
             // Update the in-memory field's kind_meta so the UPDATE below persists
             // the new values list.
@@ -225,7 +231,10 @@ impl SchemaService {
         if published_at_transition(was_enabled, now_enabled)? {
             let sql = rustapi_sql::add_published_at_column(name)
                 .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
-            sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
+            sqlx::query(&sql)
+                .execute(&mut *tx)
+                .await
+                .map_err(map_db_err)?;
         }
 
         let now = Utc::now();
@@ -273,7 +282,10 @@ impl SchemaService {
         for (field, _target) in &owned {
             let sql = rustapi_sql::drop_join_table(name, field)
                 .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
-            sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
+            sqlx::query(&sql)
+                .execute(&mut *tx)
+                .await
+                .map_err(map_db_err)?;
         }
         for (owner, field) in &referencing {
             if owner == name {
@@ -281,9 +293,15 @@ impl SchemaService {
             }
             let sql = rustapi_sql::drop_join_table(owner, field)
                 .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
-            sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
+            sqlx::query(&sql)
+                .execute(&mut *tx)
+                .await
+                .map_err(map_db_err)?;
         }
-        sqlx::query(&drop_sql).execute(&mut *tx).await.map_err(map_db_err)?;
+        sqlx::query(&drop_sql)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_db_err)?;
         sqlx::query("DELETE FROM _content_types WHERE name = $1")
             .bind(name)
             .execute(&mut *tx)
@@ -311,7 +329,9 @@ pub async fn validate_relation_cross_refs(
     is_patch_add: bool,
 ) -> Result<(), Error> {
     for f in candidate_fields {
-        let Some(meta) = f.relation_meta() else { continue };
+        let Some(meta) = f.relation_meta() else {
+            continue;
+        };
 
         if is_patch_add && f.required {
             return Err(Error::Validation(ValidationErrors::field(
@@ -410,8 +430,14 @@ async fn exec_create_join_table(
 ) -> Result<(), Error> {
     let (jt, idx) = rustapi_sql::create_join_table(owner, field, target)
         .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
-    sqlx::query(&jt).execute(&mut **tx).await.map_err(map_db_err)?;
-    sqlx::query(&idx).execute(&mut **tx).await.map_err(map_db_err)?;
+    sqlx::query(&jt)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_err)?;
+    sqlx::query(&idx)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_err)?;
     Ok(())
 }
 
@@ -424,8 +450,14 @@ async fn exec_create_media_join_table(
 ) -> Result<(), Error> {
     let (jt, idx) = rustapi_sql::create_media_join_table(ct, field)
         .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
-    sqlx::query(&jt).execute(&mut **tx).await.map_err(map_db_err)?;
-    sqlx::query(&idx).execute(&mut **tx).await.map_err(map_db_err)?;
+    sqlx::query(&jt)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_err)?;
+    sqlx::query(&idx)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_err)?;
     Ok(())
 }
 

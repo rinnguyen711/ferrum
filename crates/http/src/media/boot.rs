@@ -72,7 +72,8 @@ fn env_config(provider: &str) -> Option<Value> {
 /// Parse `RUSTAPI_SECRET_KEY` (hex, 64 chars → 32 bytes). Returns None if unset.
 pub fn secret_key_from_env() -> Option<[u8; 32]> {
     let hex = std::env::var("RUSTAPI_SECRET_KEY").ok()?;
-    let bytes = (0..hex.len()).step_by(2)
+    let bytes = (0..hex.len())
+        .step_by(2)
         .map(|i| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok())
         .collect::<Option<Vec<u8>>>()?;
     bytes.try_into().ok()

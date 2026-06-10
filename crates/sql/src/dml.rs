@@ -33,7 +33,10 @@ pub enum PublishFilter {
 }
 
 /// `INSERT INTO ct_<name> (cols...) VALUES ($1, $2, ...) RETURNING *`
-pub fn insert(ct: &ContentType, values: &BTreeMap<String, BoundValue>) -> Result<SqlAndBinds, DmlError> {
+pub fn insert(
+    ct: &ContentType,
+    values: &BTreeMap<String, BoundValue>,
+) -> Result<SqlAndBinds, DmlError> {
     let table = table_name(&ct.name)?;
     let by_name: std::collections::HashMap<&str, &rustapi_core::Field> =
         ct.fields.iter().map(|f| (f.name.as_str(), f)).collect();
@@ -82,9 +85,8 @@ pub fn update(
     let id_placeholder = binds.len() + 1;
     binds.push(BoundValue::Str(id.to_string()));
     let sets_s = sets.join(", ");
-    let sql = format!(
-        "UPDATE {table} SET {sets_s} WHERE \"id\" = ${id_placeholder}::uuid RETURNING *"
-    );
+    let sql =
+        format!("UPDATE {table} SET {sets_s} WHERE \"id\" = ${id_placeholder}::uuid RETURNING *");
     Ok((sql, binds))
 }
 
@@ -156,7 +158,11 @@ pub fn delete_links(
 /// insert of a gallery in array order. `position` comes from `WITH ORDINALITY`
 /// (1-based). Caller binds `$1` = owner id, `$2` = `uuid[]` of asset ids in order.
 /// No `ON CONFLICT` clause: callers always precede this with `delete_media_links` (replace-set pattern).
-pub fn insert_media_links(ct: &str, field: &str, owner_id: Uuid) -> Result<(String, Uuid), DmlError> {
+pub fn insert_media_links(
+    ct: &str,
+    field: &str,
+    owner_id: Uuid,
+) -> Result<(String, Uuid), DmlError> {
     let jt = crate::ident::media_join_table_name(ct, field)?;
     let owner_col = quote_ident(&format!("{ct}_id"))?;
     let sql = format!(
@@ -168,7 +174,11 @@ SELECT $1::uuid, x.asset, x.ord::int FROM UNNEST($2::uuid[]) WITH ORDINALITY AS 
 
 /// `DELETE FROM j_media_<ct>_<field> WHERE <ct>_id = $1::uuid` — clears a gallery
 /// ahead of a replace-set re-insert. Caller binds `$1` = owner id.
-pub fn delete_media_links(ct: &str, field: &str, owner_id: Uuid) -> Result<(String, Uuid), DmlError> {
+pub fn delete_media_links(
+    ct: &str,
+    field: &str,
+    owner_id: Uuid,
+) -> Result<(String, Uuid), DmlError> {
     let jt = crate::ident::media_join_table_name(ct, field)?;
     let owner_col = quote_ident(&format!("{ct}_id"))?;
     let sql = format!("DELETE FROM {jt} WHERE {owner_col} = $1::uuid");
@@ -326,7 +336,10 @@ mod tests {
         let mut vals = BTreeMap::new();
         vals.insert("title".into(), BoundValue::Str("Hi".into()));
         let (sql, binds) = insert(&c, &vals).unwrap();
-        assert_eq!(sql, "INSERT INTO \"ct_post\" (\"title\") VALUES ($1) RETURNING *");
+        assert_eq!(
+            sql,
+            "INSERT INTO \"ct_post\" (\"title\") VALUES ($1) RETURNING *"
+        );
         assert_eq!(binds, vec![BoundValue::Str("Hi".into())]);
     }
 
@@ -377,7 +390,10 @@ mod tests {
 
     #[test]
     fn select_list_orders_and_paginates() {
-        let s = Sort { column: "created_at".into(), dir: SortDir::Desc };
+        let s = Sort {
+            column: "created_at".into(),
+            dir: SortDir::Desc,
+        };
         let (sql, binds) = select_list("post", &Filter::None, &s, 25, 50).unwrap();
         assert_eq!(
             sql,
@@ -446,7 +462,10 @@ mod tests {
 
     #[test]
     fn select_list_with_filter_shifts_pagination() {
-        let s = Sort { column: "created_at".into(), dir: SortDir::Desc };
+        let s = Sort {
+            column: "created_at".into(),
+            dir: SortDir::Desc,
+        };
         let f = Filter::All(vec![Filter::Leaf(Condition::new(
             "title",
             FieldKind::String,
@@ -460,7 +479,11 @@ mod tests {
         );
         assert_eq!(
             binds,
-            vec![BoundValue::Str("hi".into()), BoundValue::I64(25), BoundValue::I64(50)]
+            vec![
+                BoundValue::Str("hi".into()),
+                BoundValue::I64(25),
+                BoundValue::I64(50)
+            ]
         );
     }
 
@@ -468,7 +491,10 @@ mod tests {
     fn select_list_empty_all_keeps_v1_placeholders() {
         // `Filter::All(vec![])` is equivalent to `Filter::None` at render_where;
         // confirm the dml layer keeps `LIMIT $1 OFFSET $2`.
-        let s = Sort { column: "created_at".into(), dir: SortDir::Desc };
+        let s = Sort {
+            column: "created_at".into(),
+            dir: SortDir::Desc,
+        };
         let (sql, binds) = select_list("post", &Filter::All(vec![]), &s, 25, 50).unwrap();
         assert!(sql.ends_with("LIMIT $1 OFFSET $2"));
         assert_eq!(binds, vec![BoundValue::I64(25), BoundValue::I64(50)]);
@@ -506,7 +532,10 @@ SELECT $1::uuid, x FROM UNNEST($2::uuid[]) AS x ON CONFLICT DO NOTHING"
     fn delete_links_clears_owner() {
         let owner = Uuid::nil();
         let (sql, bind) = delete_links("post", "tags", owner).unwrap();
-        assert_eq!(sql, "DELETE FROM \"j_post_tags\" WHERE \"post_id\" = $1::uuid");
+        assert_eq!(
+            sql,
+            "DELETE FROM \"j_post_tags\" WHERE \"post_id\" = $1::uuid"
+        );
         assert_eq!(bind, owner);
     }
 
@@ -527,7 +556,10 @@ SELECT $1::uuid, x.asset, x.ord::int FROM UNNEST($2::uuid[]) WITH ORDINALITY AS 
         let id = Uuid::nil();
         let (sql, owner) = super::delete_media_links("post", "gallery", id).unwrap();
         assert_eq!(owner, id);
-        assert_eq!(sql, "DELETE FROM \"j_media_post_gallery\" WHERE \"post_id\" = $1::uuid");
+        assert_eq!(
+            sql,
+            "DELETE FROM \"j_media_post_gallery\" WHERE \"post_id\" = $1::uuid"
+        );
     }
 
     #[test]
@@ -551,19 +583,43 @@ SELECT $1::uuid, x.asset, x.ord::int FROM UNNEST($2::uuid[]) WITH ORDINALITY AS 
 
     #[test]
     fn select_list_published_filter_appends_clause() {
-        let (sql, _) = select_list_status("post", &Filter::None, &Sort::default_created_at(), 10, 0, PublishFilter::Published).unwrap();
+        let (sql, _) = select_list_status(
+            "post",
+            &Filter::None,
+            &Sort::default_created_at(),
+            10,
+            0,
+            PublishFilter::Published,
+        )
+        .unwrap();
         assert!(sql.contains("\"published_at\" IS NOT NULL"), "got: {sql}");
     }
 
     #[test]
     fn select_list_draft_filter_appends_clause() {
-        let (sql, _) = select_list_status("post", &Filter::None, &Sort::default_created_at(), 10, 0, PublishFilter::Draft).unwrap();
+        let (sql, _) = select_list_status(
+            "post",
+            &Filter::None,
+            &Sort::default_created_at(),
+            10,
+            0,
+            PublishFilter::Draft,
+        )
+        .unwrap();
         assert!(sql.contains("\"published_at\" IS NULL"), "got: {sql}");
     }
 
     #[test]
     fn select_list_all_filter_no_publish_clause() {
-        let (sql, _) = select_list_status("post", &Filter::None, &Sort::default_created_at(), 10, 0, PublishFilter::All).unwrap();
+        let (sql, _) = select_list_status(
+            "post",
+            &Filter::None,
+            &Sort::default_created_at(),
+            10,
+            0,
+            PublishFilter::All,
+        )
+        .unwrap();
         assert!(!sql.contains("published_at"), "got: {sql}");
     }
 }
@@ -583,7 +639,10 @@ SELECT $1::uuid, x.asset, x.ord::int FROM UNNEST($2::uuid[]) WITH ORDINALITY AS 
 /// pass `start_placeholder = own_binds.len() + 1` and then number their own
 /// placeholders after the filter's binds. `select_list` and `count` both pass
 /// `1` because WHERE binds come first in their argument vectors.
-pub fn render_where(filter: &Filter, start_placeholder: usize) -> Result<(String, Vec<BoundValue>), DmlError> {
+pub fn render_where(
+    filter: &Filter,
+    start_placeholder: usize,
+) -> Result<(String, Vec<BoundValue>), DmlError> {
     if matches!(filter, Filter::None) {
         return Ok((String::new(), vec![]));
     }
@@ -691,7 +750,9 @@ fn render_leaf(
             return Err(DmlError::InvalidFilter("Eq/Ne require Bound value"));
         }
         (Op::Gt | Op::Gte | Op::Lt | Op::Lte, FilterValue::Bound(BoundValue::Null(_))) => {
-            return Err(DmlError::InvalidFilter("order op cannot compare against NULL"));
+            return Err(DmlError::InvalidFilter(
+                "order op cannot compare against NULL",
+            ));
         }
         (Op::Gt | Op::Gte | Op::Lt | Op::Lte, FilterValue::Bound(v)) => {
             let cast = pg_cast(c.kind);
@@ -717,7 +778,11 @@ fn render_leaf(
                 placeholders.push(format!("${p}::{cast}"));
             }
             let list = placeholders.join(", ");
-            let op_str = if matches!(c.op, Op::In) { "IN" } else { "NOT IN" };
+            let op_str = if matches!(c.op, Op::In) {
+                "IN"
+            } else {
+                "NOT IN"
+            };
             format!("{col} {op_str} ({list})")
         }
         (Op::In | Op::NotIn, _) => {
@@ -846,9 +911,24 @@ mod where_tests {
     #[test]
     fn combined_and() {
         let f = Filter::All(vec![
-            Filter::Leaf(Condition::new("a", FieldKind::Integer, Op::Eq, FilterValue::Bound(BoundValue::I64(7)))),
-            Filter::Leaf(Condition::new("b", FieldKind::String, Op::Ne, FilterValue::Bound(BoundValue::Str("x".into())))),
-            Filter::Leaf(Condition::new("c", FieldKind::Boolean, Op::IsNull, FilterValue::Null(true))),
+            Filter::Leaf(Condition::new(
+                "a",
+                FieldKind::Integer,
+                Op::Eq,
+                FilterValue::Bound(BoundValue::I64(7)),
+            )),
+            Filter::Leaf(Condition::new(
+                "b",
+                FieldKind::String,
+                Op::Ne,
+                FilterValue::Bound(BoundValue::Str("x".into())),
+            )),
+            Filter::Leaf(Condition::new(
+                "c",
+                FieldKind::Boolean,
+                Op::IsNull,
+                FilterValue::Null(true),
+            )),
         ]);
         let (sql, binds) = render_where(&f, 1).unwrap();
         assert_eq!(
@@ -864,9 +944,24 @@ mod where_tests {
         // is pushed: IsNull in the middle must not skip a `$N` number for the
         // following Eq, and total binds must match the placeholder count.
         let f = Filter::All(vec![
-            Filter::Leaf(Condition::new("a", FieldKind::Integer, Op::Eq, FilterValue::Bound(BoundValue::I64(1)))),
-            Filter::Leaf(Condition::new("b", FieldKind::Boolean, Op::IsNull, FilterValue::Null(true))),
-            Filter::Leaf(Condition::new("c", FieldKind::Integer, Op::Eq, FilterValue::Bound(BoundValue::I64(2)))),
+            Filter::Leaf(Condition::new(
+                "a",
+                FieldKind::Integer,
+                Op::Eq,
+                FilterValue::Bound(BoundValue::I64(1)),
+            )),
+            Filter::Leaf(Condition::new(
+                "b",
+                FieldKind::Boolean,
+                Op::IsNull,
+                FilterValue::Null(true),
+            )),
+            Filter::Leaf(Condition::new(
+                "c",
+                FieldKind::Integer,
+                Op::Eq,
+                FilterValue::Bound(BoundValue::I64(2)),
+            )),
         ]);
         let (sql, binds) = render_where(&f, 1).unwrap();
         assert_eq!(
@@ -1013,13 +1108,14 @@ mod where_tests {
             "views",
             FieldKind::Integer,
             Op::In,
-            FilterValue::List(vec![BoundValue::I64(1), BoundValue::I64(2), BoundValue::I64(3)]),
+            FilterValue::List(vec![
+                BoundValue::I64(1),
+                BoundValue::I64(2),
+                BoundValue::I64(3),
+            ]),
         ))]);
         let (sql, binds) = render_where(&f, 1).unwrap();
-        assert_eq!(
-            sql,
-            " WHERE \"views\" IN ($1::int8, $2::int8, $3::int8)"
-        );
+        assert_eq!(sql, " WHERE \"views\" IN ($1::int8, $2::int8, $3::int8)");
         assert_eq!(
             binds,
             vec![BoundValue::I64(1), BoundValue::I64(2), BoundValue::I64(3)]
@@ -1038,10 +1134,7 @@ mod where_tests {
             ]),
         ))]);
         let (sql, _binds) = render_where(&f, 1).unwrap();
-        assert_eq!(
-            sql,
-            " WHERE \"category\" NOT IN ($1::text, $2::text)"
-        );
+        assert_eq!(sql, " WHERE \"category\" NOT IN ($1::text, $2::text)");
     }
 
     #[test]
@@ -1327,7 +1420,11 @@ mod where_tests {
         );
         assert_eq!(
             binds,
-            vec![BoundValue::I64(10), BoundValue::I64(20), BoundValue::I64(30)]
+            vec![
+                BoundValue::I64(10),
+                BoundValue::I64(20),
+                BoundValue::I64(30)
+            ]
         );
     }
 }

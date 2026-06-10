@@ -161,6 +161,9 @@ mod tests {
         assert!(raw.len() <= 63, "ident too long: {}", raw.len());
         assert!(raw.starts_with("j_media_"));
         // stable across calls
-        assert_eq!(super::media_join_table_name(&"a".repeat(40), &"b".repeat(40)).unwrap(), q);
+        assert_eq!(
+            super::media_join_table_name(&"a".repeat(40), &"b".repeat(40)).unwrap(),
+            q
+        );
     }
 }

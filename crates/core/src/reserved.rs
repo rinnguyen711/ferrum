@@ -3,9 +3,25 @@
 use std::sync::OnceLock;
 
 pub const RESERVED_FIELD_NAMES: &[&str] = &[
-    "id", "created_at", "updated_at", "published_at",
-    "select", "from", "where", "table", "order", "group", "having",
-    "user", "null", "true", "false", "default", "primary", "foreign", "index",
+    "id",
+    "created_at",
+    "updated_at",
+    "published_at",
+    "select",
+    "from",
+    "where",
+    "table",
+    "order",
+    "group",
+    "having",
+    "user",
+    "null",
+    "true",
+    "false",
+    "default",
+    "primary",
+    "foreign",
+    "index",
 ];
 
 pub fn is_valid_ident(s: &str) -> bool {

@@ -86,10 +86,10 @@ fn article_type() -> NewContentType {
 async fn insert_entry(pool: &PgPool, ct: &ContentType, body: Map<String, Value>) -> Result<Uuid> {
     // Seed types use only many_to_one relations, so the m2m link plan is
     // always empty here.
-    let (binds, _checks, _links, _mc, _ml) = body_to_binds(ct, body, true)
-        .map_err(|e| anyhow::anyhow!("seed body_to_binds: {e}"))?;
-    let (sql, bind_vals) = rustapi_sql::insert(ct, &binds)
-        .map_err(|e| anyhow::anyhow!("seed insert sql: {e}"))?;
+    let (binds, _checks, _links, _mc, _ml) =
+        body_to_binds(ct, body, true).map_err(|e| anyhow::anyhow!("seed body_to_binds: {e}"))?;
+    let (sql, bind_vals) =
+        rustapi_sql::insert(ct, &binds).map_err(|e| anyhow::anyhow!("seed insert sql: {e}"))?;
     let row = bind_all(sqlx::query(&sql), &bind_vals)
         .fetch_one(pool)
         .await?;
@@ -115,19 +115,44 @@ pub async fn seed_types(schemas: &SchemaService) -> Result<bool> {
 /// Insert sample authors, categories, and articles (articles link a real
 /// author). Assumes the three types were just created.
 pub async fn seed_rows(pool: &PgPool, schemas: &SchemaService) -> Result<()> {
-    let author_ct = schemas.registry().get("author").await
+    let author_ct = schemas
+        .registry()
+        .get("author")
+        .await
         .ok_or_else(|| anyhow::anyhow!("author type missing during seed"))?;
-    let category_ct = schemas.registry().get("category").await
+    let category_ct = schemas
+        .registry()
+        .get("category")
+        .await
         .ok_or_else(|| anyhow::anyhow!("category type missing during seed"))?;
-    let article_ct = schemas.registry().get("article").await
+    let article_ct = schemas
+        .registry()
+        .get("article")
+        .await
         .ok_or_else(|| anyhow::anyhow!("article type missing during seed"))?;
 
     // --- authors --- (name, role, bio) -> capture id by name
     let authors = [
-        ("Mara Velez", "Editor in chief", "Runs the desk. Twelve years in long-form science journalism."),
-        ("Idris Bello", "Staff writer", "Covers climate, energy, and the people in between."),
-        ("Saoirse Lynch", "Contributor", "Essayist. Writes about cities, memory, and maps."),
-        ("Tomas Reier", "Photo editor", "Pictures first, words later."),
+        (
+            "Mara Velez",
+            "Editor in chief",
+            "Runs the desk. Twelve years in long-form science journalism.",
+        ),
+        (
+            "Idris Bello",
+            "Staff writer",
+            "Covers climate, energy, and the people in between.",
+        ),
+        (
+            "Saoirse Lynch",
+            "Contributor",
+            "Essayist. Writes about cities, memory, and maps.",
+        ),
+        (
+            "Tomas Reier",
+            "Photo editor",
+            "Pictures first, words later.",
+        ),
     ];
     let mut author_id = std::collections::HashMap::new();
     for (name, role, bio) in authors {
@@ -141,11 +166,36 @@ pub async fn seed_rows(pool: &PgPool, schemas: &SchemaService) -> Result<()> {
 
     // --- categories --- (name, slug, color, description)
     let categories = [
-        ("Science", "science", "#0E7490", "Research, discovery, and the scientific method."),
-        ("Climate", "climate", "#15803D", "Energy, environment, and a changing planet."),
-        ("Culture", "culture", "#7C3AED", "Arts, ideas, and how we live."),
-        ("Cities", "cities", "#C2410C", "Urban life and the built environment."),
-        ("Interviews", "interviews", "#B45309", "Long-form conversations."),
+        (
+            "Science",
+            "science",
+            "#0E7490",
+            "Research, discovery, and the scientific method.",
+        ),
+        (
+            "Climate",
+            "climate",
+            "#15803D",
+            "Energy, environment, and a changing planet.",
+        ),
+        (
+            "Culture",
+            "culture",
+            "#7C3AED",
+            "Arts, ideas, and how we live.",
+        ),
+        (
+            "Cities",
+            "cities",
+            "#C2410C",
+            "Urban life and the built environment.",
+        ),
+        (
+            "Interviews",
+            "interviews",
+            "#B45309",
+            "Long-form conversations.",
+        ),
     ];
     for (name, slug, color, description) in categories {
         let mut b = Map::new();
@@ -169,7 +219,9 @@ pub async fn seed_rows(pool: &PgPool, schemas: &SchemaService) -> Result<()> {
         ("A field guide to urban lichen", "urban-lichen-field-guide", "review", "The pollution map hiding in plain sight on every old stone wall.", "Tomas Reier", false, 6, None),
         ("The economics of a free public sauna", "free-public-sauna", "published", "One northern city bet that warmth should be a commons. The numbers are surprising.", "Saoirse Lynch", false, 12, Some("2026-05-17T08:30:00Z")),
     ];
-    for (title, slug, status, _excerpt, author_name, _featured, _read_time, _published_at) in articles {
+    for (title, slug, status, _excerpt, author_name, _featured, _read_time, _published_at) in
+        articles
+    {
         let mut b = Map::new();
         b.insert("title".into(), json!(title));
         b.insert("slug".into(), json!(slug));
@@ -221,7 +273,8 @@ mod tests {
     #[test]
     fn seed_types_have_no_reserved_or_invalid_fields() {
         for ct in [author_type(), category_type(), article_type()] {
-            ct.validate().unwrap_or_else(|e| panic!("seed type `{}` invalid: {e}", ct.name));
+            ct.validate()
+                .unwrap_or_else(|e| panic!("seed type `{}` invalid: {e}", ct.name));
         }
     }
 }

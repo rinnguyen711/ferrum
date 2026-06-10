@@ -89,11 +89,16 @@ pub fn body_to_binds(
         match body.get(&f.name) {
             Some(v) => {
                 if v.is_null() && f.required {
-                    return Err(Error::Validation(ValidationErrors::field(&f.name, "required")));
+                    return Err(Error::Validation(ValidationErrors::field(
+                        &f.name, "required",
+                    )));
                 }
                 if f.kind == FieldKind::Relation {
                     let meta = f.relation_meta().ok_or_else(|| {
-                        Error::Validation(ValidationErrors::field(&f.name, "missing relation kind_meta"))
+                        Error::Validation(ValidationErrors::field(
+                            &f.name,
+                            "missing relation kind_meta",
+                        ))
                     })?;
                     if meta.cardinality == rustapi_core::Cardinality::ManyToMany {
                         links.push(coerce_m2m(f, &meta.target, v)?);
@@ -104,7 +109,10 @@ pub fn body_to_binds(
                 }
                 if f.kind == FieldKind::Media {
                     let meta = f.media_meta().ok_or_else(|| {
-                        Error::Validation(ValidationErrors::field(&f.name, "missing media kind_meta"))
+                        Error::Validation(ValidationErrors::field(
+                            &f.name,
+                            "missing media kind_meta",
+                        ))
                     })?;
                     if meta.multiple {
                         media_links.push(coerce_media_multi(f, v)?);
@@ -132,7 +140,10 @@ pub fn body_to_binds(
                 if f.kind == FieldKind::Enum {
                     if let BoundValue::Str(s) = &bv {
                         let meta = f.enum_meta().ok_or_else(|| {
-                            Error::Validation(ValidationErrors::field(&f.name, "missing enum kind_meta"))
+                            Error::Validation(ValidationErrors::field(
+                                &f.name,
+                                "missing enum kind_meta",
+                            ))
                         })?;
                         if !meta.values.iter().any(|v| v == s) {
                             return Err(Error::EnumValueNotAllowed {
@@ -147,7 +158,9 @@ pub fn body_to_binds(
             }
             None => {
                 if require_required && f.required && f.default.is_null() {
-                    return Err(Error::Validation(ValidationErrors::field(&f.name, "required")));
+                    return Err(Error::Validation(ValidationErrors::field(
+                        &f.name, "required",
+                    )));
                 }
             }
         }
@@ -165,16 +178,18 @@ fn coerce_relation(
     checks: &mut Vec<RelationCheck>,
 ) -> Result<(), Error> {
     let meta = f.relation_meta().ok_or_else(|| {
-        Error::Validation(ValidationErrors::field(&f.name, "missing relation kind_meta"))
+        Error::Validation(ValidationErrors::field(
+            &f.name,
+            "missing relation kind_meta",
+        ))
     })?;
     match v {
         Value::Null => {
             out.insert(f.name.clone(), BoundValue::Null(FieldKind::Uuid));
         }
         Value::String(s) => {
-            let id = Uuid::parse_str(s).map_err(|_| {
-                Error::Validation(ValidationErrors::field(&f.name, "invalid uuid"))
-            })?;
+            let id = Uuid::parse_str(s)
+                .map_err(|_| Error::Validation(ValidationErrors::field(&f.name, "invalid uuid")))?;
             out.insert(f.name.clone(), BoundValue::Uuid(id));
             checks.push(RelationCheck {
                 field: f.name.clone(),
@@ -206,7 +221,10 @@ fn coerce_m2m(f: &Field, target: &str, v: &Value) -> Result<LinkPlan, Error> {
     let mut seen = std::collections::HashSet::new();
     for item in arr {
         let s = item.as_str().ok_or_else(|| {
-            Error::Validation(ValidationErrors::field(&f.name, "many_to_many ids must be strings"))
+            Error::Validation(ValidationErrors::field(
+                &f.name,
+                "many_to_many ids must be strings",
+            ))
         })?;
         let id = Uuid::parse_str(s)
             .map_err(|_| Error::Validation(ValidationErrors::field(&f.name, "invalid uuid")))?;
@@ -235,11 +253,13 @@ fn coerce_media_single(
             out.insert(f.name.clone(), BoundValue::Null(FieldKind::Uuid));
         }
         Value::String(s) => {
-            let id = Uuid::parse_str(s).map_err(|_| {
-                Error::Validation(ValidationErrors::field(&f.name, "invalid uuid"))
-            })?;
+            let id = Uuid::parse_str(s)
+                .map_err(|_| Error::Validation(ValidationErrors::field(&f.name, "invalid uuid")))?;
             out.insert(f.name.clone(), BoundValue::Uuid(id));
-            checks.push(MediaCheck { field: f.name.clone(), id });
+            checks.push(MediaCheck {
+                field: f.name.clone(),
+                id,
+            });
         }
         _ => {
             return Err(Error::Validation(ValidationErrors::field(
@@ -264,7 +284,10 @@ fn coerce_media_multi(f: &Field, v: &Value) -> Result<MediaLinkPlan, Error> {
     let mut seen = std::collections::HashSet::new();
     for item in arr {
         let s = item.as_str().ok_or_else(|| {
-            Error::Validation(ValidationErrors::field(&f.name, "media ids must be strings"))
+            Error::Validation(ValidationErrors::field(
+                &f.name,
+                "media ids must be strings",
+            ))
         })?;
         let id = Uuid::parse_str(s)
             .map_err(|_| Error::Validation(ValidationErrors::field(&f.name, "invalid uuid")))?;
@@ -272,7 +295,11 @@ fn coerce_media_multi(f: &Field, v: &Value) -> Result<MediaLinkPlan, Error> {
             ids.push(id);
         }
     }
-    Ok(MediaLinkPlan { field: f.name.clone(), ids, present: true })
+    Ok(MediaLinkPlan {
+        field: f.name.clone(),
+        ids,
+        present: true,
+    })
 }
 
 pub fn row_to_json(ct: &ContentType, row: &PgRow) -> Result<Value, Error> {
@@ -292,7 +319,8 @@ pub fn row_to_json(ct: &ContentType, row: &PgRow) -> Result<Value, Error> {
             row.try_get("published_at").map_err(decode)?;
         obj.insert(
             "published_at".into(),
-            pa.map(|d| Value::String(d.to_rfc3339())).unwrap_or(Value::Null),
+            pa.map(|d| Value::String(d.to_rfc3339()))
+                .unwrap_or(Value::Null),
         );
     }
 
@@ -329,8 +357,10 @@ fn decode_field(row: &PgRow, f: &Field) -> Result<Value, Error> {
         }
         FieldKind::Float => {
             let v: Option<f64> = row.try_get(f.name.as_str()).map_err(decode)?;
-            Ok(v.and_then(|n| serde_json::Number::from_f64(n).map(Value::Number))
-                .unwrap_or(Value::Null))
+            Ok(
+                v.and_then(|n| serde_json::Number::from_f64(n).map(Value::Number))
+                    .unwrap_or(Value::Null),
+            )
         }
         FieldKind::Boolean => {
             let v: Option<bool> = row.try_get(f.name.as_str()).map_err(decode)?;
@@ -339,7 +369,8 @@ fn decode_field(row: &PgRow, f: &Field) -> Result<Value, Error> {
         FieldKind::Datetime => {
             let v: Option<chrono::DateTime<chrono::Utc>> =
                 row.try_get(f.name.as_str()).map_err(decode)?;
-            Ok(v.map(|t| Value::String(t.to_rfc3339())).unwrap_or(Value::Null))
+            Ok(v.map(|t| Value::String(t.to_rfc3339()))
+                .unwrap_or(Value::Null))
         }
         FieldKind::Relation => {
             // Phase 2.4: relation FKs live in `<name>_id` physical column;
@@ -348,7 +379,8 @@ fn decode_field(row: &PgRow, f: &Field) -> Result<Value, Error> {
             // the field is in `?populate=`.
             let col = f.physical_column();
             let v: Option<Uuid> = row.try_get(col.as_str()).map_err(decode)?;
-            Ok(v.map(|u| Value::String(u.to_string())).unwrap_or(Value::Null))
+            Ok(v.map(|u| Value::String(u.to_string()))
+                .unwrap_or(Value::Null))
         }
         FieldKind::Enum | FieldKind::Email | FieldKind::Url | FieldKind::Slug => {
             let v: Option<String> = row.try_get(f.name.as_str()).map_err(decode)?;
@@ -371,12 +403,14 @@ fn decode_field(row: &PgRow, f: &Field) -> Result<Value, Error> {
         }
         FieldKind::Uuid => {
             let v: Option<Uuid> = row.try_get(f.name.as_str()).map_err(decode)?;
-            Ok(v.map(|u| Value::String(u.to_string())).unwrap_or(Value::Null))
+            Ok(v.map(|u| Value::String(u.to_string()))
+                .unwrap_or(Value::Null))
         }
         FieldKind::Media => {
             let col = f.physical_column();
             let v: Option<Uuid> = row.try_get(col.as_str()).map_err(decode)?;
-            Ok(v.map(|u| Value::String(u.to_string())).unwrap_or(Value::Null))
+            Ok(v.map(|u| Value::String(u.to_string()))
+                .unwrap_or(Value::Null))
         }
         _ => Ok(Value::Null),
     }
@@ -444,12 +478,16 @@ mod tests {
 
     #[test]
     fn body_rejects_unknown_key() {
-        let body: Map<String, Value> = serde_json::from_value::<Value>(json!({"title": "x", "extra": 1}))
-            .unwrap()
-            .as_object()
-            .unwrap()
-            .clone();
-        assert!(matches!(body_to_binds(&ct(), body, true), Err(Error::Validation(_))));
+        let body: Map<String, Value> =
+            serde_json::from_value::<Value>(json!({"title": "x", "extra": 1}))
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .clone();
+        assert!(matches!(
+            body_to_binds(&ct(), body, true),
+            Err(Error::Validation(_))
+        ));
     }
 
     #[test]
@@ -459,7 +497,10 @@ mod tests {
             .as_object()
             .unwrap()
             .clone();
-        assert!(matches!(body_to_binds(&ct(), body, true), Err(Error::Validation(_))));
+        assert!(matches!(
+            body_to_binds(&ct(), body, true),
+            Err(Error::Validation(_))
+        ));
     }
 
     #[test]
@@ -474,12 +515,16 @@ mod tests {
 
     #[test]
     fn body_string_max_length_enforced() {
-        let body: Map<String, Value> = serde_json::from_value::<Value>(json!({"title": "way too long, definitely"}))
-            .unwrap()
-            .as_object()
-            .unwrap()
-            .clone();
-        assert!(matches!(body_to_binds(&ct(), body, true), Err(Error::Validation(_))));
+        let body: Map<String, Value> =
+            serde_json::from_value::<Value>(json!({"title": "way too long, definitely"}))
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .clone();
+        assert!(matches!(
+            body_to_binds(&ct(), body, true),
+            Err(Error::Validation(_))
+        ));
     }
 
     #[test]
@@ -540,7 +585,8 @@ mod tests {
                 .as_object()
                 .unwrap()
                 .clone();
-        let (out, checks, _links, _mc, _ml) = body_to_binds(&ct_with_relation(), body, true).unwrap();
+        let (out, checks, _links, _mc, _ml) =
+            body_to_binds(&ct_with_relation(), body, true).unwrap();
         assert_eq!(out.get("author").unwrap(), &BoundValue::Uuid(id));
         assert_eq!(checks.len(), 1);
         assert_eq!(checks[0].field, "author");
@@ -556,7 +602,8 @@ mod tests {
                 .as_object()
                 .unwrap()
                 .clone();
-        let (out, checks, _links, _mc, _ml) = body_to_binds(&ct_with_relation(), body, true).unwrap();
+        let (out, checks, _links, _mc, _ml) =
+            body_to_binds(&ct_with_relation(), body, true).unwrap();
         assert_eq!(
             out.get("author").unwrap(),
             &BoundValue::Null(FieldKind::Uuid)
@@ -580,12 +627,11 @@ mod tests {
 
     #[test]
     fn relation_non_string_non_null_rejected() {
-        let body: Map<String, Value> =
-            serde_json::from_value::<Value>(json!({"author": 123}))
-                .unwrap()
-                .as_object()
-                .unwrap()
-                .clone();
+        let body: Map<String, Value> = serde_json::from_value::<Value>(json!({"author": 123}))
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .clone();
         assert!(matches!(
             body_to_binds(&ct_with_relation(), body, true),
             Err(Error::Validation(_))
@@ -602,7 +648,10 @@ mod tests {
                 .as_object()
                 .unwrap()
                 .clone();
-        assert!(matches!(body_to_binds(&c, body, true), Err(Error::Validation(_))));
+        assert!(matches!(
+            body_to_binds(&c, body, true),
+            Err(Error::Validation(_))
+        ));
     }
 
     fn ct_with_m2m() -> ContentType {
@@ -684,12 +733,11 @@ mod tests {
 
     #[test]
     fn m2m_rejects_non_array() {
-        let body: Map<String, Value> =
-            serde_json::from_value::<Value>(json!({"tags": "nope"}))
-                .unwrap()
-                .as_object()
-                .unwrap()
-                .clone();
+        let body: Map<String, Value> = serde_json::from_value::<Value>(json!({"tags": "nope"}))
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .clone();
         assert!(matches!(
             body_to_binds(&ct_with_m2m(), body, true),
             Err(Error::Validation(_))
@@ -729,20 +777,42 @@ mod tests {
             name: "post".into(),
             display_name: "Post".into(),
             fields: vec![
-                Field { name: "hero".into(), kind: FieldKind::Media, required: false, unique: false, default: json!(null), max_length: None, kind_meta: json!({"multiple": false}) },
-                Field { name: "gallery".into(), kind: FieldKind::Media, required: false, unique: false, default: json!(null), max_length: None, kind_meta: json!({"multiple": true}) },
+                Field {
+                    name: "hero".into(),
+                    kind: FieldKind::Media,
+                    required: false,
+                    unique: false,
+                    default: json!(null),
+                    max_length: None,
+                    kind_meta: json!({"multiple": false}),
+                },
+                Field {
+                    name: "gallery".into(),
+                    kind: FieldKind::Media,
+                    required: false,
+                    unique: false,
+                    default: json!(null),
+                    max_length: None,
+                    kind_meta: json!({"multiple": true}),
+                },
             ],
             options: json!({}),
             kind: rustapi_core::ContentTypeKind::Collection,
-            created_at: Utc::now(), updated_at: Utc::now(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
         }
     }
 
     #[test]
     fn media_single_uuid_coerces_and_registers_check() {
         let id = Uuid::new_v4();
-        let body = serde_json::from_value::<Value>(json!({"hero": id.to_string()})).unwrap().as_object().unwrap().clone();
-        let (out, _checks, _links, media_checks, media_links) = body_to_binds(&ct_with_media(), body, true).unwrap();
+        let body = serde_json::from_value::<Value>(json!({"hero": id.to_string()}))
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .clone();
+        let (out, _checks, _links, media_checks, media_links) =
+            body_to_binds(&ct_with_media(), body, true).unwrap();
         assert_eq!(out.get("hero").unwrap(), &BoundValue::Uuid(id));
         assert_eq!(media_checks.len(), 1);
         assert_eq!(media_checks[0].field, "hero");
@@ -752,7 +822,11 @@ mod tests {
 
     #[test]
     fn media_single_null_writes_typed_null_no_check() {
-        let body = serde_json::from_value::<Value>(json!({"hero": Value::Null})).unwrap().as_object().unwrap().clone();
+        let body = serde_json::from_value::<Value>(json!({"hero": Value::Null}))
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .clone();
         let (out, _c, _l, media_checks, _ml) = body_to_binds(&ct_with_media(), body, true).unwrap();
         assert_eq!(out.get("hero").unwrap(), &BoundValue::Null(FieldKind::Uuid));
         assert!(media_checks.is_empty());
@@ -760,15 +834,27 @@ mod tests {
 
     #[test]
     fn media_single_bad_uuid_rejected() {
-        let body = serde_json::from_value::<Value>(json!({"hero": "nope"})).unwrap().as_object().unwrap().clone();
-        assert!(matches!(body_to_binds(&ct_with_media(), body, true), Err(Error::Validation(_))));
+        let body = serde_json::from_value::<Value>(json!({"hero": "nope"}))
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .clone();
+        assert!(matches!(
+            body_to_binds(&ct_with_media(), body, true),
+            Err(Error::Validation(_))
+        ));
     }
 
     #[test]
     fn media_multi_array_becomes_ordered_link_plan() {
         let a = Uuid::new_v4();
         let b = Uuid::new_v4();
-        let body = serde_json::from_value::<Value>(json!({"gallery": [a.to_string(), b.to_string()]})).unwrap().as_object().unwrap().clone();
+        let body =
+            serde_json::from_value::<Value>(json!({"gallery": [a.to_string(), b.to_string()]}))
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .clone();
         let (out, _c, _l, _mc, media_links) = body_to_binds(&ct_with_media(), body, true).unwrap();
         assert!(!out.contains_key("gallery"));
         assert_eq!(media_links.len(), 1);
@@ -779,7 +865,11 @@ mod tests {
 
     #[test]
     fn media_multi_empty_array_is_clear() {
-        let body = serde_json::from_value::<Value>(json!({"gallery": []})).unwrap().as_object().unwrap().clone();
+        let body = serde_json::from_value::<Value>(json!({"gallery": []}))
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .clone();
         let (_o, _c, _l, _mc, media_links) = body_to_binds(&ct_with_media(), body, true).unwrap();
         assert_eq!(media_links.len(), 1);
         assert!(media_links[0].ids.is_empty());
@@ -790,7 +880,13 @@ mod tests {
     fn media_multi_dedups_preserving_order() {
         let a = Uuid::new_v4();
         let b = Uuid::new_v4();
-        let body = serde_json::from_value::<Value>(json!({"gallery": [a.to_string(), b.to_string(), a.to_string()]})).unwrap().as_object().unwrap().clone();
+        let body = serde_json::from_value::<Value>(
+            json!({"gallery": [a.to_string(), b.to_string(), a.to_string()]}),
+        )
+        .unwrap()
+        .as_object()
+        .unwrap()
+        .clone();
         let (_o, _c, _l, _mc, media_links) = body_to_binds(&ct_with_media(), body, true).unwrap();
         assert_eq!(media_links[0].ids, vec![a, b]);
     }

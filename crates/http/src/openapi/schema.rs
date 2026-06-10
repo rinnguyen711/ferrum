@@ -90,8 +90,14 @@ pub fn content_type_schemas(ct: &ContentType) -> Value {
 
     let mut resp_props = serde_json::Map::new();
     resp_props.insert("id".into(), json!({ "type": "string", "format": "uuid" }));
-    resp_props.insert("created_at".into(), json!({ "type": "string", "format": "date-time" }));
-    resp_props.insert("updated_at".into(), json!({ "type": "string", "format": "date-time" }));
+    resp_props.insert(
+        "created_at".into(),
+        json!({ "type": "string", "format": "date-time" }),
+    );
+    resp_props.insert(
+        "updated_at".into(),
+        json!({ "type": "string", "format": "date-time" }),
+    );
 
     let mut req_props = serde_json::Map::new();
     let mut req_required: Vec<String> = Vec::new();
@@ -244,11 +250,11 @@ fn merge_obj(mut base: Value, extra: Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
     use rustapi_core::field::Field;
     use rustapi_core::ContentType;
-    use chrono::Utc;
-    use uuid::Uuid;
     use serde_json::json;
+    use uuid::Uuid;
 
     fn f(kind: FieldKind, kind_meta: Value) -> Field {
         Field {
@@ -271,17 +277,38 @@ mod tests {
 
     #[test]
     fn integer_float_bool() {
-        assert_eq!(field_to_schema(&f(FieldKind::Integer, json!({})))["format"], "int64");
-        assert_eq!(field_to_schema(&f(FieldKind::Float, json!({})))["format"], "double");
-        assert_eq!(field_to_schema(&f(FieldKind::Boolean, json!({})))["type"], "boolean");
+        assert_eq!(
+            field_to_schema(&f(FieldKind::Integer, json!({})))["format"],
+            "int64"
+        );
+        assert_eq!(
+            field_to_schema(&f(FieldKind::Float, json!({})))["format"],
+            "double"
+        );
+        assert_eq!(
+            field_to_schema(&f(FieldKind::Boolean, json!({})))["type"],
+            "boolean"
+        );
     }
 
     #[test]
     fn datetime_uuid_email_url() {
-        assert_eq!(field_to_schema(&f(FieldKind::Datetime, json!({})))["format"], "date-time");
-        assert_eq!(field_to_schema(&f(FieldKind::Uuid, json!({})))["format"], "uuid");
-        assert_eq!(field_to_schema(&f(FieldKind::Email, json!({})))["format"], "email");
-        assert_eq!(field_to_schema(&f(FieldKind::Url, json!({})))["format"], "uri");
+        assert_eq!(
+            field_to_schema(&f(FieldKind::Datetime, json!({})))["format"],
+            "date-time"
+        );
+        assert_eq!(
+            field_to_schema(&f(FieldKind::Uuid, json!({})))["format"],
+            "uuid"
+        );
+        assert_eq!(
+            field_to_schema(&f(FieldKind::Email, json!({})))["format"],
+            "email"
+        );
+        assert_eq!(
+            field_to_schema(&f(FieldKind::Url, json!({})))["format"],
+            "uri"
+        );
     }
 
     #[test]
@@ -292,7 +319,10 @@ mod tests {
 
     #[test]
     fn enum_lists_values() {
-        let s = field_to_schema(&f(FieldKind::Enum, json!({ "values": ["draft", "published"] })));
+        let s = field_to_schema(&f(
+            FieldKind::Enum,
+            json!({ "values": ["draft", "published"] }),
+        ));
         assert_eq!(s["enum"], json!(["draft", "published"]));
     }
 
@@ -303,9 +333,15 @@ mod tests {
 
     #[test]
     fn relation_single_vs_many() {
-        let one = field_to_schema(&f(FieldKind::Relation, json!({ "target": "user", "cardinality": "many_to_one" })));
+        let one = field_to_schema(&f(
+            FieldKind::Relation,
+            json!({ "target": "user", "cardinality": "many_to_one" }),
+        ));
         assert_eq!(one["format"], "uuid");
-        let many = field_to_schema(&f(FieldKind::Relation, json!({ "target": "tag", "cardinality": "many_to_many" })));
+        let many = field_to_schema(&f(
+            FieldKind::Relation,
+            json!({ "target": "tag", "cardinality": "many_to_many" }),
+        ));
         assert_eq!(many["type"], "array");
     }
 
@@ -352,8 +388,24 @@ mod tests {
             name: "article".into(),
             display_name: "Article".into(),
             fields: vec![
-                Field { name: "title".into(), kind: FieldKind::String, required: true, unique: false, default: Value::Null, max_length: None, kind_meta: json!({}) },
-                Field { name: "views".into(), kind: FieldKind::Integer, required: false, unique: false, default: Value::Null, max_length: None, kind_meta: json!({}) },
+                Field {
+                    name: "title".into(),
+                    kind: FieldKind::String,
+                    required: true,
+                    unique: false,
+                    default: Value::Null,
+                    max_length: None,
+                    kind_meta: json!({}),
+                },
+                Field {
+                    name: "views".into(),
+                    kind: FieldKind::Integer,
+                    required: false,
+                    unique: false,
+                    default: Value::Null,
+                    max_length: None,
+                    kind_meta: json!({}),
+                },
             ],
             options: json!({}),
             kind: rustapi_core::ContentTypeKind::Collection,
@@ -364,7 +416,10 @@ mod tests {
 
     #[test]
     fn schema_names_pascalcase() {
-        assert_eq!(schema_names("blog_post"), ("BlogPost".into(), "BlogPostInput".into()));
+        assert_eq!(
+            schema_names("blog_post"),
+            ("BlogPost".into(), "BlogPostInput".into())
+        );
     }
 
     #[test]
@@ -377,14 +432,25 @@ mod tests {
         assert!(resp["title"].is_object());
         assert!(req["title"].is_object());
         assert!(req["id"].is_null(), "request schema must omit id");
-        assert!(req["created_at"].is_null(), "request schema must omit timestamps");
+        assert!(
+            req["created_at"].is_null(),
+            "request schema must omit timestamps"
+        );
     }
 
     #[test]
     fn required_field_listed_in_both() {
         let s = content_type_schemas(&sample_ct());
-        assert!(s["Article"]["required"].as_array().unwrap().iter().any(|v| v == "title"));
-        assert!(s["ArticleInput"]["required"].as_array().unwrap().iter().any(|v| v == "title"));
+        assert!(s["Article"]["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|v| v == "title"));
+        assert!(s["ArticleInput"]["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|v| v == "title"));
     }
 
     #[test]
@@ -396,12 +462,23 @@ mod tests {
         assert!(p["/api/article/{id}"]["put"].is_object());
         assert!(p["/api/article/{id}"]["delete"].is_object());
         // get_one documents the ?populate= query param.
-        let get_params = p["/api/article/{id}"]["get"]["parameters"].as_array().unwrap();
-        assert!(get_params.iter().any(|prm| prm["name"] == "populate" && prm["in"] == "query"));
+        let get_params = p["/api/article/{id}"]["get"]["parameters"]
+            .as_array()
+            .unwrap();
+        assert!(get_params
+            .iter()
+            .any(|prm| prm["name"] == "populate" && prm["in"] == "query"));
 
-        let env = &p["/api/article"]["get"]["responses"]["200"]["content"]["application/json"]["schema"];
+        let env =
+            &p["/api/article"]["get"]["responses"]["200"]["content"]["application/json"]["schema"];
         assert_eq!(env["required"], serde_json::json!(["data", "meta"]));
-        assert_eq!(env["properties"]["meta"]["required"], serde_json::json!(["page", "pageSize", "total"]));
-        assert_eq!(p["/api/article"]["get"]["tags"], serde_json::json!(["Article"]));
+        assert_eq!(
+            env["properties"]["meta"]["required"],
+            serde_json::json!(["page", "pageSize", "total"])
+        );
+        assert_eq!(
+            p["/api/article"]["get"]["tags"],
+            serde_json::json!(["Article"])
+        );
     }
 }

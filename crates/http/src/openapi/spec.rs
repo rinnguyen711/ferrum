@@ -54,8 +54,8 @@ pub async fn build(state: &AppState) -> Value {
 mod tests {
     use super::*;
     use crate::state::{AlwaysAllow, AppConfig, NoopHook, NoopSink};
-    use rustapi_core::{ContentType, Field};
     use rustapi_core::field::FieldKind;
+    use rustapi_core::{ContentType, Field};
     use rustapi_schema::{SchemaRegistry, SchemaService};
     use std::sync::Arc;
     use tokio::sync::RwLock;
@@ -94,12 +94,13 @@ mod tests {
             .connect_lazy("postgres://invalid/never-used")
             .expect("lazy pool");
         let schemas = SchemaService::new(pool.clone(), registry);
-        let components =
-            rustapi_schema::ComponentService::new(pool.clone(), rustapi_schema::ComponentRegistry::new());
-        let storage: Arc<RwLock<Arc<dyn rustapi_media::StorageProvider>>> =
-            Arc::new(RwLock::new(Arc::new(rustapi_media::LocalProvider::new(
-                std::env::temp_dir(),
-            ))));
+        let components = rustapi_schema::ComponentService::new(
+            pool.clone(),
+            rustapi_schema::ComponentRegistry::new(),
+        );
+        let storage: Arc<RwLock<Arc<dyn rustapi_media::StorageProvider>>> = Arc::new(RwLock::new(
+            Arc::new(rustapi_media::LocalProvider::new(std::env::temp_dir())),
+        ));
         let state = AppState {
             pool,
             schemas,

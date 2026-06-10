@@ -1,8 +1,13 @@
 //! Shared integration-test plumbing. Spins a real Postgres via testcontainers
 //! and the rustapi router in-process, hitting it via reqwest.
 
-use rustapi_http::{build_router, resolve_provider, secret_key_from_env, AppConfig, AppState, EventSink, NoopHook, NoopSink, RoleAuthz, WriteHook};
-use rustapi_schema::{ComponentRegistry, ComponentService, SchemaRegistry, SchemaService, MIGRATOR};
+use rustapi_http::{
+    build_router, resolve_provider, secret_key_from_env, AppConfig, AppState, EventSink, NoopHook,
+    NoopSink, RoleAuthz, WriteHook,
+};
+use rustapi_schema::{
+    ComponentRegistry, ComponentService, SchemaRegistry, SchemaService, MIGRATOR,
+};
 use sqlx::PgPool;
 use std::sync::Arc;
 use testcontainers::runners::AsyncRunner;
@@ -91,11 +96,18 @@ impl TestApp {
         let schemas = SchemaService::new(pool.clone(), registry.clone());
 
         let component_registry = ComponentRegistry::new();
-        component_registry.reload_from_db(&pool).await.expect("hydrate components");
+        component_registry
+            .reload_from_db(&pool)
+            .await
+            .expect("hydrate components");
         let components = ComponentService::new(pool.clone(), component_registry);
 
-        let media_dir = std::env::temp_dir().join(format!("rustapi-media-test-{}", uuid::Uuid::new_v4()));
-        std::env::set_var("RUSTAPI_MEDIA_BASE_DIR", media_dir.to_string_lossy().to_string());
+        let media_dir =
+            std::env::temp_dir().join(format!("rustapi-media-test-{}", uuid::Uuid::new_v4()));
+        std::env::set_var(
+            "RUSTAPI_MEDIA_BASE_DIR",
+            media_dir.to_string_lossy().to_string(),
+        );
         std::env::set_var("RUSTAPI_MEDIA_PROVIDER", "local");
         let secret_key = secret_key_from_env();
         let storage = Arc::new(RwLock::new(resolve_provider(&pool, secret_key).await));
@@ -120,7 +132,9 @@ impl TestApp {
         };
 
         let app = build_router(state, routers);
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
         let addr = listener.local_addr().expect("addr");
         let (tx, rx) = tokio::sync::oneshot::channel::<()>();
         tokio::spawn(async move {

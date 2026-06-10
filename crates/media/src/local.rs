@@ -12,7 +12,9 @@ pub struct LocalProvider {
 
 impl LocalProvider {
     pub fn new(base_dir: impl Into<PathBuf>) -> Self {
-        Self { base_dir: base_dir.into() }
+        Self {
+            base_dir: base_dir.into(),
+        }
     }
 
     /// Resolve a key to a path under base_dir, rejecting traversal.
@@ -77,11 +79,16 @@ mod tests {
     async fn put_get_delete_round_trip() {
         let dir = tempfile::tempdir().unwrap();
         let p = LocalProvider::new(dir.path());
-        p.put("a/b.txt", Bytes::from_static(b"hi"), "text/plain").await.unwrap();
+        p.put("a/b.txt", Bytes::from_static(b"hi"), "text/plain")
+            .await
+            .unwrap();
         let got = p.get("a/b.txt").await.unwrap();
         assert_eq!(&got[..], b"hi");
         p.delete("a/b.txt").await.unwrap();
-        assert!(matches!(p.get("a/b.txt").await, Err(StorageError::NotFound)));
+        assert!(matches!(
+            p.get("a/b.txt").await,
+            Err(StorageError::NotFound)
+        ));
     }
 
     #[tokio::test]
@@ -95,6 +102,9 @@ mod tests {
     async fn traversal_key_rejected() {
         let dir = tempfile::tempdir().unwrap();
         let p = LocalProvider::new(dir.path());
-        assert!(p.put("../escape.txt", Bytes::from_static(b"x"), "text/plain").await.is_err());
+        assert!(p
+            .put("../escape.txt", Bytes::from_static(b"x"), "text/plain")
+            .await
+            .is_err());
     }
 }

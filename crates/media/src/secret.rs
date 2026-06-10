@@ -54,7 +54,9 @@ pub fn decrypt(key: &[u8; 32], value: &str) -> Result<String, SecretError> {
 mod tests {
     use super::*;
 
-    fn key() -> [u8; 32] { [7u8; 32] }
+    fn key() -> [u8; 32] {
+        [7u8; 32]
+    }
 
     #[test]
     fn round_trip() {

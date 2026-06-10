@@ -32,7 +32,11 @@ async fn token_for(app: &TestApp, email: &str, password: &str) -> String {
 #[tokio::test]
 async fn list_includes_seeded_admin() {
     let app = TestApp::spawn().await;
-    let resp = app.admin(app.client.get(app.url("/admin/users"))).send().await.unwrap();
+    let resp = app
+        .admin(app.client.get(app.url("/admin/users")))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     let arr = body.as_array().unwrap();
@@ -116,9 +120,17 @@ async fn update_roles_reflected() {
 async fn delete_user_then_404() {
     let app = TestApp::spawn().await;
     let id = create_user(&app, "gone@example.test", "gone-pw-123", &[]).await;
-    let del = app.admin(app.client.delete(app.url(&format!("/admin/users/{id}")))).send().await.unwrap();
+    let del = app
+        .admin(app.client.delete(app.url(&format!("/admin/users/{id}"))))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(del.status(), 204);
-    let again = app.admin(app.client.delete(app.url(&format!("/admin/users/{id}")))).send().await.unwrap();
+    let again = app
+        .admin(app.client.delete(app.url(&format!("/admin/users/{id}"))))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(again.status(), 404);
 }
 
@@ -133,9 +145,18 @@ async fn self_delete_blocked_409() {
         .json()
         .await
         .unwrap();
-    let me = list.as_array().unwrap().iter().find(|u| u["email"] == TEST_EMAIL).unwrap();
+    let me = list
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|u| u["email"] == TEST_EMAIL)
+        .unwrap();
     let my_id = me["id"].as_str().unwrap();
-    let resp = app.admin(app.client.delete(app.url(&format!("/admin/users/{my_id}")))).send().await.unwrap();
+    let resp = app
+        .admin(app.client.delete(app.url(&format!("/admin/users/{my_id}"))))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 409);
 }
 
@@ -150,7 +171,12 @@ async fn self_demote_blocked_409() {
         .json()
         .await
         .unwrap();
-    let me = list.as_array().unwrap().iter().find(|u| u["email"] == TEST_EMAIL).unwrap();
+    let me = list
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|u| u["email"] == TEST_EMAIL)
+        .unwrap();
     let my_id = me["id"].as_str().unwrap();
     let resp = app
         .admin(app.client.patch(app.url(&format!("/admin/users/{my_id}"))))

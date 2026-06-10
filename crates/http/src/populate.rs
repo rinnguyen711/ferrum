@@ -106,20 +106,17 @@ pub async fn parse_populate(
             // inverse_lookup is cardinality-agnostic; check whether the source
             // relation is M2M — if so skip this hit and fall through to
             // inverse_lookup_m2m below.
-            let cardinality = registry
-                .get(&source)
-                .await
-                .and_then(|src| {
-                    src.fields.iter().find_map(|f| {
-                        f.relation_meta().and_then(|m| {
-                            if m.target == ct.name && m.inverse.as_deref() == Some(name) {
-                                Some(m.cardinality)
-                            } else {
-                                None
-                            }
-                        })
+            let cardinality = registry.get(&source).await.and_then(|src| {
+                src.fields.iter().find_map(|f| {
+                    f.relation_meta().and_then(|m| {
+                        if m.target == ct.name && m.inverse.as_deref() == Some(name) {
+                            Some(m.cardinality)
+                        } else {
+                            None
+                        }
                     })
-                });
+                })
+            });
             match cardinality {
                 Some(rustapi_core::Cardinality::ManyToMany) => {
                     // Fall through to inverse_lookup_m2m.
@@ -175,9 +172,10 @@ pub async fn apply_forward(
     field_name: &str,
     target: &str,
 ) -> Result<(), Error> {
-    let target_ct = registry.get(target).await.ok_or_else(|| {
-        Error::Internal(anyhow::anyhow!("populate target vanished: {target}"))
-    })?;
+    let target_ct = registry
+        .get(target)
+        .await
+        .ok_or_else(|| Error::Internal(anyhow::anyhow!("populate target vanished: {target}")))?;
     let mut ids: Vec<Uuid> = Vec::new();
     let mut seen: HashSet<Uuid> = HashSet::new();
     for r in rows.iter() {
@@ -203,7 +201,10 @@ pub async fn apply_forward(
     let mut by_id: HashMap<Uuid, Value> = HashMap::with_capacity(fetched.len());
     for row in &fetched {
         let obj = crate::entry::row_to_json(&target_ct, row)?;
-        let id_str = obj.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let id_str = obj
+            .get("id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
         if let Some(s) = id_str {
             if let Ok(u) = Uuid::parse_str(&s) {
                 by_id.insert(u, obj);
@@ -278,9 +279,7 @@ pub async fn apply_inverse(
     fk_col: &str,
 ) -> Result<(), Error> {
     let source_ct = registry.get(source_table).await.ok_or_else(|| {
-        Error::Internal(anyhow::anyhow!(
-            "populate source vanished: {source_table}"
-        ))
+        Error::Internal(anyhow::anyhow!("populate source vanished: {source_table}"))
     })?;
     let mut parent_ids: Vec<Uuid> = Vec::with_capacity(rows.len());
     for r in rows.iter() {
@@ -547,7 +546,11 @@ mod tests {
         let out = parse_populate(&user, &reg, "posts").await.unwrap();
         assert_eq!(out.len(), 1);
         match &out[0] {
-            PopulateField::Inverse { field_name, source, fk_col } => {
+            PopulateField::Inverse {
+                field_name,
+                source,
+                fk_col,
+            } => {
                 assert_eq!(field_name, "posts");
                 assert_eq!(source, "post");
                 assert_eq!(fk_col, "author_id");
@@ -576,7 +579,9 @@ mod tests {
     async fn reject_blank_entry() {
         let ct = ct_with_relation();
         let reg = SchemaRegistry::new();
-        let err = parse_populate(&ct, &reg, "author, ,title").await.unwrap_err();
+        let err = parse_populate(&ct, &reg, "author, ,title")
+            .await
+            .unwrap_err();
         assert!(format!("{err:?}").contains("empty entries"));
     }
 
@@ -709,7 +714,13 @@ mod tests {
         let post = reg.get("post").await.unwrap();
         let out = parse_populate(&post, &reg, "tags").await.unwrap();
         match &out[0] {
-            PopulateField::Many { field_name, join_table, self_col, other_col, target } => {
+            PopulateField::Many {
+                field_name,
+                join_table,
+                self_col,
+                other_col,
+                target,
+            } => {
                 assert_eq!(field_name, "tags");
                 assert_eq!(join_table, "\"j_post_tags\"");
                 assert_eq!(self_col, "post_id");
@@ -728,7 +739,13 @@ mod tests {
         let tag = reg.get("tag").await.unwrap();
         let out = parse_populate(&tag, &reg, "posts").await.unwrap();
         match &out[0] {
-            PopulateField::Many { field_name, self_col, other_col, target, .. } => {
+            PopulateField::Many {
+                field_name,
+                self_col,
+                other_col,
+                target,
+                ..
+            } => {
                 assert_eq!(field_name, "posts");
                 assert_eq!(self_col, "tag_id");
                 assert_eq!(other_col, "post_id");

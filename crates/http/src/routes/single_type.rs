@@ -14,8 +14,7 @@ use sqlx::Row;
 use uuid::Uuid;
 
 pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/api/single-types/:name", get(get_single).put(put_single))
+    Router::new().route("/api/single-types/:name", get(get_single).put(put_single))
 }
 
 async fn get_single(
@@ -23,14 +22,23 @@ async fn get_single(
     Path(name): Path<String>,
     axum::extract::Extension(principal): axum::extract::Extension<Principal>,
 ) -> Result<Json<Value>, ApiError> {
-    if !state.authz.can(&principal, Action::ContentRead, &name).await {
+    if !state
+        .authz
+        .can(&principal, Action::ContentRead, &name)
+        .await
+    {
         return Err(ApiError(Error::Forbidden));
     }
-    let ct = state.schemas.registry().get(&name).await.ok_or(ApiError(Error::NotFound))?;
+    let ct = state
+        .schemas
+        .registry()
+        .get(&name)
+        .await
+        .ok_or(ApiError(Error::NotFound))?;
     if ct.kind != ContentTypeKind::Single {
-        return Err(ApiError(Error::Validation(
-            ValidationErrors::single("use /api/:type for collection types"),
-        )));
+        return Err(ApiError(Error::Validation(ValidationErrors::single(
+            "use /api/:type for collection types",
+        ))));
     }
 
     let (sql, binds) = rustapi_sql::select_list_status(
@@ -44,7 +52,10 @@ async fn get_single(
     .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
 
     let q = bind_all(sqlx::query(&sql), &binds);
-    let row = q.fetch_optional(&state.pool).await.map_err(super::content::db)?;
+    let row = q
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(super::content::db)?;
     match row {
         None => Ok(Json(Value::Null)),
         Some(r) => Ok(Json(row_to_json(&ct, &r)?)),
@@ -57,14 +68,23 @@ async fn put_single(
     axum::extract::Extension(principal): axum::extract::Extension<Principal>,
     Json(body): Json<Map<String, Value>>,
 ) -> Result<Json<Value>, ApiError> {
-    if !state.authz.can(&principal, Action::ContentWrite, &name).await {
+    if !state
+        .authz
+        .can(&principal, Action::ContentWrite, &name)
+        .await
+    {
         return Err(ApiError(Error::Forbidden));
     }
-    let ct = state.schemas.registry().get(&name).await.ok_or(ApiError(Error::NotFound))?;
+    let ct = state
+        .schemas
+        .registry()
+        .get(&name)
+        .await
+        .ok_or(ApiError(Error::NotFound))?;
     if ct.kind != ContentTypeKind::Single {
-        return Err(ApiError(Error::Validation(
-            ValidationErrors::single("use /api/:type for collection types"),
-        )));
+        return Err(ApiError(Error::Validation(ValidationErrors::single(
+            "use /api/:type for collection types",
+        ))));
     }
 
     let ctx = WriteContext {
@@ -72,7 +92,11 @@ async fn put_single(
         operation: WriteOp::Update,
         principal: &principal,
     };
-    let body = state.hooks.before_write(&ctx, body).await.map_err(ApiError)?;
+    let body = state
+        .hooks
+        .before_write(&ctx, body)
+        .await
+        .map_err(ApiError)?;
 
     let (binds_map, _checks, _links, _media_checks, _media_links) =
         body_to_binds(&ct, body, false)?;
@@ -123,9 +147,7 @@ async fn put_single(
             .get("id")
             .and_then(|v| v.as_str())
             .and_then(|s| Uuid::parse_str(s).ok())
-            .ok_or_else(|| {
-                ApiError(Error::Internal(anyhow::anyhow!("insert returned no id")))
-            })?;
+            .ok_or_else(|| ApiError(Error::Internal(anyhow::anyhow!("insert returned no id"))))?;
         state
             .events
             .emit(Event::EntryCreated {
@@ -136,6 +158,10 @@ async fn put_single(
         r
     };
 
-    state.hooks.after_write(&ctx, &record).await.map_err(ApiError)?;
+    state
+        .hooks
+        .after_write(&ctx, &record)
+        .await
+        .map_err(ApiError)?;
     Ok(Json(record))
 }

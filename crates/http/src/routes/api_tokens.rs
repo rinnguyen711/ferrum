@@ -16,7 +16,10 @@ use uuid::Uuid;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/admin/tokens", get(list).post(create))
-        .route("/api/admin/tokens/:id", axum::routing::patch(update).delete(revoke))
+        .route(
+            "/api/admin/tokens/:id",
+            axum::routing::patch(update).delete(revoke),
+        )
 }
 
 async fn ensure_admin(state: &AppState, principal: &Principal) -> Result<(), ApiError> {
@@ -59,15 +62,19 @@ async fn list(
 ) -> Result<Json<Vec<TokenView>>, ApiError> {
     ensure_admin(&state, &principal).await?;
     let rows = list_tokens(&state.pool).await.map_err(db)?;
-    Ok(Json(rows.into_iter().map(|t| TokenView {
-        id: t.id,
-        name: t.name,
-        description: t.description,
-        scopes: t.scopes,
-        expires_at: t.expires_at,
-        last_used_at: t.last_used_at,
-        created_at: t.created_at,
-    }).collect()))
+    Ok(Json(
+        rows.into_iter()
+            .map(|t| TokenView {
+                id: t.id,
+                name: t.name,
+                description: t.description,
+                scopes: t.scopes,
+                expires_at: t.expires_at,
+                last_used_at: t.last_used_at,
+                created_at: t.created_at,
+            })
+            .collect(),
+    ))
 }
 
 async fn create(
@@ -88,35 +95,50 @@ async fn create(
         )));
     }
     // API tokens are content-scoped only. Schema/user management requires an admin token (future).
-    let invalid: Vec<&str> = body.scopes.iter()
+    let invalid: Vec<&str> = body
+        .scopes
+        .iter()
         .filter(|s| !is_valid_content_scope(s))
         .map(String::as_str)
         .collect();
     if !invalid.is_empty() {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::field("scopes", "only content:* scopes are allowed for API tokens"),
+            rustapi_core::ValidationErrors::field(
+                "scopes",
+                "only content:* scopes are allowed for API tokens",
+            ),
         )));
     }
 
     // Generate raw token: rat_ + 32 random bytes as hex.
     let raw = format!("rat_{}", hex::encode(generate_bytes()));
 
-    let row = insert_token(&state.pool, &body.name, &body.description, &raw, &body.scopes, body.expires_at)
-        .await
-        .map_err(db)?;
+    let row = insert_token(
+        &state.pool,
+        &body.name,
+        &body.description,
+        &raw,
+        &body.scopes,
+        body.expires_at,
+    )
+    .await
+    .map_err(db)?;
 
-    Ok((StatusCode::CREATED, Json(CreateTokenResponse {
-        token: raw,
-        meta: TokenView {
-            id: row.id,
-            name: row.name,
-            description: row.description,
-            scopes: row.scopes,
-            expires_at: row.expires_at,
-            last_used_at: row.last_used_at,
-            created_at: row.created_at,
-        },
-    })))
+    Ok((
+        StatusCode::CREATED,
+        Json(CreateTokenResponse {
+            token: raw,
+            meta: TokenView {
+                id: row.id,
+                name: row.name,
+                description: row.description,
+                scopes: row.scopes,
+                expires_at: row.expires_at,
+                last_used_at: row.last_used_at,
+                created_at: row.created_at,
+            },
+        }),
+    ))
 }
 
 #[derive(Deserialize)]
@@ -146,20 +168,32 @@ async fn update(
             rustapi_core::ValidationErrors::field("scopes", "at least one scope is required"),
         )));
     }
-    let invalid: Vec<&str> = body.scopes.iter()
+    let invalid: Vec<&str> = body
+        .scopes
+        .iter()
         .filter(|s| !is_valid_content_scope(s))
         .map(String::as_str)
         .collect();
     if !invalid.is_empty() {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::field("scopes", "only content:* scopes are allowed for API tokens"),
+            rustapi_core::ValidationErrors::field(
+                "scopes",
+                "only content:* scopes are allowed for API tokens",
+            ),
         )));
     }
 
-    let row = update_token(&state.pool, id, &body.name, &body.description, &body.scopes, body.expires_at)
-        .await
-        .map_err(db)?
-        .ok_or(ApiError(Error::NotFound))?;
+    let row = update_token(
+        &state.pool,
+        id,
+        &body.name,
+        &body.description,
+        &body.scopes,
+        body.expires_at,
+    )
+    .await
+    .map_err(db)?
+    .ok_or(ApiError(Error::NotFound))?;
 
     Ok(Json(TokenView {
         id: row.id,

@@ -331,7 +331,10 @@ async fn get_without_populate_returns_uuid_string_in_relation_field() {
     assert_eq!(resp.status(), 200);
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["author"], uid);
-    assert!(body["author"].is_string(), "expected uuid string, got {body}");
+    assert!(
+        body["author"].is_string(),
+        "expected uuid string, got {body}"
+    );
 }
 
 #[tokio::test]
@@ -349,7 +352,10 @@ async fn get_with_forward_populate_returns_full_target_object() {
     assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
     let body: Value = resp.json().await.unwrap();
     let row = &body["data"][0];
-    assert!(row["author"].is_object(), "expected author object, got {row}");
+    assert!(
+        row["author"].is_object(),
+        "expected author object, got {row}"
+    );
     assert_eq!(row["author"]["id"], uid);
     assert_eq!(row["author"]["name"], "alice");
 }
@@ -379,7 +385,10 @@ async fn get_with_inverse_populate_returns_array() {
     let _ = create_post(&app, "b", Some(&uid)).await;
 
     let resp = app
-        .admin(app.client.get(app.url(&format!("/api/user/{uid}?populate=posts"))))
+        .admin(
+            app.client
+                .get(app.url(&format!("/api/user/{uid}?populate=posts"))),
+        )
         .send()
         .await
         .unwrap();
@@ -403,7 +412,10 @@ async fn inverse_populate_truncates_at_25_with_flag() {
     }
 
     let resp = app
-        .admin(app.client.get(app.url(&format!("/api/user/{uid}?populate=posts"))))
+        .admin(
+            app.client
+                .get(app.url(&format!("/api/user/{uid}?populate=posts"))),
+        )
         .send()
         .await
         .unwrap();
@@ -421,7 +433,10 @@ async fn inverse_populate_empty_returns_array() {
     let uid = create_user(&app, "lonely").await;
 
     let resp = app
-        .admin(app.client.get(app.url(&format!("/api/user/{uid}?populate=posts"))))
+        .admin(
+            app.client
+                .get(app.url(&format!("/api/user/{uid}?populate=posts"))),
+        )
         .send()
         .await
         .unwrap();
@@ -489,7 +504,10 @@ async fn filter_relation_eq_returns_matching_rows() {
     let _ = create_post(&app, "b1", Some(&bob)).await;
 
     let resp = app
-        .admin(app.client.get(app.url(&format!("/api/post?filters[author][$eq]={alice}"))))
+        .admin(
+            app.client
+                .get(app.url(&format!("/api/post?filters[author][$eq]={alice}"))),
+        )
         .send()
         .await
         .unwrap();
@@ -510,7 +528,10 @@ async fn filter_relation_null_true_returns_null_rows() {
     let _ = create_post(&app, "orphan", None).await;
 
     let resp = app
-        .admin(app.client.get(app.url("/api/post?filters[author][$null]=true")))
+        .admin(
+            app.client
+                .get(app.url("/api/post?filters[author][$null]=true")),
+        )
         .send()
         .await
         .unwrap();
@@ -531,10 +552,12 @@ async fn filter_relation_in_returns_union() {
     let _ = create_post(&app, "b", Some(&bob)).await;
     let _ = create_post(&app, "c", Some(&carol)).await;
 
-    let url = format!(
-        "/api/post?filters[author][$in][0]={alice}&filters[author][$in][1]={bob}"
-    );
-    let resp = app.admin(app.client.get(app.url(&url))).send().await.unwrap();
+    let url = format!("/api/post?filters[author][$in][0]={alice}&filters[author][$in][1]={bob}");
+    let resp = app
+        .admin(app.client.get(app.url(&url)))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["meta"]["total"], 2);
@@ -548,7 +571,10 @@ async fn filter_relation_gt_returns_400_relation_op_unsupported() {
     let alice = create_user(&app, "alice").await;
 
     let resp = app
-        .admin(app.client.get(app.url(&format!("/api/post?filters[author][$gt]={alice}"))))
+        .admin(
+            app.client
+                .get(app.url(&format!("/api/post?filters[author][$gt]={alice}"))),
+        )
         .send()
         .await
         .unwrap();
@@ -845,7 +871,10 @@ async fn self_relation_manager_and_inverse_reports_populate() {
 
     // Forward populate from child → parent.
     let resp = app
-        .admin(app.client.get(app.url(&format!("/api/category/{child}?populate=parent"))))
+        .admin(
+            app.client
+                .get(app.url(&format!("/api/category/{child}?populate=parent"))),
+        )
         .send()
         .await
         .unwrap();
@@ -857,7 +886,10 @@ async fn self_relation_manager_and_inverse_reports_populate() {
 
     // Inverse populate from root → children.
     let resp = app
-        .admin(app.client.get(app.url(&format!("/api/category/{root}?populate=children"))))
+        .admin(
+            app.client
+                .get(app.url(&format!("/api/category/{root}?populate=children"))),
+        )
         .send()
         .await
         .unwrap();
@@ -880,7 +912,10 @@ async fn self_cycle_allowed_inner_manager_stays_as_id() {
     let leaf = create_category(&app, "leaf", Some(&mid)).await;
 
     let resp = app
-        .admin(app.client.get(app.url(&format!("/api/category/{leaf}?populate=parent"))))
+        .admin(
+            app.client
+                .get(app.url(&format!("/api/category/{leaf}?populate=parent"))),
+        )
         .send()
         .await
         .unwrap();
@@ -993,7 +1028,10 @@ async fn multi_populate_author_and_category_returns_both() {
         .send()
         .await
         .unwrap();
-    let cid = resp.json::<Value>().await.unwrap()["id"].as_str().unwrap().to_string();
+    let cid = resp.json::<Value>().await.unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
     let resp = app
         .admin(app.client.post(app.url("/api/post")))
@@ -1004,15 +1042,24 @@ async fn multi_populate_author_and_category_returns_both() {
     assert_eq!(resp.status(), 201, "{}", resp.text().await.unwrap());
 
     let resp = app
-        .admin(app.client.get(app.url("/api/post?populate=author,category")))
+        .admin(
+            app.client
+                .get(app.url("/api/post?populate=author,category")),
+        )
         .send()
         .await
         .unwrap();
     assert_eq!(resp.status(), 200);
     let body: Value = resp.json().await.unwrap();
     let row = &body["data"][0];
-    assert!(row["author"].is_object(), "expected author object, got {row}");
-    assert!(row["category"].is_object(), "expected category object, got {row}");
+    assert!(
+        row["author"].is_object(),
+        "expected author object, got {row}"
+    );
+    assert!(
+        row["category"].is_object(),
+        "expected category object, got {row}"
+    );
     assert_eq!(row["author"]["name"], "alice");
     assert_eq!(row["category"]["label"], "tech");
 }

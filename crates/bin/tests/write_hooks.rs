@@ -40,11 +40,7 @@ impl WriteHook for TestHook {
         Ok(body)
     }
 
-    async fn after_write(
-        &self,
-        _ctx: &WriteContext<'_>,
-        record: &Value,
-    ) -> Result<(), Error> {
+    async fn after_write(&self, _ctx: &WriteContext<'_>, record: &Value) -> Result<(), Error> {
         if record.get("title").and_then(|v| v.as_str()) == Some("POSTFAIL") {
             return Err(Error::Internal(anyhow::anyhow!("after_write failed")));
         }
@@ -98,9 +94,16 @@ async fn before_write_rejects_request() {
         .unwrap();
     assert_eq!(resp.status(), 422, "rejection should be a validation error");
 
-    let resp = app.admin(app.client.get(app.url("/api/post"))).send().await.unwrap();
+    let resp = app
+        .admin(app.client.get(app.url("/api/post")))
+        .send()
+        .await
+        .unwrap();
     let body: Value = resp.json().await.unwrap();
-    assert_eq!(body["meta"]["total"], 0, "rejected request must not persist");
+    assert_eq!(
+        body["meta"]["total"], 0,
+        "rejected request must not persist"
+    );
 }
 
 #[tokio::test]
@@ -114,11 +117,22 @@ async fn before_write_output_is_revalidated() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 422, "injected unknown field must be rejected");
+    assert_eq!(
+        resp.status(),
+        422,
+        "injected unknown field must be rejected"
+    );
 
-    let resp = app.admin(app.client.get(app.url("/api/post"))).send().await.unwrap();
+    let resp = app
+        .admin(app.client.get(app.url("/api/post")))
+        .send()
+        .await
+        .unwrap();
     let body: Value = resp.json().await.unwrap();
-    assert_eq!(body["meta"]["total"], 0, "invalid injected field must not persist");
+    assert_eq!(
+        body["meta"]["total"], 0,
+        "invalid injected field must not persist"
+    );
 }
 
 #[tokio::test]
@@ -136,9 +150,16 @@ async fn after_write_failure_returns_500_but_write_is_durable() {
 
     // The write committed before after_write ran, so the row is durable.
     // Use status=all so draft-publish types also surface the persisted draft.
-    let resp = app.admin(app.client.get(app.url("/api/post?status=all"))).send().await.unwrap();
+    let resp = app
+        .admin(app.client.get(app.url("/api/post?status=all")))
+        .send()
+        .await
+        .unwrap();
     let body: Value = resp.json().await.unwrap();
-    assert_eq!(body["meta"]["total"], 1, "write must persist despite hook error");
+    assert_eq!(
+        body["meta"]["total"], 1,
+        "write must persist despite hook error"
+    );
     assert_eq!(body["data"][0]["title"], "POSTFAIL");
 }
 

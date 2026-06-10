@@ -9,9 +9,18 @@ pub struct SystemColumn {
 }
 
 pub const SYSTEM_COLUMNS: &[SystemColumn] = &[
-    SystemColumn { name: "id",         kind: FieldKind::Uuid },
-    SystemColumn { name: "created_at", kind: FieldKind::Datetime },
-    SystemColumn { name: "updated_at", kind: FieldKind::Datetime },
+    SystemColumn {
+        name: "id",
+        kind: FieldKind::Uuid,
+    },
+    SystemColumn {
+        name: "created_at",
+        kind: FieldKind::Datetime,
+    },
+    SystemColumn {
+        name: "updated_at",
+        kind: FieldKind::Datetime,
+    },
 ];
 
 pub fn is_system_column(name: &str) -> bool {

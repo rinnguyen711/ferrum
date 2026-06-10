@@ -167,9 +167,9 @@ fn column_def(ct_name: &str, f: &Field) -> Result<String, DdlError> {
         ));
     }
     if f.kind == FieldKind::Enum {
-        let meta = f.enum_meta().ok_or_else(|| {
-            IdentError("enum field missing/invalid kind_meta".into())
-        })?;
+        let meta = f
+            .enum_meta()
+            .ok_or_else(|| IdentError("enum field missing/invalid kind_meta".into()))?;
         let col = quote_ident(&f.name)?;
         let default_clause = if !f.default.is_null() {
             format!(" DEFAULT {}", render_default(f))
@@ -189,7 +189,8 @@ fn column_def(ct_name: &str, f: &Field) -> Result<String, DdlError> {
             "{col} text{default_clause}{not_null}{unique} CONSTRAINT {constraint_name} CHECK ({col} IS NULL OR {col} IN ({values_lit}))"
         ));
     }
-    if f.kind == FieldKind::Json || f.kind == FieldKind::RichText || f.kind == FieldKind::Component {
+    if f.kind == FieldKind::Json || f.kind == FieldKind::RichText || f.kind == FieldKind::Component
+    {
         let col = quote_ident(&f.name)?;
         let default_clause = if !f.default.is_null() {
             format!(" DEFAULT {}", render_default(f))
@@ -199,10 +200,7 @@ fn column_def(ct_name: &str, f: &Field) -> Result<String, DdlError> {
         let not_null = if f.required { " NOT NULL" } else { "" };
         return Ok(format!("{col} jsonb{default_clause}{not_null}"));
     }
-    if matches!(
-        f.kind,
-        FieldKind::Email | FieldKind::Url | FieldKind::Slug
-    ) {
+    if matches!(f.kind, FieldKind::Email | FieldKind::Url | FieldKind::Slug) {
         let col = quote_ident(&f.name)?;
         let default_clause = if !f.default.is_null() {
             format!(" DEFAULT {}", render_default(f))
@@ -231,13 +229,17 @@ fn column_def(ct_name: &str, f: &Field) -> Result<String, DdlError> {
 
 fn relation_column_def(f: &Field) -> Result<String, DdlError> {
     use rustapi_core::Cardinality;
-    let meta = f.relation_meta().ok_or_else(|| {
-        IdentError("relation field missing/invalid kind_meta".into())
-    })?;
+    let meta = f
+        .relation_meta()
+        .ok_or_else(|| IdentError("relation field missing/invalid kind_meta".into()))?;
     let col = quote_ident(&f.physical_column())?;
     let target = table_name(&meta.target)?;
     let not_null = if f.required { " NOT NULL" } else { "" };
-    let unique = if meta.cardinality == Cardinality::OneToOne { " UNIQUE" } else { "" };
+    let unique = if meta.cardinality == Cardinality::OneToOne {
+        " UNIQUE"
+    } else {
+        ""
+    };
     Ok(format!(
         "{col} uuid{not_null}{unique} REFERENCES {target}(\"id\") ON DELETE RESTRICT"
     ))
@@ -280,7 +282,9 @@ fn render_default(f: &Field) -> String {
             format!("'{escaped}'::timestamptz")
         }
         (FieldKind::Integer, v) | (FieldKind::Float, v) => v.to_string(),
-        (FieldKind::Boolean, serde_json::Value::Bool(b)) => if *b { "TRUE" } else { "FALSE" }.into(),
+        (FieldKind::Boolean, serde_json::Value::Bool(b)) => {
+            if *b { "TRUE" } else { "FALSE" }.into()
+        }
         (FieldKind::Json, v) if !v.is_null() => {
             let s = v.to_string().replace('\'', "''");
             format!("'{s}'::jsonb")
@@ -378,7 +382,10 @@ mod tests {
 
     #[test]
     fn rejects_bad_table_name() {
-        let bad = ContentType { name: "Bad".into(), ..ct(vec![field("title", FieldKind::String)]) };
+        let bad = ContentType {
+            name: "Bad".into(),
+            ..ct(vec![field("title", FieldKind::String)])
+        };
         assert!(create_table(&bad).is_err());
     }
 
@@ -402,7 +409,9 @@ mod tests {
         f.kind_meta = json!({"target":"user","cardinality":"many_to_one"});
         let sql = create_table(&ct(vec![f])).unwrap();
         assert!(
-            sql.contains("\"author_id\" uuid NOT NULL REFERENCES \"ct_user\"(\"id\") ON DELETE RESTRICT"),
+            sql.contains(
+                "\"author_id\" uuid NOT NULL REFERENCES \"ct_user\"(\"id\") ON DELETE RESTRICT"
+            ),
             "got: {sql}"
         );
     }
@@ -503,11 +512,15 @@ mod tests {
 
     #[test]
     fn alter_enum_values_emits_drop_and_add() {
-        let sql = alter_enum_values("post", "status", &[
-            "draft".to_string(),
-            "published".to_string(),
-            "archived".to_string(),
-        ])
+        let sql = alter_enum_values(
+            "post",
+            "status",
+            &[
+                "draft".to_string(),
+                "published".to_string(),
+                "archived".to_string(),
+            ],
+        )
         .unwrap();
         assert!(sql.contains("DROP CONSTRAINT \"post_status_enum_chk\""));
         assert!(sql.contains("ADD CONSTRAINT \"post_status_enum_chk\""));
@@ -537,7 +550,9 @@ mod tests {
         f.kind_meta = json!({"target":"profile","cardinality":"one_to_one"});
         let sql = create_table(&ct(vec![f])).unwrap();
         assert!(
-            sql.contains("\"profile_id\" uuid UNIQUE REFERENCES \"ct_profile\"(\"id\") ON DELETE RESTRICT"),
+            sql.contains(
+                "\"profile_id\" uuid UNIQUE REFERENCES \"ct_profile\"(\"id\") ON DELETE RESTRICT"
+            ),
             "got: {sql}"
         );
     }
@@ -583,8 +598,7 @@ mod tests {
 
     #[test]
     fn create_join_table_emits_table_and_index() {
-        let (create, index) =
-            create_join_table("post", "tags", "tag").unwrap();
+        let (create, index) = create_join_table("post", "tags", "tag").unwrap();
         assert_eq!(
             create,
             "CREATE TABLE \"j_post_tags\" (\
@@ -592,15 +606,15 @@ mod tests {
 \"tag_id\" uuid NOT NULL REFERENCES \"ct_tag\"(\"id\") ON DELETE CASCADE, \
 PRIMARY KEY (\"post_id\", \"tag_id\"))"
         );
-        assert_eq!(
-            index,
-            "CREATE INDEX ON \"j_post_tags\" (\"tag_id\")"
-        );
+        assert_eq!(index, "CREATE INDEX ON \"j_post_tags\" (\"tag_id\")");
     }
 
     #[test]
     fn drop_join_table_works() {
-        assert_eq!(drop_join_table("post", "tags").unwrap(), "DROP TABLE \"j_post_tags\"");
+        assert_eq!(
+            drop_join_table("post", "tags").unwrap(),
+            "DROP TABLE \"j_post_tags\""
+        );
     }
 
     #[test]
@@ -631,7 +645,9 @@ PRIMARY KEY (\"post_id\", \"tag_id\"))"
         f.kind_meta = json!({"multiple": false});
         let sql = create_table(&ct(vec![f])).unwrap();
         assert!(
-            sql.contains("\"hero_id\" uuid REFERENCES \"_media_assets\"(\"id\") ON DELETE SET NULL"),
+            sql.contains(
+                "\"hero_id\" uuid REFERENCES \"_media_assets\"(\"id\") ON DELETE SET NULL"
+            ),
             "got: {sql}"
         );
         assert!(!sql.contains("\"hero_id\" uuid NOT NULL"), "got: {sql}");

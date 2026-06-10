@@ -26,10 +26,9 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Result<Self> {
-        let database_url = std::env::var("DATABASE_URL")
-            .context("DATABASE_URL must be set")?;
-        let jwt_secret = std::env::var("RUSTAPI_JWT_SECRET")
-            .context("RUSTAPI_JWT_SECRET must be set")?;
+        let database_url = std::env::var("DATABASE_URL").context("DATABASE_URL must be set")?;
+        let jwt_secret =
+            std::env::var("RUSTAPI_JWT_SECRET").context("RUSTAPI_JWT_SECRET must be set")?;
         if jwt_secret.len() < 32 {
             return Err(anyhow!("RUSTAPI_JWT_SECRET must be at least 32 characters"));
         }
@@ -43,7 +42,9 @@ impl Config {
             .ok()
             .and_then(|s| s.parse::<u32>().ok())
             .unwrap_or(100);
-        let studio_dir = std::env::var("RUSTAPI_STUDIO_DIR").ok().filter(|s| !s.is_empty());
+        let studio_dir = std::env::var("RUSTAPI_STUDIO_DIR")
+            .ok()
+            .filter(|s| !s.is_empty());
         let seed = std::env::var("RUSTAPI_SEED")
             .ok()
             .filter(|s| !s.is_empty())
@@ -54,10 +55,8 @@ impl Config {
             .filter(|s| !s.is_empty())
             .map(|s| !matches!(s.as_str(), "0" | "false" | "no"))
             .unwrap_or(true);
-        let api_version =
-            std::env::var("RUSTAPI_API_VERSION").unwrap_or_else(|_| "0.1.0".into());
-        let public_base_url =
-            std::env::var("RUSTAPI_PUBLIC_URL").unwrap_or_else(|_| "/".into());
+        let api_version = std::env::var("RUSTAPI_API_VERSION").unwrap_or_else(|_| "0.1.0".into());
+        let public_base_url = std::env::var("RUSTAPI_PUBLIC_URL").unwrap_or_else(|_| "/".into());
         Ok(Self {
             database_url,
             jwt_secret,

@@ -1,8 +1,13 @@
 use anyhow::{Context, Result};
 use rustapi::config::Config;
 use rustapi::seed;
-use rustapi_http::{build_router, mount_studio, resolve_provider, secret_key_from_env, AppConfig, AppState, NoopHook, RoleAuthz};
-use rustapi_schema::{ComponentRegistry, ComponentService, SchemaRegistry, SchemaService, MIGRATOR};
+use rustapi_http::{
+    build_router, mount_studio, resolve_provider, secret_key_from_env, AppConfig, AppState,
+    NoopHook, RoleAuthz,
+};
+use rustapi_schema::{
+    ComponentRegistry, ComponentService, SchemaRegistry, SchemaService, MIGRATOR,
+};
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -22,17 +27,29 @@ async fn main() -> Result<()> {
         .context("connect to Postgres")?;
     tracing::info!(max_connections = 10, "postgres connected");
 
-    MIGRATOR.run(&pool).await.context("run internal migrations")?;
+    MIGRATOR
+        .run(&pool)
+        .await
+        .context("run internal migrations")?;
     tracing::info!("internal migrations applied");
 
     let registry = SchemaRegistry::new();
-    registry.reload_from_db(&pool).await.context("hydrate schema registry")?;
-    tracing::info!(schemas = registry.list().await.len(), "schema registry hydrated");
+    registry
+        .reload_from_db(&pool)
+        .await
+        .context("hydrate schema registry")?;
+    tracing::info!(
+        schemas = registry.list().await.len(),
+        "schema registry hydrated"
+    );
 
     let schemas = SchemaService::new(pool.clone(), registry.clone());
 
     let component_registry = ComponentRegistry::new();
-    component_registry.reload_from_db(&pool).await.context("hydrate component registry")?;
+    component_registry
+        .reload_from_db(&pool)
+        .await
+        .context("hydrate component registry")?;
     let components = ComponentService::new(pool.clone(), component_registry);
 
     seed::seed_if_empty(&pool, &schemas, cfg.seed)
@@ -64,12 +81,19 @@ async fn main() -> Result<()> {
     rustapi::webhook_worker::spawn_worker(pool.clone());
 
     let mut app = build_router(state, vec![]);
-    tracing::info!(content = "/api", admin = "/admin/content-types", health = "/healthz", "routes mounted");
+    tracing::info!(
+        content = "/api",
+        admin = "/admin/content-types",
+        health = "/healthz",
+        "routes mounted"
+    );
     if let Some(ref dir) = cfg.studio_dir {
         app = mount_studio(app, dir);
         tracing::info!(dir = %dir, route = "/studio", "studio UI mounted");
     }
-    let listener = tokio::net::TcpListener::bind(&cfg.bind).await.context("bind")?;
+    let listener = tokio::net::TcpListener::bind(&cfg.bind)
+        .await
+        .context("bind")?;
     let addr = listener.local_addr().context("local addr")?;
     tracing::info!(addr = %addr, port = addr.port(), "rustapi listening");
     axum::serve(listener, app).await.context("serve")?;

@@ -28,7 +28,11 @@ pub struct ListOpts {
     pub sort: Sort,
 }
 
-pub fn parse_list(ct: &ContentType, params: ListParams, page_size_max: u32) -> Result<ListOpts, Error> {
+pub fn parse_list(
+    ct: &ContentType,
+    params: ListParams,
+    page_size_max: u32,
+) -> Result<ListOpts, Error> {
     let page = params.page.unwrap_or(1).max(1);
     let mut page_size = params.page_size.unwrap_or(25);
     if page_size == 0 {
@@ -43,7 +47,11 @@ pub fn parse_list(ct: &ContentType, params: ListParams, page_size_max: u32) -> R
         Some(s) => parse_sort(&s, ct)?,
     };
 
-    Ok(ListOpts { page, page_size, sort })
+    Ok(ListOpts {
+        page,
+        page_size,
+        sort,
+    })
 }
 
 fn parse_sort(s: &str, ct: &ContentType) -> Result<Sort, Error> {
@@ -52,7 +60,9 @@ fn parse_sort(s: &str, ct: &ContentType) -> Result<Sort, Error> {
         None => (s, "asc"),
     };
     let dir = SortDir::parse(dir_str).ok_or_else(|| {
-        Error::Validation(ValidationErrors::single("sort direction must be asc or desc"))
+        Error::Validation(ValidationErrors::single(
+            "sort direction must be asc or desc",
+        ))
     })?;
     if !is_sortable(col, ct) {
         return Err(Error::Validation(ValidationErrors::single(format!(
@@ -70,7 +80,9 @@ fn is_sortable(col: &str, ct: &ContentType) -> bool {
         return true;
     }
     // Many-to-many fields have no sortable column on this table.
-    ct.fields.iter().any(|f| f.name == col && f.is_stored_column())
+    ct.fields
+        .iter()
+        .any(|f| f.name == col && f.is_stored_column())
 }
 
 #[cfg(test)]
@@ -114,9 +126,16 @@ mod tests {
     fn caps_page_size() {
         let opts = parse_list(
             &ct(),
-            ListParams { page: None, page_size: Some(9999), sort: None, populate: None, status: None },
+            ListParams {
+                page: None,
+                page_size: Some(9999),
+                sort: None,
+                populate: None,
+                status: None,
+            },
             50,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(opts.page_size, 50);
     }
 
@@ -124,9 +143,16 @@ mod tests {
     fn sort_user_field() {
         let opts = parse_list(
             &ct(),
-            ListParams { page: None, page_size: None, sort: Some("title:desc".into()), populate: None, status: None },
+            ListParams {
+                page: None,
+                page_size: None,
+                sort: Some("title:desc".into()),
+                populate: None,
+                status: None,
+            },
             100,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(opts.sort.column, "title");
         assert_eq!(opts.sort.dir, SortDir::Desc);
     }
@@ -135,7 +161,13 @@ mod tests {
     fn sort_unknown_field_rejected() {
         let r = parse_list(
             &ct(),
-            ListParams { page: None, page_size: None, sort: Some("nope".into()), populate: None, status: None },
+            ListParams {
+                page: None,
+                page_size: None,
+                sort: Some("nope".into()),
+                populate: None,
+                status: None,
+            },
             100,
         );
         assert!(matches!(r, Err(Error::Validation(_))));
@@ -145,7 +177,13 @@ mod tests {
     fn sort_bad_dir_rejected() {
         let r = parse_list(
             &ct(),
-            ListParams { page: None, page_size: None, sort: Some("title:sideways".into()), populate: None, status: None },
+            ListParams {
+                page: None,
+                page_size: None,
+                sort: Some("title:sideways".into()),
+                populate: None,
+                status: None,
+            },
             100,
         );
         assert!(matches!(r, Err(Error::Validation(_))));
@@ -183,7 +221,13 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
-        assert!(!is_sortable("tags", &ct_m2m), "m2m field must not be sortable");
-        assert!(is_sortable("title", &ct_m2m), "stored field must be sortable");
+        assert!(
+            !is_sortable("tags", &ct_m2m),
+            "m2m field must not be sortable"
+        );
+        assert!(
+            is_sortable("title", &ct_m2m),
+            "stored field must be sortable"
+        );
     }
 }

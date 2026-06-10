@@ -116,11 +116,7 @@ async fn nin_excludes() {
     let app = TestApp::spawn().await;
     make_type(&app).await;
     seed(&app).await;
-    let body = list_body(
-        &app,
-        "filters[views][$nin][0]=0&filters[views][$nin][1]=20",
-    )
-    .await;
+    let body = list_body(&app, "filters[views][$nin][0]=0&filters[views][$nin][1]=20").await;
     // PG `NOT IN` excludes NULLs.
     assert_eq!(body["meta"]["total"], 2);
 }
@@ -151,9 +147,10 @@ async fn in_duplicate_index_rejected_422() {
     let app = TestApp::spawn().await;
     make_type(&app).await;
     let resp = app
-        .admin(app.client.get(
-            app.url("/api/post?filters[views][$in][0]=1&filters[views][$in][0]=2"),
-        ))
+        .admin(
+            app.client
+                .get(app.url("/api/post?filters[views][$in][0]=1&filters[views][$in][0]=2")),
+        )
         .send()
         .await
         .unwrap();
@@ -237,7 +234,10 @@ async fn contains_on_integer_rejected_422() {
     let app = TestApp::spawn().await;
     make_type(&app).await;
     let resp = app
-        .admin(app.client.get(app.url("/api/post?filters[views][$contains]=5")))
+        .admin(
+            app.client
+                .get(app.url("/api/post?filters[views][$contains]=5")),
+        )
         .send()
         .await
         .unwrap();

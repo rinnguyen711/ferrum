@@ -35,9 +35,14 @@ impl S3Provider {
                 .map_err(|_| StorageError::Other("bad region".into()))?,
         };
 
-        let creds =
-            Credentials::new(Some(&cfg.access_key), Some(&cfg.secret_key), None, None, None)
-                .map_err(|e| StorageError::Auth(e.to_string()))?;
+        let creds = Credentials::new(
+            Some(&cfg.access_key),
+            Some(&cfg.secret_key),
+            None,
+            None,
+            None,
+        )
+        .map_err(|e| StorageError::Auth(e.to_string()))?;
 
         let bucket = Bucket::new(&cfg.bucket, region, creds)
             .map_err(|e| StorageError::Other(e.to_string()))?;

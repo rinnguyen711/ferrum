@@ -24,7 +24,10 @@ pub fn router() -> Router<AppState> {
             axum::routing::patch(update).delete(delete),
         )
         .route("/api/admin/webhooks/:id/deliveries", get(deliveries))
-        .route("/api/admin/webhooks/:id/test", axum::routing::post(test_ping))
+        .route(
+            "/api/admin/webhooks/:id/test",
+            axum::routing::post(test_ping),
+        )
 }
 
 async fn ensure_admin(state: &AppState, principal: &Principal) -> Result<(), ApiError> {
@@ -137,9 +140,10 @@ fn validate_url(url: &str) -> Result<(), ApiError> {
         )));
     }
     url::Url::parse(url).map_err(|_| {
-        ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::field("url", "url must be a valid URL"),
-        ))
+        ApiError(Error::Validation(rustapi_core::ValidationErrors::field(
+            "url",
+            "url must be a valid URL",
+        )))
     })?;
     Ok(())
 }

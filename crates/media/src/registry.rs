@@ -25,7 +25,13 @@ pub struct ProviderDescriptor {
 }
 
 fn field(name: &'static str, label: &'static str, required: bool, secret: bool) -> ConfigField {
-    ConfigField { name, label, r#type: "string", required, secret }
+    ConfigField {
+        name,
+        label,
+        r#type: "string",
+        required,
+        secret,
+    }
 }
 
 pub fn descriptors() -> Vec<ProviderDescriptor> {
@@ -59,20 +65,36 @@ pub fn descriptor_for(id: &str) -> Option<ProviderDescriptor> {
 /// Names of the secret fields for a provider (for encrypt/mask logic).
 pub fn secret_fields(id: &str) -> Vec<&'static str> {
     descriptor_for(id)
-        .map(|d| d.fields.iter().filter(|f| f.secret).map(|f| f.name).collect())
+        .map(|d| {
+            d.fields
+                .iter()
+                .filter(|f| f.secret)
+                .map(|f| f.name)
+                .collect()
+        })
         .unwrap_or_default()
 }
 
 /// Validate a config blob against the provider descriptor: provider exists,
 /// every required field is a present non-empty string.
 pub fn validate(id: &str, config: &Value) -> Result<(), StorageError> {
-    let desc = descriptor_for(id).ok_or_else(|| StorageError::Other(format!("unknown provider `{id}`")))?;
-    let obj = config.as_object().ok_or_else(|| StorageError::Other("config must be an object".into()))?;
+    let desc = descriptor_for(id)
+        .ok_or_else(|| StorageError::Other(format!("unknown provider `{id}`")))?;
+    let obj = config
+        .as_object()
+        .ok_or_else(|| StorageError::Other("config must be an object".into()))?;
     for f in &desc.fields {
         if f.required {
-            let ok = obj.get(f.name).and_then(|v| v.as_str()).map(|s| !s.is_empty()).unwrap_or(false);
+            let ok = obj
+                .get(f.name)
+                .and_then(|v| v.as_str())
+                .map(|s| !s.is_empty())
+                .unwrap_or(false);
             if !ok {
-                return Err(StorageError::Other(format!("missing required field `{}`", f.name)));
+                return Err(StorageError::Other(format!(
+                    "missing required field `{}`",
+                    f.name
+                )));
             }
         }
     }
@@ -83,7 +105,9 @@ pub fn validate(id: &str, config: &Value) -> Result<(), StorageError> {
 pub fn build(id: &str, config: &Value) -> Result<Box<dyn StorageProvider>, StorageError> {
     match id {
         "local" => {
-            let base_dir = config.get("base_dir").and_then(|v| v.as_str())
+            let base_dir = config
+                .get("base_dir")
+                .and_then(|v| v.as_str())
                 .ok_or_else(|| StorageError::Other("local: base_dir required".into()))?;
             Ok(Box::new(LocalProvider::new(base_dir)))
         }

@@ -192,7 +192,10 @@ async fn filter_enum_eq_matches() {
     }
 
     let resp = app
-        .admin(app.client.get(app.url("/api/post?filters[status][$eq]=draft")))
+        .admin(
+            app.client
+                .get(app.url("/api/post?filters[status][$eq]=draft")),
+        )
         .send()
         .await
         .unwrap();
@@ -220,9 +223,9 @@ async fn filter_enum_in_returns_union() {
     }
 
     let resp = app
-        .admin(app.client.get(app.url(
-            "/api/post?filters[status][$in][0]=draft&filters[status][$in][1]=published",
-        )))
+        .admin(app.client.get(
+            app.url("/api/post?filters[status][$in][0]=draft&filters[status][$in][1]=published"),
+        ))
         .send()
         .await
         .unwrap();
@@ -365,8 +368,10 @@ async fn patch_add_required_enum_field_returns_422() {
     assert_eq!(resp.status(), 422, "{}", resp.text().await.unwrap());
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["error"]["code"], "validation_failed");
-    assert!(body["error"]["details"]["db"]["code"].is_string(),
-        "expected details.db.code present, body={body}");
+    assert!(
+        body["error"]["details"]["db"]["code"].is_string(),
+        "expected details.db.code present, body={body}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -420,7 +425,10 @@ async fn filter_json_null_true_matches_null_rows() {
     }
 
     let resp = app
-        .admin(app.client.get(app.url("/api/doc?filters[meta][$null]=true")))
+        .admin(
+            app.client
+                .get(app.url("/api/doc?filters[meta][$null]=true")),
+        )
         .send()
         .await
         .unwrap();
@@ -450,7 +458,10 @@ async fn filter_json_null_false_matches_nonnull_rows() {
     }
 
     let resp = app
-        .admin(app.client.get(app.url("/api/doc?filters[meta][$null]=false")))
+        .admin(
+            app.client
+                .get(app.url("/api/doc?filters[meta][$null]=false")),
+        )
         .send()
         .await
         .unwrap();
@@ -526,7 +537,10 @@ async fn filter_email_contains_raw_substring() {
     }
 
     let resp = app
-        .admin(app.client.get(app.url("/api/account?filters[email][$contains]=ali")))
+        .admin(
+            app.client
+                .get(app.url("/api/account?filters[email][$contains]=ali")),
+        )
         .send()
         .await
         .unwrap();
@@ -761,7 +775,10 @@ async fn mixed_entry_with_all_new_kinds_round_trips() {
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["title"], "hi");
     assert_eq!(body["status"], "published");
-    assert_eq!(body["meta"], json!({"k": [1, 2, 3], "nested": {"flag": true}}));
+    assert_eq!(
+        body["meta"],
+        json!({"k": [1, 2, 3], "nested": {"flag": true}})
+    );
     assert_eq!(body["owner_email"], "owner@example.com");
     assert_eq!(body["homepage"], "https://example.com/home");
     assert_eq!(body["slug"], "mixed-entry");

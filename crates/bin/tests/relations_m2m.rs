@@ -81,7 +81,10 @@ async fn m2m_create_and_populate_forward() {
 
     // Populated GET returns the tag objects.
     let resp = app
-        .admin(app.client.get(app.url(&format!("/api/post/{post_id}?populate=tags"))))
+        .admin(
+            app.client
+                .get(app.url(&format!("/api/post/{post_id}?populate=tags"))),
+        )
         .send()
         .await
         .unwrap();
@@ -107,7 +110,10 @@ async fn m2m_inverse_populate() {
         assert_eq!(resp.status(), 201);
     }
     let resp = app
-        .admin(app.client.get(app.url(&format!("/api/tag/{t1}?populate=posts"))))
+        .admin(
+            app.client
+                .get(app.url(&format!("/api/tag/{t1}?populate=posts"))),
+        )
         .send()
         .await
         .unwrap();
@@ -143,7 +149,10 @@ async fn m2m_patch_replace_set() {
     assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
 
     let resp = app
-        .admin(app.client.get(app.url(&format!("/api/post/{id}?populate=tags"))))
+        .admin(
+            app.client
+                .get(app.url(&format!("/api/post/{id}?populate=tags"))),
+        )
         .send()
         .await
         .unwrap();
@@ -155,9 +164,7 @@ async fn m2m_patch_replace_set() {
         .map(|t| t["label"].as_str().unwrap())
         .collect();
     assert_eq!(labels.len(), 2);
-    assert!(
-        labels.contains(&"web") && labels.contains(&"db") && !labels.contains(&"rust")
-    );
+    assert!(labels.contains(&"web") && labels.contains(&"db") && !labels.contains(&"rust"));
 
     // Clear with [].
     let resp = app
@@ -168,7 +175,10 @@ async fn m2m_patch_replace_set() {
         .unwrap();
     assert_eq!(resp.status(), 200);
     let resp = app
-        .admin(app.client.get(app.url(&format!("/api/post/{id}?populate=tags"))))
+        .admin(
+            app.client
+                .get(app.url(&format!("/api/post/{id}?populate=tags"))),
+        )
         .send()
         .await
         .unwrap();
@@ -214,7 +224,10 @@ async fn m2m_links_cascade_on_target_delete() {
     assert_eq!(resp.status(), 204, "{}", resp.text().await.unwrap());
 
     let resp = app
-        .admin(app.client.get(app.url(&format!("/api/post/{id}?populate=tags"))))
+        .admin(
+            app.client
+                .get(app.url(&format!("/api/post/{id}?populate=tags"))),
+        )
         .send()
         .await
         .unwrap();
@@ -297,7 +310,10 @@ async fn m2m_join_table_dropped_with_type() {
     let app = TestApp::spawn().await;
     setup_post_tags(&app).await;
     let resp = app
-        .admin(app.client.delete(app.url("/admin/content-types/post?confirm=true")))
+        .admin(
+            app.client
+                .delete(app.url("/admin/content-types/post?confirm=true")),
+        )
         .send()
         .await
         .unwrap();

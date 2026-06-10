@@ -271,7 +271,8 @@ mod tests {
 
     #[test]
     fn coerce_url_ok() {
-        let v = BoundValue::from_json(FieldKind::Url, &serde_json::json!("https://x.io/p")).unwrap();
+        let v =
+            BoundValue::from_json(FieldKind::Url, &serde_json::json!("https://x.io/p")).unwrap();
         assert!(matches!(v, BoundValue::Str(_)));
     }
 
@@ -316,7 +317,11 @@ mod tests {
     #[test]
     fn coerce_media_is_type_mismatch() {
         assert_eq!(
-            BoundValue::from_json(FieldKind::Media, &serde_json::json!("550e8400-e29b-41d4-a716-446655440000")).unwrap_err(),
+            BoundValue::from_json(
+                FieldKind::Media,
+                &serde_json::json!("550e8400-e29b-41d4-a716-446655440000")
+            )
+            .unwrap_err(),
             CoerceError::TypeMismatch
         );
     }
@@ -360,7 +365,10 @@ mod tests {
             max_length: None,
             kind_meta: serde_json::json!({"values": ["draft", "published"]}),
         };
-        assert_eq!(f.validate().unwrap_err(), FieldError::EnumDefaultNotInValues);
+        assert_eq!(
+            f.validate().unwrap_err(),
+            FieldError::EnumDefaultNotInValues
+        );
     }
 
     #[test]
@@ -551,7 +559,11 @@ impl RelationMeta {
                 return Err(FieldError::RelationMetaShape);
             }
         }
-        Ok(Self { target, cardinality, inverse })
+        Ok(Self {
+            target,
+            cardinality,
+            inverse,
+        })
     }
 }
 
@@ -640,7 +652,10 @@ impl ComponentMeta {
             Some(serde_json::Value::Bool(b)) => *b,
             Some(_) => return Err(FieldError::ComponentMetaShape),
         };
-        Ok(Self { component, multiple })
+        Ok(Self {
+            component,
+            multiple,
+        })
     }
 }
 
@@ -680,7 +695,9 @@ pub enum FieldError {
     KindMetaNotEmpty,
     #[error("default value does not match kind")]
     BadDefault,
-    #[error("relation kind_meta must have {{target, cardinality, inverse?}} with valid ident target")]
+    #[error(
+        "relation kind_meta must have {{target, cardinality, inverse?}} with valid ident target"
+    )]
     RelationMetaShape,
     #[error("cardinality must be one of: many_to_one, one_to_one, many_to_many")]
     BadCardinality,
@@ -807,8 +824,7 @@ impl Field {
             return Err(FieldError::KindMetaNotEmpty);
         }
         if !self.default.is_null() {
-            BoundValue::from_json(self.kind, &self.default)
-                .map_err(|_| FieldError::BadDefault)?;
+            BoundValue::from_json(self.kind, &self.default).map_err(|_| FieldError::BadDefault)?;
         }
         Ok(())
     }
@@ -900,12 +916,18 @@ mod field_tests {
 
     #[test]
     fn reject_reserved_name() {
-        assert_eq!(f("id", FieldKind::String).validate().unwrap_err(), FieldError::Reserved);
+        assert_eq!(
+            f("id", FieldKind::String).validate().unwrap_err(),
+            FieldError::Reserved
+        );
     }
 
     #[test]
     fn reject_bad_name() {
-        assert_eq!(f("Bad", FieldKind::String).validate().unwrap_err(), FieldError::BadName);
+        assert_eq!(
+            f("Bad", FieldKind::String).validate().unwrap_err(),
+            FieldError::BadName
+        );
     }
 
     #[test]
@@ -956,13 +978,19 @@ mod field_tests {
     #[test]
     fn component_meta_rejects_unknown_key() {
         let v = serde_json::json!({"component": "shared.hero", "extra": 1});
-        assert_eq!(ComponentMeta::from_value(&v).unwrap_err(), FieldError::ComponentMetaShape);
+        assert_eq!(
+            ComponentMeta::from_value(&v).unwrap_err(),
+            FieldError::ComponentMetaShape
+        );
     }
 
     #[test]
     fn component_meta_rejects_empty_uid() {
         let v = serde_json::json!({"component": ""});
-        assert_eq!(ComponentMeta::from_value(&v).unwrap_err(), FieldError::ComponentMetaShape);
+        assert_eq!(
+            ComponentMeta::from_value(&v).unwrap_err(),
+            FieldError::ComponentMetaShape
+        );
     }
 
     #[test]
@@ -976,7 +1004,10 @@ mod field_tests {
             max_length: None,
             kind_meta: serde_json::json!({"component": "shared.hero"}),
         };
-        assert_eq!(f.validate().unwrap_err(), FieldError::ComponentFieldUniqueUnsupported);
+        assert_eq!(
+            f.validate().unwrap_err(),
+            FieldError::ComponentFieldUniqueUnsupported
+        );
     }
 
     #[test]
@@ -990,7 +1021,10 @@ mod field_tests {
             max_length: None,
             kind_meta: serde_json::json!({"component": "shared.hero"}),
         };
-        assert_eq!(f.validate().unwrap_err(), FieldError::ComponentFieldDefaultUnsupported);
+        assert_eq!(
+            f.validate().unwrap_err(),
+            FieldError::ComponentFieldDefaultUnsupported
+        );
     }
 
     #[test]
@@ -1126,10 +1160,16 @@ mod relation_meta_tests {
             max_length: None,
             kind_meta: json!({"target":"user","cardinality":"many_to_one"}),
         };
-        assert_eq!(f.validate().unwrap_err(), FieldError::RelationFieldUniqueUnsupported);
+        assert_eq!(
+            f.validate().unwrap_err(),
+            FieldError::RelationFieldUniqueUnsupported
+        );
         f.unique = false;
         f.default = json!("550e8400-e29b-41d4-a716-446655440000");
-        assert_eq!(f.validate().unwrap_err(), FieldError::RelationFieldDefaultUnsupported);
+        assert_eq!(
+            f.validate().unwrap_err(),
+            FieldError::RelationFieldDefaultUnsupported
+        );
     }
 
     #[test]
@@ -1143,7 +1183,10 @@ mod relation_meta_tests {
             max_length: None,
             kind_meta: json!({"target":"tag","cardinality":"many_to_many"}),
         };
-        assert_eq!(f.validate().unwrap_err(), FieldError::ManyToManyCannotBeRequired);
+        assert_eq!(
+            f.validate().unwrap_err(),
+            FieldError::ManyToManyCannotBeRequired
+        );
     }
 
     #[test]
@@ -1188,7 +1231,15 @@ mod relation_meta_tests {
         assert!(mk("many_to_one").is_stored_column());
         assert!(mk("one_to_one").is_stored_column());
         assert!(!mk("many_to_many").is_stored_column());
-        let s = Field { name: "t".into(), kind: FieldKind::String, required: false, unique: false, default: serde_json::Value::Null, max_length: None, kind_meta: json!({}) };
+        let s = Field {
+            name: "t".into(),
+            kind: FieldKind::String,
+            required: false,
+            unique: false,
+            default: serde_json::Value::Null,
+            max_length: None,
+            kind_meta: json!({}),
+        };
         assert!(s.is_stored_column());
     }
 
@@ -1319,10 +1370,14 @@ mod media_field_tests {
     }
 
     #[test]
-    fn single_media_ok() { assert!(media(false).validate().is_ok()); }
+    fn single_media_ok() {
+        assert!(media(false).validate().is_ok());
+    }
 
     #[test]
-    fn multi_media_ok() { assert!(media(true).validate().is_ok()); }
+    fn multi_media_ok() {
+        assert!(media(true).validate().is_ok());
+    }
 
     #[test]
     fn empty_kind_meta_ok() {
@@ -1335,28 +1390,40 @@ mod media_field_tests {
     fn rejects_unique() {
         let mut f = media(false);
         f.unique = true;
-        assert_eq!(f.validate().unwrap_err(), FieldError::MediaFieldUniqueUnsupported);
+        assert_eq!(
+            f.validate().unwrap_err(),
+            FieldError::MediaFieldUniqueUnsupported
+        );
     }
 
     #[test]
     fn rejects_default() {
         let mut f = media(false);
         f.default = json!("550e8400-e29b-41d4-a716-446655440000");
-        assert_eq!(f.validate().unwrap_err(), FieldError::MediaFieldDefaultUnsupported);
+        assert_eq!(
+            f.validate().unwrap_err(),
+            FieldError::MediaFieldDefaultUnsupported
+        );
     }
 
     #[test]
     fn rejects_required_single() {
         let mut f = media(false);
         f.required = true;
-        assert_eq!(f.validate().unwrap_err(), FieldError::MediaFieldRequiredUnsupported);
+        assert_eq!(
+            f.validate().unwrap_err(),
+            FieldError::MediaFieldRequiredUnsupported
+        );
     }
 
     #[test]
     fn rejects_required_multiple() {
         let mut f = media(true);
         f.required = true;
-        assert_eq!(f.validate().unwrap_err(), FieldError::MediaFieldRequiredUnsupported);
+        assert_eq!(
+            f.validate().unwrap_err(),
+            FieldError::MediaFieldRequiredUnsupported
+        );
     }
 
     #[test]

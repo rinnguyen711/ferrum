@@ -1,8 +1,8 @@
 //! Format validators for new field kinds (phase 2.5).
 //! Email and slug use compiled regex (LazyLock); url uses the `url` crate.
 
-use std::sync::LazyLock;
 use regex::Regex;
+use std::sync::LazyLock;
 
 static EMAIL_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[^@\s]+@[^@\s]+\.[^@\s]+$").unwrap());

@@ -35,7 +35,12 @@ pub struct Condition {
 
 impl Condition {
     pub fn new(column: impl Into<String>, kind: FieldKind, op: Op, value: FilterValue) -> Self {
-        Self { column: column.into(), kind, op, value }
+        Self {
+            column: column.into(),
+            kind,
+            op,
+            value,
+        }
     }
 }
 
@@ -86,22 +91,19 @@ pub fn op_allows_kind(op: Op, kind: FieldKind) -> bool {
     match op {
         Eq | Ne => matches!(
             kind,
-            String | Text | Integer | Float | Boolean | Datetime | Uuid
-                | Email | Url | Slug | Enum
+            String | Text | Integer | Float | Boolean | Datetime | Uuid | Email | Url | Slug | Enum
         ),
         IsNull => true,
         Gt | Gte | Lt | Lte => matches!(kind, Integer | Float | Datetime),
         In | NotIn => matches!(
             kind,
-            String | Text | Integer | Float | Boolean | Datetime | Uuid
-                | Email | Url | Slug | Enum
+            String | Text | Integer | Float | Boolean | Datetime | Uuid | Email | Url | Slug | Enum
         ),
         Contains | StartsWith | EndsWith | ContainsI => {
             matches!(kind, String | Text | Email | Url | Slug)
-        }
-        // Same-crate `#[non_exhaustive]` does not require a wildcard. If a
-        // new `Op` lands in this crate, the build breaks here until the
-        // matrix gets an explicit entry — intentional safety.
+        } // Same-crate `#[non_exhaustive]` does not require a wildcard. If a
+          // new `Op` lands in this crate, the build breaks here until the
+          // matrix gets an explicit entry — intentional safety.
     }
 }
 
@@ -200,17 +202,31 @@ mod tests {
     fn leaf_variant_holds_condition() {
         let c = Condition::new("title", FieldKind::String, Op::Eq, FilterValue::Null(true));
         let f = Filter::Leaf(c.clone());
-        let Filter::Leaf(inner) = f else { panic!("expected Leaf") };
+        let Filter::Leaf(inner) = f else {
+            panic!("expected Leaf")
+        };
         assert_eq!(inner.column, c.column);
     }
 
     #[test]
     fn any_variant_holds_vec() {
         let f = Filter::Any(vec![
-            Filter::Leaf(Condition::new("a", FieldKind::Integer, Op::Eq, FilterValue::Null(true))),
-            Filter::Leaf(Condition::new("b", FieldKind::Integer, Op::Eq, FilterValue::Null(true))),
+            Filter::Leaf(Condition::new(
+                "a",
+                FieldKind::Integer,
+                Op::Eq,
+                FilterValue::Null(true),
+            )),
+            Filter::Leaf(Condition::new(
+                "b",
+                FieldKind::Integer,
+                Op::Eq,
+                FilterValue::Null(true),
+            )),
         ]);
-        let Filter::Any(xs) = f else { panic!("expected Any") };
+        let Filter::Any(xs) = f else {
+            panic!("expected Any")
+        };
         assert_eq!(xs.len(), 2);
     }
 
@@ -222,19 +238,31 @@ mod tests {
             Op::Eq,
             FilterValue::Null(true),
         ))));
-        let Filter::Not(inner) = f else { panic!("expected Not") };
+        let Filter::Not(inner) = f else {
+            panic!("expected Not")
+        };
         assert!(matches!(*inner, Filter::Leaf(_)));
     }
 
     #[test]
     fn all_variant_holds_vec_of_filter() {
         let f = Filter::All(vec![
-            Filter::Leaf(Condition::new("a", FieldKind::Integer, Op::Eq, FilterValue::Null(true))),
-            Filter::Any(vec![
-                Filter::Leaf(Condition::new("b", FieldKind::Integer, Op::Eq, FilterValue::Null(true))),
-            ]),
+            Filter::Leaf(Condition::new(
+                "a",
+                FieldKind::Integer,
+                Op::Eq,
+                FilterValue::Null(true),
+            )),
+            Filter::Any(vec![Filter::Leaf(Condition::new(
+                "b",
+                FieldKind::Integer,
+                Op::Eq,
+                FilterValue::Null(true),
+            ))]),
         ]);
-        let Filter::All(xs) = f else { panic!("expected All") };
+        let Filter::All(xs) = f else {
+            panic!("expected All")
+        };
         assert_eq!(xs.len(), 2);
         assert!(matches!(xs[0], Filter::Leaf(_)));
         assert!(matches!(xs[1], Filter::Any(_)));

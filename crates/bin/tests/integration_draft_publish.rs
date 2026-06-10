@@ -47,7 +47,10 @@ async fn publish_flow_and_status_filter() {
 
     let created = create_entry(&app, "note", json!({ "title": "hello" })).await;
     let id = created["id"].as_str().unwrap().to_string();
-    assert!(created["published_at"].is_null(), "new entry should be a draft");
+    assert!(
+        created["published_at"].is_null(),
+        "new entry should be a draft"
+    );
 
     // default list = published only → excludes the draft
     let listed = list(&app, "/api/note").await;
@@ -77,7 +80,10 @@ async fn publish_flow_and_status_filter() {
 
     // unpublish → back to draft
     let resp = app
-        .admin(app.client.post(app.url(&format!("/api/note/{id}/unpublish"))))
+        .admin(
+            app.client
+                .post(app.url(&format!("/api/note/{id}/unpublish"))),
+        )
         .send()
         .await
         .unwrap();
@@ -107,7 +113,10 @@ async fn publish_rejected_for_non_draft_publish_type() {
     let created = create_entry(&app, "plain", json!({ "title": "x" })).await;
     let id = created["id"].as_str().unwrap();
     let resp = app
-        .admin(app.client.post(app.url(&format!("/api/plain/{id}/publish"))))
+        .admin(
+            app.client
+                .post(app.url(&format!("/api/plain/{id}/publish"))),
+        )
         .send()
         .await
         .unwrap();

@@ -14,11 +14,11 @@ use uuid::Uuid;
 
 /// The canonical 1x1 PNG used by the media tests.
 const TINY_PNG: &[u8] = &[
-    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
-    0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F,
-    0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00,
-    0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
-    0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+    0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+    0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+    0x42, 0x60, 0x82,
 ];
 
 /// Upload the tiny PNG and return the asset `id`.
@@ -35,7 +35,12 @@ async fn upload_asset(app: &TestApp, filename: &str) -> String {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 201, "asset upload failed: {}", resp.text().await.unwrap());
+    assert_eq!(
+        resp.status(),
+        201,
+        "asset upload failed: {}",
+        resp.text().await.unwrap()
+    );
     let body: Value = resp.json().await.unwrap();
     body["id"].as_str().unwrap().to_string()
 }
@@ -67,7 +72,12 @@ async fn media_single_and_multi_round_trip() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 201, "content-type create failed: {}", resp.text().await.unwrap());
+    assert_eq!(
+        resp.status(),
+        201,
+        "content-type create failed: {}",
+        resp.text().await.unwrap()
+    );
 
     // Step 3: Create an entry pointing at both assets.
     let resp = app
@@ -80,7 +90,12 @@ async fn media_single_and_multi_round_trip() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 201, "entry create failed: {}", resp.text().await.unwrap());
+    assert_eq!(
+        resp.status(),
+        201,
+        "entry create failed: {}",
+        resp.text().await.unwrap()
+    );
     let created: Value = resp.json().await.unwrap();
     let entry_id = created["id"].as_str().unwrap().to_string();
 
@@ -90,7 +105,12 @@ async fn media_single_and_multi_round_trip() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 200, "entry GET failed: {}", resp.text().await.unwrap());
+    assert_eq!(
+        resp.status(),
+        200,
+        "entry GET failed: {}",
+        resp.text().await.unwrap()
+    );
     let body: Value = resp.json().await.unwrap();
 
     // hero must be an object (embedded) with correct id and mime_type.
@@ -100,21 +120,39 @@ async fn media_single_and_multi_round_trip() {
         body["hero"]
     );
     assert_eq!(body["hero"]["id"], a1, "hero id mismatch");
-    assert_eq!(body["hero"]["mime_type"], "image/png", "hero mime_type mismatch");
+    assert_eq!(
+        body["hero"]["mime_type"], "image/png",
+        "hero mime_type mismatch"
+    );
 
     // gallery must be an array of length 2, preserving insertion order.
-    let gallery = body["gallery"].as_array().expect("gallery should be an array");
-    assert_eq!(gallery.len(), 2, "expected gallery length 2, got {}", gallery.len());
+    let gallery = body["gallery"]
+        .as_array()
+        .expect("gallery should be an array");
+    assert_eq!(
+        gallery.len(),
+        2,
+        "expected gallery length 2, got {}",
+        gallery.len()
+    );
     assert_eq!(gallery[0]["id"], a2, "gallery[0] id mismatch");
     assert_eq!(gallery[1]["id"], a1, "gallery[1] id mismatch");
 
     // Step 5: Delete asset a1.
     let del = app
-        .admin(app.client.delete(app.url(&format!("/admin/media/assets/{a1}"))))
+        .admin(
+            app.client
+                .delete(app.url(&format!("/admin/media/assets/{a1}"))),
+        )
         .send()
         .await
         .unwrap();
-    assert_eq!(del.status(), 204, "asset delete failed: {}", del.text().await.unwrap());
+    assert_eq!(
+        del.status(),
+        204,
+        "asset delete failed: {}",
+        del.text().await.unwrap()
+    );
 
     // Step 6: GET entry again — SET NULL on hero, cascade-drop on gallery join row.
     let resp = app
@@ -122,7 +160,12 @@ async fn media_single_and_multi_round_trip() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 200, "entry re-GET failed: {}", resp.text().await.unwrap());
+    assert_eq!(
+        resp.status(),
+        200,
+        "entry re-GET failed: {}",
+        resp.text().await.unwrap()
+    );
     let body: Value = resp.json().await.unwrap();
 
     assert!(
@@ -131,7 +174,9 @@ async fn media_single_and_multi_round_trip() {
         body["hero"]
     );
 
-    let gallery = body["gallery"].as_array().expect("gallery should still be an array");
+    let gallery = body["gallery"]
+        .as_array()
+        .expect("gallery should still be an array");
     assert_eq!(
         gallery.len(),
         1,
@@ -163,7 +208,12 @@ async fn patch_adds_and_drops_media_fields() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 201, "content-type create failed: {}", resp.text().await.unwrap());
+    assert_eq!(
+        resp.status(),
+        201,
+        "content-type create failed: {}",
+        resp.text().await.unwrap()
+    );
 
     // Step 2: PATCH to add single-media `cover` and multiple-media `album`.
     let resp = app
@@ -177,7 +227,12 @@ async fn patch_adds_and_drops_media_fields() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 200, "PATCH add media fields failed: {}", resp.text().await.unwrap());
+    assert_eq!(
+        resp.status(),
+        200,
+        "PATCH add media fields failed: {}",
+        resp.text().await.unwrap()
+    );
 
     // Step 3: Upload two assets.
     let a1 = upload_asset(&app, "cover.png").await;
@@ -194,7 +249,12 @@ async fn patch_adds_and_drops_media_fields() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 201, "entry create failed: {}", resp.text().await.unwrap());
+    assert_eq!(
+        resp.status(),
+        201,
+        "entry create failed: {}",
+        resp.text().await.unwrap()
+    );
     let created: Value = resp.json().await.unwrap();
     let entry_id = created["id"].as_str().unwrap().to_string();
 
@@ -204,7 +264,12 @@ async fn patch_adds_and_drops_media_fields() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 200, "entry GET failed: {}", resp.text().await.unwrap());
+    assert_eq!(
+        resp.status(),
+        200,
+        "entry GET failed: {}",
+        resp.text().await.unwrap()
+    );
     let body: Value = resp.json().await.unwrap();
 
     assert!(
@@ -215,7 +280,12 @@ async fn patch_adds_and_drops_media_fields() {
     assert_eq!(body["cover"]["id"], a1, "cover id mismatch");
 
     let album = body["album"].as_array().expect("album should be an array");
-    assert_eq!(album.len(), 2, "expected album length 2, got {}", album.len());
+    assert_eq!(
+        album.len(),
+        2,
+        "expected album length 2, got {}",
+        album.len()
+    );
     assert_eq!(album[0]["id"], a1, "album[0] id mismatch");
     assert_eq!(album[1]["id"], a2, "album[1] id mismatch");
 
@@ -228,7 +298,12 @@ async fn patch_adds_and_drops_media_fields() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 200, "PATCH drop album failed: {}", resp.text().await.unwrap());
+    assert_eq!(
+        resp.status(),
+        200,
+        "PATCH drop album failed: {}",
+        resp.text().await.unwrap()
+    );
 
     // Step 7: GET again — album key should be gone; cover still present.
     let resp = app
@@ -236,7 +311,12 @@ async fn patch_adds_and_drops_media_fields() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 200, "entry re-GET failed: {}", resp.text().await.unwrap());
+    assert_eq!(
+        resp.status(),
+        200,
+        "entry re-GET failed: {}",
+        resp.text().await.unwrap()
+    );
     let body: Value = resp.json().await.unwrap();
 
     assert!(
@@ -248,7 +328,10 @@ async fn patch_adds_and_drops_media_fields() {
         "cover should still be an object after album drop, got: {}",
         body["cover"]
     );
-    assert_eq!(body["cover"]["id"], a1, "cover id mismatch after album drop");
+    assert_eq!(
+        body["cover"]["id"], a1,
+        "cover id mismatch after album drop"
+    );
 }
 
 #[tokio::test]
@@ -269,7 +352,12 @@ async fn media_field_rejects_missing_asset_and_clears() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 201, "content-type create failed: {}", resp.text().await.unwrap());
+    assert_eq!(
+        resp.status(),
+        201,
+        "content-type create failed: {}",
+        resp.text().await.unwrap()
+    );
 
     // Step 2: POST with a non-existent asset id → 422.
     let ghost_id = Uuid::new_v4().to_string();
@@ -296,7 +384,12 @@ async fn media_field_rejects_missing_asset_and_clears() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 201, "doc create failed: {}", resp.text().await.unwrap());
+    assert_eq!(
+        resp.status(),
+        201,
+        "doc create failed: {}",
+        resp.text().await.unwrap()
+    );
     let doc_id = resp.json::<Value>().await.unwrap()["id"]
         .as_str()
         .unwrap()
@@ -336,6 +429,11 @@ async fn media_field_rejects_missing_asset_and_clears() {
         .unwrap();
     assert_eq!(resp.status(), 200);
     let body: Value = resp.json().await.unwrap();
-    let shots = body["shots"].as_array().expect("shots should still be an array after clear");
-    assert!(shots.is_empty(), "expected shots to be empty after PUT with [], got: {shots:?}");
+    let shots = body["shots"]
+        .as_array()
+        .expect("shots should still be an array after clear");
+    assert!(
+        shots.is_empty(),
+        "expected shots to be empty after PUT with [], got: {shots:?}"
+    );
 }

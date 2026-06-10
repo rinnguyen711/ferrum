@@ -14,7 +14,10 @@ use uuid::Uuid;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/admin/users", get(list).post(create))
-        .route("/admin/users/:id", axum::routing::patch(update).delete(remove))
+        .route(
+            "/admin/users/:id",
+            axum::routing::patch(update).delete(remove),
+        )
 }
 
 #[derive(Serialize)]
@@ -26,7 +29,11 @@ struct UserView {
 
 impl From<users::UserRow> for UserView {
     fn from(u: users::UserRow) -> Self {
-        UserView { id: u.id, email: u.email, roles: u.roles }
+        UserView {
+            id: u.id,
+            email: u.email,
+            roles: u.roles,
+        }
     }
 }
 

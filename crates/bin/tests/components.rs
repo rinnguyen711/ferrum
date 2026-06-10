@@ -111,7 +111,10 @@ async fn delete_unreferenced_component() {
     make_hero_component(&app).await;
 
     let resp = app
-        .admin(app.client.delete(app.url("/admin/components/shared.hero?confirm=true")))
+        .admin(
+            app.client
+                .delete(app.url("/admin/components/shared.hero?confirm=true")),
+        )
         .send()
         .await
         .unwrap();
@@ -125,7 +128,10 @@ async fn delete_referenced_component_rejected() {
     make_article_type(&app).await;
 
     let resp = app
-        .admin(app.client.delete(app.url("/admin/components/shared.hero?confirm=true")))
+        .admin(
+            app.client
+                .delete(app.url("/admin/components/shared.hero?confirm=true")),
+        )
         .send()
         .await
         .unwrap();
@@ -151,7 +157,9 @@ async fn get_content_type_injects_component_fields() {
         .iter()
         .find(|f| f["name"] == "hero")
         .unwrap();
-    let comp_fields = hero_field["kind_meta"]["_component_fields"].as_array().unwrap();
+    let comp_fields = hero_field["kind_meta"]["_component_fields"]
+        .as_array()
+        .unwrap();
     assert_eq!(comp_fields.len(), 2);
     assert_eq!(comp_fields[0]["name"], "title");
 }
@@ -215,7 +223,10 @@ async fn write_entry_missing_required_inner_field_rejected() {
     assert_eq!(resp.status(), 422);
     let body: serde_json::Value = resp.json().await.unwrap();
     let err_text = serde_json::to_string(&body).unwrap();
-    assert!(err_text.contains("hero.title"), "expected hero.title in {err_text}");
+    assert!(
+        err_text.contains("hero.title"),
+        "expected hero.title in {err_text}"
+    );
 }
 
 #[tokio::test]

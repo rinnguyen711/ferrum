@@ -11,10 +11,7 @@ pub enum Principal {
         roles: Vec<String>,
     },
     /// An API token, built from a DB lookup. Carries explicit action scopes.
-    ApiToken {
-        id: Uuid,
-        scopes: Vec<String>,
-    },
+    ApiToken { id: Uuid, scopes: Vec<String> },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,15 +39,15 @@ impl Principal {
 /// Maps an `Action` to its wire scope string.
 pub fn action_to_scope(action: Action) -> &'static str {
     match action {
-        Action::ContentRead   => "content:read",
-        Action::ContentWrite  => "content:write",
+        Action::ContentRead => "content:read",
+        Action::ContentWrite => "content:write",
         Action::ContentDelete => "content:delete",
-        Action::SchemaRead    => "schema:read",
-        Action::SchemaWrite   => "schema:write",
-        Action::SchemaDelete  => "schema:delete",
-        Action::UserRead      => "user:read",
-        Action::UserWrite     => "user:write",
-        Action::UserDelete    => "user:delete",
+        Action::SchemaRead => "schema:read",
+        Action::SchemaWrite => "schema:write",
+        Action::SchemaDelete => "schema:delete",
+        Action::UserRead => "user:read",
+        Action::UserWrite => "user:write",
+        Action::UserDelete => "user:delete",
     }
 }
 
@@ -73,9 +70,15 @@ mod tests {
     #[test]
     fn admin_allows_everything() {
         for a in [
-            Action::SchemaRead, Action::SchemaWrite, Action::SchemaDelete,
-            Action::ContentRead, Action::ContentWrite, Action::ContentDelete,
-            Action::UserRead, Action::UserWrite, Action::UserDelete,
+            Action::SchemaRead,
+            Action::SchemaWrite,
+            Action::SchemaDelete,
+            Action::ContentRead,
+            Action::ContentWrite,
+            Action::ContentDelete,
+            Action::UserRead,
+            Action::UserWrite,
+            Action::UserDelete,
         ] {
             assert!(role_allows("admin", a), "admin should allow {a:?}");
         }
@@ -111,8 +114,12 @@ mod tests {
     #[test]
     fn unknown_role_allows_nothing() {
         for a in [
-            Action::SchemaRead, Action::SchemaWrite, Action::SchemaDelete,
-            Action::ContentRead, Action::ContentWrite, Action::ContentDelete,
+            Action::SchemaRead,
+            Action::SchemaWrite,
+            Action::SchemaDelete,
+            Action::ContentRead,
+            Action::ContentWrite,
+            Action::ContentDelete,
         ] {
             assert!(!role_allows("ghost", a));
         }
@@ -120,20 +127,23 @@ mod tests {
 
     #[test]
     fn action_to_scope_round_trips() {
-        assert_eq!(action_to_scope(Action::ContentRead),   "content:read");
-        assert_eq!(action_to_scope(Action::ContentWrite),  "content:write");
+        assert_eq!(action_to_scope(Action::ContentRead), "content:read");
+        assert_eq!(action_to_scope(Action::ContentWrite), "content:write");
         assert_eq!(action_to_scope(Action::ContentDelete), "content:delete");
-        assert_eq!(action_to_scope(Action::SchemaRead),    "schema:read");
-        assert_eq!(action_to_scope(Action::SchemaWrite),   "schema:write");
-        assert_eq!(action_to_scope(Action::SchemaDelete),  "schema:delete");
-        assert_eq!(action_to_scope(Action::UserRead),      "user:read");
-        assert_eq!(action_to_scope(Action::UserWrite),     "user:write");
-        assert_eq!(action_to_scope(Action::UserDelete),    "user:delete");
+        assert_eq!(action_to_scope(Action::SchemaRead), "schema:read");
+        assert_eq!(action_to_scope(Action::SchemaWrite), "schema:write");
+        assert_eq!(action_to_scope(Action::SchemaDelete), "schema:delete");
+        assert_eq!(action_to_scope(Action::UserRead), "user:read");
+        assert_eq!(action_to_scope(Action::UserWrite), "user:write");
+        assert_eq!(action_to_scope(Action::UserDelete), "user:delete");
     }
 
     #[test]
     fn api_token_kind() {
-        let p = Principal::ApiToken { id: Uuid::nil(), scopes: vec![] };
+        let p = Principal::ApiToken {
+            id: Uuid::nil(),
+            scopes: vec![],
+        };
         assert_eq!(p.kind(), "api_token");
     }
 }

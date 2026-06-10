@@ -102,7 +102,11 @@ pub async fn login(
 pub async fn me(Extension(principal): Extension<Principal>) -> Json<UserView> {
     match principal {
         Principal::User { id, email, roles } => Json(UserView { id, email, roles }),
-        Principal::ApiToken { id, .. } => Json(UserView { id, email: String::new(), roles: vec![] }),
+        Principal::ApiToken { id, .. } => Json(UserView {
+            id,
+            email: String::new(),
+            roles: vec![],
+        }),
     }
 }
 

@@ -28,7 +28,12 @@ pub async fn list(pool: &PgPool) -> Result<Vec<UserRow>, sqlx::Error> {
     .await?;
     Ok(rows
         .into_iter()
-        .map(|(id, email, password_hash, roles)| UserRow { id, email, password_hash, roles })
+        .map(|(id, email, password_hash, roles)| UserRow {
+            id,
+            email,
+            password_hash,
+            roles,
+        })
         .collect())
 }
 
@@ -40,16 +45,22 @@ pub async fn create(
     password_hash: &str,
     roles: &[String],
 ) -> Result<UserRow, sqlx::Error> {
-    let (id, email, password_hash, roles) = sqlx::query_as::<_, (Uuid, String, String, Vec<String>)>(
-        "INSERT INTO _users (email, password_hash, roles) VALUES ($1, $2, $3) \
+    let (id, email, password_hash, roles) =
+        sqlx::query_as::<_, (Uuid, String, String, Vec<String>)>(
+            "INSERT INTO _users (email, password_hash, roles) VALUES ($1, $2, $3) \
          RETURNING id, email, password_hash, roles",
-    )
-    .bind(email)
-    .bind(password_hash)
-    .bind(roles)
-    .fetch_one(pool)
-    .await?;
-    Ok(UserRow { id, email, password_hash, roles })
+        )
+        .bind(email)
+        .bind(password_hash)
+        .bind(roles)
+        .fetch_one(pool)
+        .await?;
+    Ok(UserRow {
+        id,
+        email,
+        password_hash,
+        roles,
+    })
 }
 
 /// Update selected fields. `None` arguments are left unchanged. Returns the
@@ -76,7 +87,12 @@ pub async fn update(
     .bind(roles)
     .fetch_optional(pool)
     .await?;
-    Ok(row.map(|(id, email, password_hash, roles)| UserRow { id, email, password_hash, roles }))
+    Ok(row.map(|(id, email, password_hash, roles)| UserRow {
+        id,
+        email,
+        password_hash,
+        roles,
+    }))
 }
 
 /// Delete by id. Returns true if a row was removed.

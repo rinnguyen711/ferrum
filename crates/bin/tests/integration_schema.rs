@@ -1,6 +1,6 @@
 mod common;
 use common::TestApp;
-use rustapi_core::{ContentTypeKind, FieldKind, NewContentType, Field};
+use rustapi_core::{ContentTypeKind, Field, FieldKind, NewContentType};
 use serde_json::json;
 
 #[tokio::test]
@@ -74,7 +74,10 @@ async fn create_list_get_delete_content_type() {
 
     // Delete with confirm
     let resp = app
-        .admin(app.client.delete(app.url("/admin/content-types/post?confirm=true")))
+        .admin(
+            app.client
+                .delete(app.url("/admin/content-types/post?confirm=true")),
+        )
         .send()
         .await
         .unwrap();
@@ -115,9 +118,19 @@ async fn rejects_duplicate_create() {
         "display_name": "Post",
         "fields": [{"name": "title", "kind": "string"}]
     });
-    let resp = app.admin(app.client.post(app.url("/admin/content-types"))).json(&payload).send().await.unwrap();
+    let resp = app
+        .admin(app.client.post(app.url("/admin/content-types")))
+        .json(&payload)
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 201);
-    let resp = app.admin(app.client.post(app.url("/admin/content-types"))).json(&payload).send().await.unwrap();
+    let resp = app
+        .admin(app.client.post(app.url("/admin/content-types")))
+        .json(&payload)
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 409);
 }
 

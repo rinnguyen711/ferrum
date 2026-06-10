@@ -40,15 +40,18 @@ impl ComponentStore {
         Ok(row.map(|r| r.into_component()))
     }
 
-    pub async fn create(&self, uid: &str, display_name: &str, fields: &[Field]) -> Result<Component, sqlx::Error> {
-        sqlx::query(
-            "INSERT INTO _components (uid, display_name, fields) VALUES ($1, $2, $3)",
-        )
-        .bind(uid)
-        .bind(display_name)
-        .bind(sqlx::types::Json(fields))
-        .execute(&self.pool)
-        .await?;
+    pub async fn create(
+        &self,
+        uid: &str,
+        display_name: &str,
+        fields: &[Field],
+    ) -> Result<Component, sqlx::Error> {
+        sqlx::query("INSERT INTO _components (uid, display_name, fields) VALUES ($1, $2, $3)")
+            .bind(uid)
+            .bind(display_name)
+            .bind(sqlx::types::Json(fields))
+            .execute(&self.pool)
+            .await?;
         Ok(Component {
             uid: uid.to_string(),
             display_name: display_name.to_string(),
@@ -56,15 +59,19 @@ impl ComponentStore {
         })
     }
 
-    pub async fn update(&self, uid: &str, display_name: &str, fields: &[Field]) -> Result<Option<Component>, sqlx::Error> {
-        let result = sqlx::query(
-            "UPDATE _components SET display_name = $1, fields = $2 WHERE uid = $3",
-        )
-        .bind(display_name)
-        .bind(sqlx::types::Json(fields))
-        .bind(uid)
-        .execute(&self.pool)
-        .await?;
+    pub async fn update(
+        &self,
+        uid: &str,
+        display_name: &str,
+        fields: &[Field],
+    ) -> Result<Option<Component>, sqlx::Error> {
+        let result =
+            sqlx::query("UPDATE _components SET display_name = $1, fields = $2 WHERE uid = $3")
+                .bind(display_name)
+                .bind(sqlx::types::Json(fields))
+                .bind(uid)
+                .execute(&self.pool)
+                .await?;
         if result.rows_affected() == 0 {
             return Ok(None);
         }

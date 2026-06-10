@@ -8,4 +8,6 @@ pub mod secret;
 
 pub use local::LocalProvider;
 pub use provider::{StorageError, StorageProvider};
-pub use registry::{build, descriptors, descriptor_for, secret_fields, validate, ConfigField, ProviderDescriptor};
+pub use registry::{
+    build, descriptor_for, descriptors, secret_fields, validate, ConfigField, ProviderDescriptor,
+};

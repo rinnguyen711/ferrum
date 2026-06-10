@@ -159,7 +159,10 @@ mod tests {
     fn empty_display() {
         let mut x = nct("post", vec![field("title")]);
         x.display_name = "  ".into();
-        assert_eq!(x.validate().unwrap_err(), ContentTypeError::EmptyDisplayName);
+        assert_eq!(
+            x.validate().unwrap_err(),
+            ContentTypeError::EmptyDisplayName
+        );
     }
 
     #[test]
@@ -173,7 +176,9 @@ mod tests {
     #[test]
     fn duplicate_fields() {
         assert_eq!(
-            nct("post", vec![field("title"), field("title")]).validate().unwrap_err(),
+            nct("post", vec![field("title"), field("title")])
+                .validate()
+                .unwrap_err(),
             ContentTypeError::DuplicateField("title".into())
         );
     }
@@ -254,7 +259,9 @@ mod tests {
             max_length: None,
             kind_meta: json!({"target":"user","cardinality":"many_to_one"}),
         };
-        assert!(nct("post", vec![field("title"), relation]).validate().is_ok());
+        assert!(nct("post", vec![field("title"), relation])
+            .validate()
+            .is_ok());
     }
 
     #[test]
@@ -399,7 +406,11 @@ impl PatchContentType {
         // Post-mutation field set = (existing − drops) + adds. The drop-then-readd
         // case is already rejected above by DuplicateAddField, so no overlap risk.
         let mut cols: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for f in existing.fields.iter().filter(|f| !drop_set.contains(f.name.as_str())) {
+        for f in existing
+            .fields
+            .iter()
+            .filter(|f| !drop_set.contains(f.name.as_str()))
+        {
             let col = f.physical_column();
             if !cols.insert(col.clone()) {
                 // This would only fire if an EXISTING type already had a collision —
@@ -488,7 +499,13 @@ mod patch_tests {
 
     #[test]
     fn noop_rejected() {
-        let p = PatchContentType { display_name: None, add_fields: vec![], drop_fields: vec![], extend_enum_values: vec![], options: None };
+        let p = PatchContentType {
+            display_name: None,
+            add_fields: vec![],
+            drop_fields: vec![],
+            extend_enum_values: vec![],
+            options: None,
+        };
         assert_eq!(p.validate(&existing()).unwrap_err(), PatchError::NoOp);
     }
 
@@ -514,7 +531,10 @@ mod patch_tests {
             extend_enum_values: vec![],
             options: None,
         };
-        assert!(matches!(p.validate(&existing()).unwrap_err(), PatchError::UnknownDropField(_)));
+        assert!(matches!(
+            p.validate(&existing()).unwrap_err(),
+            PatchError::UnknownDropField(_)
+        ));
     }
 
     #[test]
@@ -526,7 +546,10 @@ mod patch_tests {
             extend_enum_values: vec![],
             options: None,
         };
-        assert!(matches!(p.validate(&existing()).unwrap_err(), PatchError::DropSystemField(_)));
+        assert!(matches!(
+            p.validate(&existing()).unwrap_err(),
+            PatchError::DropSystemField(_)
+        ));
     }
 
     #[test]
@@ -546,7 +569,10 @@ mod patch_tests {
             extend_enum_values: vec![],
             options: None,
         };
-        assert!(matches!(p.validate(&existing()).unwrap_err(), PatchError::DuplicateAddField(_)));
+        assert!(matches!(
+            p.validate(&existing()).unwrap_err(),
+            PatchError::DuplicateAddField(_)
+        ));
     }
 
     #[test]

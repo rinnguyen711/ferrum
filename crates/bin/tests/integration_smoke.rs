@@ -15,6 +15,11 @@ async fn healthz_ok() {
 #[tokio::test]
 async fn admin_requires_auth() {
     let app = TestApp::spawn().await;
-    let resp = app.client.get(app.url("/admin/content-types")).send().await.unwrap();
+    let resp = app
+        .client
+        .get(app.url("/admin/content-types"))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 401);
 }

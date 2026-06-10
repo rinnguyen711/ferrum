@@ -45,8 +45,7 @@ impl MockServer {
     }
 
     async fn wait_for_delivery(&self, timeout_ms: u64) -> Vec<Value> {
-        let deadline =
-            tokio::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
         loop {
             let got = self.received.lock().await.clone();
             if !got.is_empty() {
@@ -97,7 +96,10 @@ async fn webhook_crud_list_create_update_delete() {
     assert_eq!(list.len(), 1);
 
     let resp = app
-        .admin(app.client.patch(app.url(&format!("/api/admin/webhooks/{id}"))))
+        .admin(
+            app.client
+                .patch(app.url(&format!("/api/admin/webhooks/{id}"))),
+        )
         .json(&json!({
             "name": "renamed",
             "url": mock.url("/hook"),
@@ -204,13 +206,12 @@ async fn delivery_marked_failed_after_max_attempts() {
     rustapi::webhook_worker::spawn_worker(app.pool.clone());
     tokio::time::sleep(std::time::Duration::from_secs(8)).await;
 
-    let rows: Vec<(String, i32)> = sqlx::query_as(
-        "SELECT status, attempt FROM _webhook_deliveries WHERE webhook_id=$1",
-    )
-    .bind(hook_id)
-    .fetch_all(&app.pool)
-    .await
-    .unwrap();
+    let rows: Vec<(String, i32)> =
+        sqlx::query_as("SELECT status, attempt FROM _webhook_deliveries WHERE webhook_id=$1")
+            .bind(hook_id)
+            .fetch_all(&app.pool)
+            .await
+            .unwrap();
     assert_eq!(rows[0].0, "failed");
     assert_eq!(rows[0].1, 5);
 }
@@ -247,11 +248,10 @@ async fn disabled_webhook_gets_no_delivery_row() {
     .await
     .unwrap();
 
-    let count: (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM _webhook_deliveries")
-            .fetch_one(&app.pool)
-            .await
-            .unwrap();
+    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM _webhook_deliveries")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
     assert_eq!(count.0, 0);
 }
 
@@ -333,8 +333,7 @@ async fn hmac_signature_header_present_when_secret_set() {
 #[tokio::test]
 async fn delete_webhook_cascades_deliveries() {
     let app = TestApp::spawn().await;
-    let hook: Value =
-        create_webhook(&app, "http://example.com/hook", &["entry.created"]).await;
+    let hook: Value = create_webhook(&app, "http://example.com/hook", &["entry.created"]).await;
     let id = uuid::Uuid::parse_str(hook["id"].as_str().unwrap()).unwrap();
 
     sqlx::query(
@@ -346,13 +345,12 @@ async fn delete_webhook_cascades_deliveries() {
     .await
     .unwrap();
 
-    let count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM _webhook_deliveries WHERE webhook_id=$1",
-    )
-    .bind(id)
-    .fetch_one(&app.pool)
-    .await
-    .unwrap();
+    let count: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM _webhook_deliveries WHERE webhook_id=$1")
+            .bind(id)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
     assert_eq!(count.0, 1);
 
     app.admin(
@@ -363,12 +361,11 @@ async fn delete_webhook_cascades_deliveries() {
     .await
     .unwrap();
 
-    let count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM _webhook_deliveries WHERE webhook_id=$1",
-    )
-    .bind(id)
-    .fetch_one(&app.pool)
-    .await
-    .unwrap();
+    let count: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM _webhook_deliveries WHERE webhook_id=$1")
+            .bind(id)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
     assert_eq!(count.0, 0, "deliveries should cascade-delete");
 }

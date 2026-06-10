@@ -103,10 +103,7 @@ impl ValidationErrors {
     /// target table. Caller supplies the relation field name and the missing
     /// ids; the response body carries them under `details.field` and
     /// `details.missing_ids`.
-    pub fn relation_target_missing(
-        field: impl Into<String>,
-        missing_ids: Vec<String>,
-    ) -> Self {
+    pub fn relation_target_missing(field: impl Into<String>, missing_ids: Vec<String>) -> Self {
         Self {
             fields: vec![FieldValidation {
                 field: field.into(),

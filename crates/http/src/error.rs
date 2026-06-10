@@ -17,11 +17,29 @@ impl From<Error> for ApiError {
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, code, message, details) = match self.0 {
-            Error::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized", "missing or invalid credentials".to_string(), None),
-            Error::Forbidden => (StatusCode::FORBIDDEN, "forbidden", "insufficient permissions".to_string(), None),
-            Error::NotFound => (StatusCode::NOT_FOUND, "not_found", "resource not found".to_string(), None),
+            Error::Unauthorized => (
+                StatusCode::UNAUTHORIZED,
+                "unauthorized",
+                "missing or invalid credentials".to_string(),
+                None,
+            ),
+            Error::Forbidden => (
+                StatusCode::FORBIDDEN,
+                "forbidden",
+                "insufficient permissions".to_string(),
+                None,
+            ),
+            Error::NotFound => (
+                StatusCode::NOT_FOUND,
+                "not_found",
+                "resource not found".to_string(),
+                None,
+            ),
             Error::Validation(v) => {
-                let msg = v.message.clone().unwrap_or_else(|| "validation failed".into());
+                let msg = v
+                    .message
+                    .clone()
+                    .unwrap_or_else(|| "validation failed".into());
                 let mut detail_obj = serde_json::Map::new();
                 if !v.fields.is_empty() {
                     detail_obj.insert(
@@ -46,15 +64,29 @@ impl IntoResponse for ApiError {
                 } else {
                     Some(serde_json::Value::Object(detail_obj))
                 };
-                (StatusCode::UNPROCESSABLE_ENTITY, "validation_failed", msg, details)
+                (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "validation_failed",
+                    msg,
+                    details,
+                )
             }
             Error::Conflict(msg) => (StatusCode::CONFLICT, "conflict", msg, None),
             Error::Unsupported(msg) => (StatusCode::BAD_REQUEST, "unsupported", msg, None),
             Error::RelationFkViolation { constraint } => {
                 let details = constraint.map(|c| json!({ "constraint": c }));
-                (StatusCode::CONFLICT, "relation_fk_violation", "relation FK violation".into(), details)
+                (
+                    StatusCode::CONFLICT,
+                    "relation_fk_violation",
+                    "relation FK violation".into(),
+                    details,
+                )
             }
-            Error::EnumValueNotAllowed { field, value, allowed } => (
+            Error::EnumValueNotAllowed {
+                field,
+                value,
+                allowed,
+            } => (
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "enum_value_not_allowed",
                 format!("value `{value}` not allowed for `{field}`"),
@@ -80,7 +112,12 @@ impl IntoResponse for ApiError {
             ),
             Error::Internal(e) => {
                 tracing::error!(error = ?e, "internal error");
-                (StatusCode::INTERNAL_SERVER_ERROR, "internal", "internal error".into(), None)
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "internal",
+                    "internal error".into(),
+                    None,
+                )
             }
         };
         let body = json!({
