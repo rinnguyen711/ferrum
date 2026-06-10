@@ -9,6 +9,7 @@ use uuid::Uuid;
 pub struct ApiToken {
     pub id: Uuid,
     pub name: String,
+    pub description: String,
     pub scopes: Vec<String>,
     pub expires_at: Option<DateTime<Utc>>,
     pub last_used_at: Option<DateTime<Utc>>,
@@ -24,6 +25,7 @@ pub fn hash_token(raw: &str) -> String {
 pub async fn insert_token(
     pool: &PgPool,
     name: &str,
+    description: &str,
     raw_token: &str,
     scopes: &[String],
     expires_at: Option<DateTime<Utc>>,
@@ -31,12 +33,13 @@ pub async fn insert_token(
     let hash = hash_token(raw_token);
     sqlx::query_as::<_, ApiToken>(
         r#"
-        INSERT INTO _api_tokens (name, token_hash, scopes, expires_at)
-        VALUES ($1, $2, $3, $4)
-        RETURNING id, name, scopes, expires_at, last_used_at, created_at
+        INSERT INTO _api_tokens (name, description, token_hash, scopes, expires_at)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id, name, description, scopes, expires_at, last_used_at, created_at
         "#,
     )
     .bind(name)
+    .bind(description)
     .bind(hash)
     .bind(scopes)
     .bind(expires_at)
@@ -47,12 +50,37 @@ pub async fn insert_token(
 pub async fn list_tokens(pool: &PgPool) -> Result<Vec<ApiToken>, sqlx::Error> {
     sqlx::query_as::<_, ApiToken>(
         r#"
-        SELECT id, name, scopes, expires_at, last_used_at, created_at
+        SELECT id, name, description, scopes, expires_at, last_used_at, created_at
         FROM _api_tokens
         ORDER BY created_at DESC
         "#,
     )
     .fetch_all(pool)
+    .await
+}
+
+pub async fn update_token(
+    pool: &PgPool,
+    id: Uuid,
+    name: &str,
+    description: &str,
+    scopes: &[String],
+    expires_at: Option<DateTime<Utc>>,
+) -> Result<Option<ApiToken>, sqlx::Error> {
+    sqlx::query_as::<_, ApiToken>(
+        r#"
+        UPDATE _api_tokens
+        SET name = $2, description = $3, scopes = $4, expires_at = $5
+        WHERE id = $1
+        RETURNING id, name, description, scopes, expires_at, last_used_at, created_at
+        "#,
+    )
+    .bind(id)
+    .bind(name)
+    .bind(description)
+    .bind(scopes)
+    .bind(expires_at)
+    .fetch_optional(pool)
     .await
 }
 
@@ -76,7 +104,7 @@ pub async fn lookup_by_hash(
         UPDATE _api_tokens
         SET last_used_at = now()
         WHERE token_hash = $1
-        RETURNING id, name, scopes, expires_at, last_used_at, created_at
+        RETURNING id, name, description, scopes, expires_at, last_used_at, created_at
         "#,
     )
     .bind(hash)

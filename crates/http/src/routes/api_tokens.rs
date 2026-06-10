@@ -9,14 +9,14 @@ use axum::routing::get;
 use axum::{Extension, Json, Router};
 use chrono::{DateTime, Utc};
 use rustapi_core::{Action, Error, Principal};
-use rustapi_sql::{delete_token, insert_token, list_tokens};
+use rustapi_sql::{delete_token, insert_token, list_tokens, update_token};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/admin/tokens", get(list).post(create))
-        .route("/api/admin/tokens/:id", axum::routing::delete(revoke))
+        .route("/api/admin/tokens/:id", axum::routing::patch(update).delete(revoke))
 }
 
 async fn ensure_admin(state: &AppState, principal: &Principal) -> Result<(), ApiError> {
@@ -30,6 +30,7 @@ async fn ensure_admin(state: &AppState, principal: &Principal) -> Result<(), Api
 struct TokenView {
     id: Uuid,
     name: String,
+    description: String,
     scopes: Vec<String>,
     expires_at: Option<DateTime<Utc>>,
     last_used_at: Option<DateTime<Utc>>,
@@ -46,6 +47,8 @@ struct CreateTokenResponse {
 #[derive(Deserialize)]
 struct CreateBody {
     name: String,
+    #[serde(default)]
+    description: String,
     scopes: Vec<String>,
     expires_at: Option<DateTime<Utc>>,
 }
@@ -59,6 +62,7 @@ async fn list(
     Ok(Json(rows.into_iter().map(|t| TokenView {
         id: t.id,
         name: t.name,
+        description: t.description,
         scopes: t.scopes,
         expires_at: t.expires_at,
         last_used_at: t.last_used_at,
@@ -73,21 +77,31 @@ async fn create(
 ) -> Result<(StatusCode, Json<CreateTokenResponse>), ApiError> {
     ensure_admin(&state, &principal).await?;
 
+    if body.name.trim().is_empty() {
+        return Err(ApiError(Error::Validation(
+            rustapi_core::ValidationErrors::field("name", "name is required"),
+        )));
+    }
     if body.scopes.is_empty() {
         return Err(ApiError(Error::Validation(
             rustapi_core::ValidationErrors::field("scopes", "at least one scope is required"),
         )));
     }
-    if body.name.trim().is_empty() {
+    // API tokens are content-scoped only. Schema/user management requires an admin token (future).
+    let invalid: Vec<&str> = body.scopes.iter()
+        .filter(|s| !is_valid_content_scope(s))
+        .map(String::as_str)
+        .collect();
+    if !invalid.is_empty() {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::field("name", "name is required"),
+            rustapi_core::ValidationErrors::field("scopes", "only content:* scopes are allowed for API tokens"),
         )));
     }
 
     // Generate raw token: rat_ + 32 random bytes as hex.
     let raw = format!("rat_{}", hex::encode(generate_bytes()));
 
-    let row = insert_token(&state.pool, &body.name, &raw, &body.scopes, body.expires_at)
+    let row = insert_token(&state.pool, &body.name, &body.description, &raw, &body.scopes, body.expires_at)
         .await
         .map_err(db)?;
 
@@ -96,12 +110,66 @@ async fn create(
         meta: TokenView {
             id: row.id,
             name: row.name,
+            description: row.description,
             scopes: row.scopes,
             expires_at: row.expires_at,
             last_used_at: row.last_used_at,
             created_at: row.created_at,
         },
     })))
+}
+
+#[derive(Deserialize)]
+struct UpdateBody {
+    name: String,
+    #[serde(default)]
+    description: String,
+    scopes: Vec<String>,
+    expires_at: Option<DateTime<Utc>>,
+}
+
+async fn update(
+    State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
+    Path(id): Path<Uuid>,
+    Json(body): Json<UpdateBody>,
+) -> Result<Json<TokenView>, ApiError> {
+    ensure_admin(&state, &principal).await?;
+
+    if body.name.trim().is_empty() {
+        return Err(ApiError(Error::Validation(
+            rustapi_core::ValidationErrors::field("name", "name is required"),
+        )));
+    }
+    if body.scopes.is_empty() {
+        return Err(ApiError(Error::Validation(
+            rustapi_core::ValidationErrors::field("scopes", "at least one scope is required"),
+        )));
+    }
+    let invalid: Vec<&str> = body.scopes.iter()
+        .filter(|s| !is_valid_content_scope(s))
+        .map(String::as_str)
+        .collect();
+    if !invalid.is_empty() {
+        return Err(ApiError(Error::Validation(
+            rustapi_core::ValidationErrors::field("scopes", "only content:* scopes are allowed for API tokens"),
+        )));
+    }
+
+    let row = update_token(&state.pool, id, &body.name, &body.description, &body.scopes, body.expires_at)
+        .await
+        .map_err(db)?
+        .ok_or(ApiError(Error::NotFound))?;
+
+    Ok(Json(TokenView {
+        id: row.id,
+        name: row.name,
+        description: row.description,
+        scopes: row.scopes,
+        expires_at: row.expires_at,
+        last_used_at: row.last_used_at,
+        created_at: row.created_at,
+    }))
 }
 
 async fn revoke(
@@ -115,6 +183,17 @@ async fn revoke(
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(ApiError(Error::NotFound))
+    }
+}
+
+/// Valid: "content:read", "content:write", "content:delete",
+///        "content:read:article", "content:write:blog", etc.
+fn is_valid_content_scope(s: &str) -> bool {
+    let mut parts = s.splitn(3, ':');
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some("content"), Some("read" | "write" | "delete"), None) => true,
+        (Some("content"), Some("read" | "write" | "delete"), Some(ct)) => !ct.is_empty(),
+        _ => false,
     }
 }
 

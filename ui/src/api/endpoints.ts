@@ -242,6 +242,10 @@ export function createApiToken(body: NewApiToken): Promise<CreatedApiToken> {
   return apiFetch<CreatedApiToken>("/api/admin/tokens", { method: "POST", body });
 }
 
+export function updateApiToken(id: string, body: NewApiToken): Promise<ApiToken> {
+  return apiFetch<ApiToken>(`/api/admin/tokens/${encodeURIComponent(id)}`, { method: "PATCH", body });
+}
+
 export function revokeApiToken(id: string): Promise<void> {
   return apiFetch<void>(`/api/admin/tokens/${encodeURIComponent(id)}`, { method: "DELETE" });
 }

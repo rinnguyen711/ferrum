@@ -2263,6 +2263,7 @@ dependencies = [
  "axum",
  "bytes",
  "chrono",
+ "hex",
  "imagesize",
  "infer",
  "jsonwebtoken",
@@ -2322,9 +2323,11 @@ name = "rustapi-sql"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "hex",
  "rustapi-core",
  "serde",
  "serde_json",
+ "sha2",
  "sqlx",
  "thiserror 1.0.69",
  "uuid",

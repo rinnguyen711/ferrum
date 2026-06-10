@@ -32,7 +32,9 @@ export function Layout({
   const userNewMatch = useMatch("/users/new");
   const userEditMatch = useMatch("/users/:id");
   const roleDetailMatch = useMatch("/roles/:key");
-  const showEditorBare = Boolean(editorMatch || userNewMatch || userEditMatch || roleDetailMatch);
+  const tokenNewMatch = useMatch("/settings/api-tokens/new");
+  const tokenDetailMatch = useMatch("/settings/api-tokens/:id");
+  const showEditorBare = Boolean(editorMatch || userNewMatch || userEditMatch || roleDetailMatch || tokenNewMatch || tokenDetailMatch);
 
   const navigate = useNavigate();
   const email = getClaims()?.email ?? null;

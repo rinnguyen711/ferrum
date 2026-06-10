@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 pub mod api_tokens;
-pub use api_tokens::{delete_token, hash_token, insert_token, list_tokens, lookup_by_hash, ApiToken};
+pub use api_tokens::{delete_token, hash_token, insert_token, list_tokens, lookup_by_hash, update_token, ApiToken};
 
 pub mod component;
 pub mod ddl;
