@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use rustapi::config::Config;
 use rustapi::seed;
-use rustapi_http::{build_router, mount_studio, resolve_provider, secret_key_from_env, AppConfig, AppState, NoopHook, NoopSink, RoleAuthz};
+use rustapi_http::{build_router, mount_studio, resolve_provider, secret_key_from_env, AppConfig, AppState, NoopHook, RoleAuthz};
 use rustapi_schema::{ComponentRegistry, ComponentService, SchemaRegistry, SchemaService, MIGRATOR};
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
@@ -43,11 +43,11 @@ async fn main() -> Result<()> {
     let storage = Arc::new(RwLock::new(resolve_provider(&pool, secret_key).await));
 
     let state = AppState {
-        pool,
+        pool: pool.clone(),
         schemas,
         components,
         authz: Arc::new(RoleAuthz),
-        events: Arc::new(NoopSink),
+        events: Arc::new(rustapi::webhook_worker::DbEventSink::new(pool.clone())),
         hooks: Arc::new(NoopHook),
         config: AppConfig {
             jwt_secret: cfg.jwt_secret.clone(),
@@ -60,6 +60,8 @@ async fn main() -> Result<()> {
         storage,
         secret_key,
     };
+
+    rustapi::webhook_worker::spawn_worker(pool.clone());
 
     let mut app = build_router(state, vec![]);
     tracing::info!(content = "/api", admin = "/admin/content-types", health = "/healthz", "routes mounted");

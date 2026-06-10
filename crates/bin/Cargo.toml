@@ -26,9 +26,14 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 anyhow.workspace = true
 serde_json.workspace = true
+reqwest = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+hex = "0.4"
+async-trait = { workspace = true }
+chrono = { workspace = true }
 
 [dev-dependencies]
-reqwest.workspace = true
 serde_json.workspace = true
 uuid.workspace = true
 testcontainers = "0.23"
