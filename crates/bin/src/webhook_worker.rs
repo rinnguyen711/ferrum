@@ -81,8 +81,21 @@ impl EventSink for DbEventSink {
             "entry": entry,
         });
 
-        if let Err(e) = insert_deliveries(&self.pool, name, &payload).await {
-            tracing::warn!(error = %e, "failed to queue webhook deliveries");
+        match insert_deliveries(&self.pool, name, &payload).await {
+            Ok(queued) => {
+                if queued > 0 {
+                    tracing::info!(
+                        event = name,
+                        model = %content_type,
+                        entry_id = %id,
+                        queued,
+                        "queued webhook deliveries"
+                    );
+                } else {
+                    tracing::debug!(event = name, "no enabled webhooks subscribe to event");
+                }
+            }
+            Err(e) => tracing::warn!(error = %e, event = name, "failed to queue webhook deliveries"),
         }
     }
 }
@@ -96,23 +109,65 @@ pub fn spawn_worker(pool: PgPool) {
         loop {
             match poll_pending(&pool, 20).await {
                 Ok(rows) => {
+                    if !rows.is_empty() {
+                        tracing::debug!(batch = rows.len(), "delivering webhook batch");
+                    }
                     for row in rows {
                         let pool2 = pool.clone();
                         let client2 = client.clone();
                         tokio::task::spawn(async move {
+                            let started = std::time::Instant::now();
                             let result = deliver(&client2, &row).await;
+                            let latency_ms = started.elapsed().as_millis();
                             match result {
-                                Ok(()) => {
+                                Ok(status) => {
+                                    tracing::info!(
+                                        delivery_id = %row.id,
+                                        webhook_id = %row.webhook_id,
+                                        event = %row.event,
+                                        url = %row.url,
+                                        status,
+                                        latency_ms,
+                                        attempt = row.attempt,
+                                        "webhook delivered"
+                                    );
                                     if let Err(e) = mark_delivery_success(&pool2, row.id).await {
-                                        tracing::warn!(error = %e, "mark_delivery_success failed");
+                                        tracing::warn!(error = %e, delivery_id = %row.id, "mark_delivery_success failed");
                                     }
                                 }
                                 Err(msg) => {
+                                    let new_attempt = row.attempt + 1;
+                                    let exhausted = new_attempt >= 5;
+                                    if exhausted {
+                                        tracing::error!(
+                                            delivery_id = %row.id,
+                                            webhook_id = %row.webhook_id,
+                                            event = %row.event,
+                                            url = %row.url,
+                                            latency_ms,
+                                            attempt = row.attempt,
+                                            error = %msg,
+                                            "webhook delivery failed permanently (max attempts reached)"
+                                        );
+                                    } else {
+                                        let backoff_secs = 10i64 * (1i64 << new_attempt);
+                                        tracing::warn!(
+                                            delivery_id = %row.id,
+                                            webhook_id = %row.webhook_id,
+                                            event = %row.event,
+                                            url = %row.url,
+                                            latency_ms,
+                                            attempt = row.attempt,
+                                            retry_in_secs = backoff_secs,
+                                            error = %msg,
+                                            "webhook delivery failed, will retry"
+                                        );
+                                    }
                                     if let Err(e) =
                                         mark_delivery_failed(&pool2, row.id, row.attempt, &msg)
                                             .await
                                     {
-                                        tracing::warn!(error = %e, "mark_delivery_failed failed");
+                                        tracing::warn!(error = %e, delivery_id = %row.id, "mark_delivery_failed failed");
                                     }
                                 }
                             }
@@ -126,10 +181,13 @@ pub fn spawn_worker(pool: PgPool) {
     });
 }
 
+/// Deliver one webhook. Returns the HTTP status code on a 2xx response;
+/// otherwise an error string (non-2xx status or transport error) suitable
+/// for logging and persisting as `last_error`.
 async fn deliver(
     client: &reqwest::Client,
     row: &rustapi_sql::PendingDelivery,
-) -> Result<(), String> {
+) -> Result<u16, String> {
     let body = serde_json::to_vec(&row.payload).map_err(|e| e.to_string())?;
 
     let mut req = client
@@ -143,10 +201,11 @@ async fn deliver(
     }
 
     let resp = req.send().await.map_err(|e| e.to_string())?;
-    if resp.status().is_success() {
-        Ok(())
+    let status = resp.status();
+    if status.is_success() {
+        Ok(status.as_u16())
     } else {
-        Err(format!("HTTP {}", resp.status()))
+        Err(format!("HTTP {status}"))
     }
 }
 
