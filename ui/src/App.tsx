@@ -24,6 +24,8 @@ import { ComponentEditor } from "./screens/ComponentEditor";
 import { SingleTypeEdit } from "./screens/SingleTypeEdit";
 import { ApiTokens, TokenEditor, TokenDetail } from "./screens/ApiTokens";
 import { Webhooks } from "./screens/Webhooks";
+import { WebhookEditor } from "./screens/WebhookEditor";
+import { WebhookDetail } from "./screens/WebhookDetail";
 import { getToken, clearToken } from "./auth";
 import { setAuthErrorHandler } from "./api/client";
 import { useResource } from "./hooks/useResource";
@@ -126,6 +128,8 @@ export default function App() {
           <Route path="settings/api-tokens/new" element={<TokenEditor />} />
           <Route path="settings/api-tokens/:id" element={<TokenDetail />} />
           <Route path="settings/webhooks" element={<Webhooks />} />
+          <Route path="settings/webhooks/new" element={<WebhookEditor />} />
+          <Route path="settings/webhooks/:id" element={<WebhookDetail />} />
           <Route path="settings/media" element={<MediaSettings />} />
           <Route path="users" element={<Users />} />
           <Route path="users/new" element={<UserEditor />} />

@@ -19,11 +19,17 @@ export interface WebhookDelivery {
   created_at: string;
 }
 
+export interface WebhookHeader {
+  key: string;
+  value: string;
+}
+
 export interface CreateWebhookBody {
   name: string;
   url: string;
   events: string[];
   secret?: string;
+  headers?: WebhookHeader[];
 }
 
 export interface UpdateWebhookBody {
@@ -53,7 +59,18 @@ export function createWebhook(body: CreateWebhookBody): Promise<Webhook> {
 }
 
 export function updateWebhook(id: string, body: UpdateWebhookBody): Promise<Webhook> {
-  return apiFetch<Webhook>(`/admin/webhooks/${encodeURIComponent(id)}`, { method: 'PUT', body });
+  return apiFetch<Webhook>(`/admin/webhooks/${encodeURIComponent(id)}`, { method: 'PATCH', body });
+}
+
+/** Toggle enabled on/off. The backend PATCH requires the full record, so
+ *  carry over the webhook's current fields and flip only `enabled`. */
+export function setWebhookEnabled(w: Webhook, enabled: boolean): Promise<Webhook> {
+  return updateWebhook(w.id, {
+    name: w.name,
+    url: w.url,
+    events: w.events,
+    enabled,
+  });
 }
 
 export function deleteWebhook(id: string): Promise<void> {
