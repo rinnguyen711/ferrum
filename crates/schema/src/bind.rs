@@ -27,6 +27,14 @@ pub fn bind_all_as<'q>(
     q
 }
 
+/// Bind a single `BoundValue` onto a raw sqlx query.
+pub fn bind_one_for_import<'q>(
+    q: sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments>,
+    v: &'q BoundValue,
+) -> sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments> {
+    bind_one(q, v)
+}
+
 fn bind_one<'q>(
     q: sqlx::query::Query<'q, Postgres, sqlx::postgres::PgArguments>,
     v: &'q BoundValue,

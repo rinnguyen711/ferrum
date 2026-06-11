@@ -912,6 +912,12 @@ fn validate_component_instance(
     Ok(())
 }
 
+#[derive(serde::Serialize)]
+struct ImportRowError {
+    row: usize,
+    message: String,
+}
+
 #[derive(Debug, Deserialize)]
 struct ExportQuery {
     ids: Option<String>,
@@ -1015,8 +1021,214 @@ async fn import_entries(
     State(state): State<AppState>,
     Path(ct_name): Path<String>,
     axum::extract::Extension(principal): axum::extract::Extension<Principal>,
-    _multipart: axum::extract::Multipart,
+    mut multipart: axum::extract::Multipart,
 ) -> Result<Json<Value>, ApiError> {
     ensure(&state, &principal, Action::ContentWrite, &ct_name).await?;
-    Ok(Json(serde_json::json!({"inserted": 0, "updated": 0, "errors": []})))
+
+    let ct = state
+        .schemas
+        .registry()
+        .get(&ct_name)
+        .await
+        .ok_or(ApiError(Error::NotFound))?;
+
+    // Read the CSV file from multipart
+    let csv_bytes = loop {
+        match multipart.next_field().await.map_err(|e| {
+            ApiError(Error::Validation(rustapi_core::ValidationErrors::single(
+                format!("multipart error: {e}"),
+            )))
+        })? {
+            None => {
+                return Err(ApiError(Error::Validation(
+                    rustapi_core::ValidationErrors::single("empty file"),
+                )))
+            }
+            Some(field) if field.name() == Some("file") => {
+                break field.bytes().await.map_err(|e| {
+                    ApiError(Error::Internal(anyhow::anyhow!(e)))
+                })?;
+            }
+            Some(_) => continue,
+        }
+    };
+
+    if csv_bytes.is_empty() {
+        return Err(ApiError(Error::Validation(
+            rustapi_core::ValidationErrors::single("empty file"),
+        )));
+    }
+
+    let mut rdr = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(csv_bytes.as_ref());
+
+    let headers: Vec<String> = rdr
+        .headers()
+        .map_err(|_| {
+            ApiError(Error::Validation(
+                rustapi_core::ValidationErrors::single("empty file"),
+            ))
+        })?
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+
+    if headers.is_empty() {
+        return Err(ApiError(Error::Validation(
+            rustapi_core::ValidationErrors::single("empty file"),
+        )));
+    }
+
+    let records: Vec<csv::StringRecord> = rdr
+        .records()
+        .collect::<Result<_, _>>()
+        .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e))))?;
+
+    if records.len() > 1000 {
+        return Err(ApiError(Error::Validation(
+            rustapi_core::ValidationErrors::single("too many rows"),
+        )));
+    }
+
+    let mut inserted = 0usize;
+    let mut updated = 0usize;
+    let mut errors: Vec<ImportRowError> = vec![];
+
+    for (row_idx, record) in records.iter().enumerate() {
+        let row_num = row_idx + 2; // header = row 1, first data row = row 2
+
+        let mut map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        for (h, v) in headers.iter().zip(record.iter()) {
+            map.insert(h.clone(), v.to_string());
+        }
+
+        let body = crate::entry::csv_row_to_body(&map);
+
+        // Extract id (may be absent/null → new insert with generated UUID)
+        let explicit_id: Option<uuid::Uuid> = body
+            .get("id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| uuid::Uuid::parse_str(s).ok());
+
+        // Strip system columns before body_to_binds
+        let mut content_body = body.clone();
+        content_body.remove("id");
+        content_body.remove("created_at");
+        content_body.remove("updated_at");
+        content_body.remove("published_at");
+
+        let (binds, relation_checks, _link_plans, _media_checks, _media_link_plans) =
+            match crate::entry::body_to_binds(&ct, content_body, false) {
+                Ok(b) => b,
+                Err(e) => {
+                    errors.push(ImportRowError {
+                        row: row_num,
+                        message: e.to_string(),
+                    });
+                    continue;
+                }
+            };
+
+        // Validate relation FKs
+        let mut relation_error: Option<String> = None;
+        {
+            let mut by_target: std::collections::HashMap<String, Vec<uuid::Uuid>> =
+                std::collections::HashMap::new();
+            for rc in &relation_checks {
+                by_target.entry(rc.target.clone()).or_default().push(rc.id);
+            }
+            for (target, ids) in by_target {
+                let table = format!("ct_{target}");
+                let found: Vec<(uuid::Uuid,)> = sqlx::query_as(&format!(
+                    "SELECT id FROM \"{table}\" WHERE id = ANY($1::uuid[])"
+                ))
+                .bind(&ids)
+                .fetch_all(&state.pool)
+                .await
+                .unwrap_or_default();
+                if found.len() != ids.len() {
+                    relation_error =
+                        Some(format!("relation target missing in `{target}`"));
+                    break;
+                }
+            }
+        }
+        if let Some(msg) = relation_error {
+            errors.push(ImportRowError {
+                row: row_num,
+                message: msg,
+            });
+            continue;
+        }
+
+        let row_id = explicit_id.unwrap_or_else(uuid::Uuid::new_v4);
+        let table = format!("ct_{}", ct.name);
+
+        let mut cols: Vec<String> = vec![];
+        let mut placeholders: Vec<String> = vec![];
+        let mut all_binds: Vec<rustapi_core::BoundValue> = vec![];
+
+        all_binds.push(rustapi_core::BoundValue::Uuid(row_id));
+
+        for (i, (col, val)) in binds.iter().enumerate() {
+            let ph = i + 2;
+            cols.push(format!("\"{col}\""));
+            placeholders.push(format!("${ph}"));
+            all_binds.push(val.clone());
+        }
+
+        let insert_sql = if cols.is_empty() {
+            format!(
+                "INSERT INTO \"{table}\" (\"id\") VALUES ($1::uuid) \
+                 ON CONFLICT (\"id\") DO UPDATE SET \"updated_at\" = now() \
+                 RETURNING (xmax = 0) AS is_insert"
+            )
+        } else {
+            let cols_s = cols.join(", ");
+            let ph_s = placeholders.join(", ");
+            let sets: Vec<String> = cols
+                .iter()
+                .zip(placeholders.iter())
+                .map(|(c, p)| format!("{c} = {p}"))
+                .collect();
+            let sets_s = sets.join(", ");
+            format!(
+                "INSERT INTO \"{table}\" (\"id\", {cols_s}) VALUES ($1::uuid, {ph_s}) \
+                 ON CONFLICT (\"id\") DO UPDATE SET {sets_s}, \"updated_at\" = now() \
+                 RETURNING (xmax = 0) AS is_insert"
+            )
+        };
+
+        let result = {
+            let mut q = sqlx::query(&insert_sql).persistent(false);
+            for bv in &all_binds {
+                q = rustapi_schema::bind::bind_one_for_import(q, bv);
+            }
+            q.fetch_one(&state.pool).await
+        };
+
+        match result {
+            Ok(row) => {
+                let is_insert: bool = row.try_get("is_insert").unwrap_or(true);
+                if is_insert {
+                    inserted += 1;
+                } else {
+                    updated += 1;
+                }
+            }
+            Err(e) => {
+                errors.push(ImportRowError {
+                    row: row_num,
+                    message: e.to_string(),
+                });
+            }
+        }
+    }
+
+    Ok(Json(serde_json::json!({
+        "inserted": inserted,
+        "updated": updated,
+        "errors": errors,
+    })))
 }
