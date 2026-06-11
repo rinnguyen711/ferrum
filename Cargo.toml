@@ -34,6 +34,7 @@ sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio",
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+csv = "1"
 
 # Errors
 thiserror = "1"
