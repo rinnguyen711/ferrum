@@ -79,7 +79,7 @@ pub fn plan_table(table: &SourceTable, existing_type_names: &[String]) -> Option
     }
 
     if columns.is_empty() {
-        println!("  ⚠ No fields selected for {}. Skipping.", ct_name);
+        println!("  ⚠ No fields selected for {ct_name}. Skipping.");
         return None;
     }
 
@@ -144,7 +144,7 @@ fn plan_column(
 
     let required = !col.is_nullable
         && Confirm::new()
-            .with_prompt(format!("    Mark '{}' as required?", field_name))
+            .with_prompt(format!("    Mark '{field_name}' as required?"))
             .default(false)
             .interact()
             .unwrap_or(false);

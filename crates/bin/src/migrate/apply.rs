@@ -101,7 +101,7 @@ pub async fn copy_rows(
             "SELECT {} FROM {}",
             source_cols
                 .iter()
-                .map(|c| format!("\"{}\"", c))
+                .map(|c| format!("\"{c}\""))
                 .collect::<Vec<_>>()
                 .join(", "),
             plan.source_table
@@ -127,7 +127,7 @@ pub async fn copy_rows(
                 target_table,
                 target_cols
                     .iter()
-                    .map(|c| format!("\"{}\"", c))
+                    .map(|c| format!("\"{c}\""))
                     .collect::<Vec<_>>()
                     .join(", "),
                 placeholders.join(", ")
