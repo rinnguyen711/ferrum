@@ -192,6 +192,17 @@ pub fn select_by_id(ct_name: &str, id: Uuid) -> Result<SqlAndBinds, DmlError> {
     Ok((sql, vec![BoundValue::Str(id.to_string())]))
 }
 
+/// `SELECT * FROM ct_<name> WHERE id = ANY($1::uuid[])`
+/// Caller binds a `Vec<Uuid>` as `$1`.
+/// Returns only the SQL string (no BoundValue vec) because Vec<Uuid> has no
+/// BoundValue variant — same pattern as `insert_links`.
+pub fn select_by_ids_sql(ct_name: &str) -> Result<String, DmlError> {
+    let table = table_name(ct_name)?;
+    Ok(format!(
+        "SELECT * FROM {table} WHERE \"id\" = ANY($1::uuid[])"
+    ))
+}
+
 /// `SELECT * FROM ct_<name> [WHERE ...] ORDER BY <col> <dir> LIMIT $N OFFSET $N+1`
 /// where N is `binds.len() + 1` after the filter has supplied its own placeholders.
 pub fn select_list(
@@ -621,6 +632,15 @@ SELECT $1::uuid, x.asset, x.ord::int FROM UNNEST($2::uuid[]) WITH ORDINALITY AS 
         )
         .unwrap();
         assert!(!sql.contains("published_at"), "got: {sql}");
+    }
+
+    #[test]
+    fn test_select_by_ids_sql() {
+        let sql = super::select_by_ids_sql("post").unwrap();
+        assert!(sql.contains("ct_post"));
+        assert!(sql.contains("ANY($1::uuid[])"));
+        // should not contain LIMIT/OFFSET
+        assert!(!sql.contains("LIMIT"));
     }
 }
 
