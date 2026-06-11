@@ -61,6 +61,18 @@ export function ContentList() {
   const [selected, setSelected] = useState<string[]>([]);
   const [fieldsOpen, setFieldsOpen] = useState(false);
 
+  const handleExport = () => {
+    if (selected.length === 0) return;
+    const params = `ids=${selected.map(encodeURIComponent).join(',')}`;
+    const url = `/admin/content-types/${type}/entries/export?${params}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${type}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
   const colKey = `rs-cols:${type}`;
   const [hidden, setHidden] = useState<Record<string, boolean>>(() => {
     try {
@@ -254,6 +266,9 @@ export function ContentList() {
         <div className="rs-bulkbar">
           <span><strong>{selected.length}</strong> selected</span>
           <div className="rs-bulkbar-actions">
+            <button className="rs-btn rs-btn--ghost rs-btn--sm" onClick={handleExport}>
+              <Icons.doc size={14} /> Export CSV
+            </button>
             <button className="rs-btn rs-btn--ghost rs-btn--sm" data-placeholder title="Coming soon">
               <Icons.eye size={14} /> Publish
             </button>
