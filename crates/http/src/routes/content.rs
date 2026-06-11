@@ -1017,6 +1017,11 @@ async fn export_entries(
         .into_response())
 }
 
+// Known limitations (MVP scope):
+// - WriteHook callbacks and EventSink events are not fired for imported rows.
+// - Component field shape validation is not performed (raw jsonb stored as-is).
+// - Many-to-many and multi-media fields are rejected per-row, not silently dropped.
+// - Each row is an independent upsert; partial failures leave prior rows committed.
 async fn import_entries(
     State(state): State<AppState>,
     Path(ct_name): Path<String>,
