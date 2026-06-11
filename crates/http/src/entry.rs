@@ -383,6 +383,25 @@ fn json_value_to_csv_cell(v: &Value) -> String {
     }
 }
 
+/// Convert a CSV record (header→string map) into a JSON body map for
+/// `body_to_binds`. Empty string → `Value::Null`. Strings that parse as valid
+/// JSON objects/arrays are decoded back to `Value`; plain strings stay as
+/// `Value::String`.
+pub fn csv_row_to_body(record: &std::collections::HashMap<String, String>) -> Map<String, Value> {
+    let mut body = Map::new();
+    for (k, v) in record {
+        let val = if v.is_empty() {
+            Value::Null
+        } else if v.starts_with('{') || v.starts_with('[') {
+            serde_json::from_str(v).unwrap_or_else(|_| Value::String(v.clone()))
+        } else {
+            Value::String(v.clone())
+        };
+        body.insert(k.clone(), val);
+    }
+    body
+}
+
 fn decode_field(row: &PgRow, f: &Field) -> Result<Value, Error> {
     debug_assert!(
         f.is_stored_column(),
@@ -940,17 +959,15 @@ mod tests {
             id: Uuid::nil(),
             name: "post".into(),
             display_name: "Post".into(),
-            fields: vec![
-                Field {
-                    name: "title".into(),
-                    kind: FieldKind::String,
-                    required: false,
-                    unique: false,
-                    default: json!(null),
-                    max_length: None,
-                    kind_meta: json!({}),
-                },
-            ],
+            fields: vec![Field {
+                name: "title".into(),
+                kind: FieldKind::String,
+                required: false,
+                unique: false,
+                default: json!(null),
+                max_length: None,
+                kind_meta: json!({}),
+            }],
             options: json!({}),
             kind: rustapi_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
@@ -978,17 +995,15 @@ mod tests {
             id: Uuid::nil(),
             name: "post".into(),
             display_name: "Post".into(),
-            fields: vec![
-                Field {
-                    name: "title".into(),
-                    kind: FieldKind::String,
-                    required: false,
-                    unique: false,
-                    default: json!(null),
-                    max_length: None,
-                    kind_meta: json!({}),
-                },
-            ],
+            fields: vec![Field {
+                name: "title".into(),
+                kind: FieldKind::String,
+                required: false,
+                unique: false,
+                default: json!(null),
+                max_length: None,
+                kind_meta: json!({}),
+            }],
             options: json!({}),
             kind: rustapi_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
@@ -1003,5 +1018,36 @@ mod tests {
         let (headers, record) = row_to_csv_record(&ct, &obj);
         let title_idx = headers.iter().position(|h| h == "title").unwrap();
         assert_eq!(record[title_idx], "");
+    }
+
+    #[test]
+    fn csv_row_to_body_string_field() {
+        let mut record = std::collections::HashMap::new();
+        record.insert("title".to_string(), "Hello".to_string());
+        record.insert("id".to_string(), Uuid::nil().to_string());
+        let body = csv_row_to_body(&record);
+        assert_eq!(
+            body.get("title"),
+            Some(&serde_json::Value::String("Hello".to_string()))
+        );
+        // id should be present
+        assert!(body.contains_key("id"));
+    }
+
+    #[test]
+    fn csv_row_to_body_empty_is_null() {
+        let mut record = std::collections::HashMap::new();
+        record.insert("title".to_string(), "".to_string());
+        let body = csv_row_to_body(&record);
+        assert_eq!(body.get("title"), Some(&serde_json::Value::Null));
+    }
+
+    #[test]
+    fn csv_row_to_body_json_field() {
+        let mut record = std::collections::HashMap::new();
+        record.insert("meta".to_string(), r#"{"key":"value"}"#.to_string());
+        let body = csv_row_to_body(&record);
+        // JSON strings get parsed back to Value
+        assert_eq!(body["meta"], serde_json::json!({"key": "value"}));
     }
 }
