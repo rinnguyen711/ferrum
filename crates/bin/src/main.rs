@@ -13,6 +13,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing_subscriber::{prelude::*, EnvFilter};
 
+mod migrate;
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cfg = Config::from_env()?;
