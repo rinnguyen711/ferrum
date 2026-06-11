@@ -32,6 +32,9 @@ sha2 = { workspace = true }
 hex = "0.4"
 async-trait = { workspace = true }
 chrono = { workspace = true }
+clap.workspace = true
+dialoguer = "0.11"
+indicatif = "0.17"
 
 [dev-dependencies]
 serde_json.workspace = true

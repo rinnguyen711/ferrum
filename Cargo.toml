@@ -16,6 +16,9 @@ license = "MIT OR Apache-2.0"
 authors = ["rustapi contributors"]
 
 [workspace.dependencies]
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+
 # Async
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "signal", "sync"] }
 
