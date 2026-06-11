@@ -1118,7 +1118,7 @@ async fn import_entries(
         content_body.remove("updated_at");
         content_body.remove("published_at");
 
-        let (binds, relation_checks, _link_plans, _media_checks, _media_link_plans) =
+        let (binds, relation_checks, link_plans, _media_checks, media_link_plans) =
             match crate::entry::body_to_binds(&ct, content_body, false) {
                 Ok(b) => b,
                 Err(e) => {
@@ -1129,6 +1129,15 @@ async fn import_entries(
                     continue;
                 }
             };
+
+        // Reject M2M and multi-media fields
+        if !link_plans.is_empty() || !media_link_plans.is_empty() {
+            errors.push(ImportRowError {
+                row: row_num,
+                message: "import does not support many-to-many relation or multiple-media fields".to_string(),
+            });
+            continue;
+        }
 
         // Validate relation FKs
         let mut relation_error: Option<String> = None;
