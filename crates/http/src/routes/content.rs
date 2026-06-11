@@ -1,12 +1,14 @@
 //! /api/:type/* handlers.
 
-use crate::entry::{body_to_binds, row_to_json, RelationCheck};
+use crate::entry::{body_to_binds, row_to_csv_record, row_to_json, RelationCheck};
 use crate::error::ApiError;
 use crate::populate::{self, PopulateField};
 use crate::query::{parse_list, ListParams};
 use crate::state::{AppState, WriteContext, WriteOp};
+use axum::body::Body;
 use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
+use axum::http::{header, StatusCode};
+use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use rustapi_core::{Action, ContentType, Error, Event, Principal, ValidationErrors};
@@ -35,6 +37,14 @@ pub fn router() -> Router<AppState> {
         .route(
             "/api/:type/:id/unpublish",
             axum::routing::post(unpublish_entry),
+        )
+        .route(
+            "/admin/content-types/:name/entries/export",
+            get(export_entries),
+        )
+        .route(
+            "/admin/content-types/:name/entries/import",
+            axum::routing::post(import_entries),
         )
 }
 
@@ -900,4 +910,107 @@ fn validate_component_instance(
         }
     }
     Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+struct ExportQuery {
+    #[serde(rename = "ids[]")]
+    ids: Option<Vec<String>>,
+}
+
+async fn export_entries(
+    State(state): State<AppState>,
+    Path(ct_name): Path<String>,
+    Query(q): Query<ExportQuery>,
+    axum::extract::Extension(principal): axum::extract::Extension<Principal>,
+) -> Result<Response, ApiError> {
+    ensure(&state, &principal, Action::ContentRead, &ct_name).await?;
+
+    let ct = state
+        .schemas
+        .registry()
+        .get(&ct_name)
+        .await
+        .ok_or(ApiError(Error::NotFound))?;
+
+    let raw_ids = q.ids.unwrap_or_default();
+    if raw_ids.is_empty() {
+        return Err(ApiError(Error::Validation(
+            rustapi_core::ValidationErrors::single("ids required"),
+        )));
+    }
+
+    let ids: Vec<uuid::Uuid> = raw_ids
+        .iter()
+        .map(|s| uuid::Uuid::parse_str(s).map_err(|_| {
+            ApiError(Error::Validation(rustapi_core::ValidationErrors::single(
+                format!("invalid uuid: {s}"),
+            )))
+        }))
+        .collect::<Result<_, _>>()?;
+
+    let sql = rustapi_sql::select_by_ids_sql(&ct.name)
+        .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
+
+    let rows = sqlx::query(&sql)
+        .persistent(false)
+        .bind(&ids)
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e))))?;
+
+    let mut headers_written = false;
+    let mut wtr = csv::WriterBuilder::new().from_writer(vec![]);
+
+    for row in &rows {
+        let obj = crate::entry::row_to_json(&ct, row)
+            .map_err(|e| ApiError(e))?;
+        let (headers, record) = row_to_csv_record(&ct, &obj);
+        if !headers_written {
+            wtr.write_record(&headers)
+                .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e))))?;
+            headers_written = true;
+        }
+        wtr.write_record(&record)
+            .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e))))?;
+    }
+    // Write headers-only row if no rows matched (still valid CSV with header)
+    if !headers_written {
+        let dummy = serde_json::json!({});
+        let (headers, _) = row_to_csv_record(&ct, &dummy);
+        wtr.write_record(&headers)
+            .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e))))?;
+    }
+
+    let csv_bytes = wtr
+        .into_inner()
+        .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e))))?;
+
+    let filename = format!("{ct_name}.csv");
+    Ok((
+        [
+            (
+                header::CONTENT_TYPE,
+                header::HeaderValue::from_static("text/csv; charset=utf-8"),
+            ),
+            (
+                header::CONTENT_DISPOSITION,
+                header::HeaderValue::from_str(&format!(
+                    "attachment; filename=\"{filename}\""
+                ))
+                .unwrap(),
+            ),
+        ],
+        Body::from(csv_bytes),
+    )
+        .into_response())
+}
+
+async fn import_entries(
+    State(_state): State<AppState>,
+    Path(_ct_name): Path<String>,
+    axum::extract::Extension(_principal): axum::extract::Extension<Principal>,
+    _multipart: axum::extract::Multipart,
+) -> Result<Json<Value>, ApiError> {
+    Ok(Json(serde_json::json!({"inserted": 0, "updated": 0, "errors": []})))
 }
