@@ -491,6 +491,7 @@ function TypePanel({
       {singleModalOpen && <CreateSingleTypeModal onClose={() => setSingleModalOpen(false)} />}
       {createComponentOpen && (
         <CreateComponentModal
+          existingComponents={components ?? []}
           onClose={() => setCreateComponentOpen(false)}
           onCreated={(uid) => {
             setCreateComponentOpen(false);

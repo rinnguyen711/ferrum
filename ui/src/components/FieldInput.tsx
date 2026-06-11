@@ -316,7 +316,7 @@ function ComponentField({
   onChange: (v: unknown) => void;
 }) {
   const meta = componentMeta(field);
-  const innerFields = field._component_fields ?? [];
+  const innerFields = (field.kind_meta._component_fields as Field[] | undefined) ?? field._component_fields ?? [];
 
   if (!meta) return null;
 

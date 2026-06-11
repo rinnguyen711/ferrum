@@ -46,6 +46,16 @@ pub async fn list_webhooks(pool: &PgPool) -> Result<Vec<Webhook>, sqlx::Error> {
     .await
 }
 
+pub async fn get_webhook(pool: &PgPool, id: Uuid) -> Result<Option<Webhook>, sqlx::Error> {
+    sqlx::query_as::<_, Webhook>(
+        "SELECT id, name, url, events, secret, enabled, created_at
+         FROM _webhooks WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+}
+
 pub async fn insert_webhook(
     pool: &PgPool,
     name: &str,

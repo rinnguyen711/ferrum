@@ -4,7 +4,7 @@ import { Icons } from "../components/icons";
 import { Notice, LoadingState } from "../components/ui";
 import { useResource } from "../hooks/useResource";
 import {
-  deleteContentType, getContentType, listContentTypes,
+  deleteContentType, getContentType, listContentTypes, listComponents,
 } from "../api/endpoints";
 import { ApiError } from "../api/client";
 import { draftPublishEnabled, enumValues } from "../api/types";
@@ -88,6 +88,7 @@ export function SchemaEditor() {
     draft, banner, fieldErrors, loadExisting, setDraft, clearBanner,
   } = useBuilderDraft();
   const allTypes = useResource(() => listContentTypes(), []);
+  const allComponents = useResource(() => listComponents(), []);
 
   // Existing-type route: load from server (once per :type).
   useEffect(() => {
@@ -275,6 +276,7 @@ export function SchemaEditor() {
           initial={modal.field}
           isNew={modal.isNew}
           typeNames={allTypes.data?.map((t) => t.name) ?? []}
+          components={allComponents.data ?? []}
           lockedEnumValues={lockedEnum(modal.field)}
           onSave={saveField}
           onBack={modal.isNew ? () => setModal({ step: "pick" }) : undefined}

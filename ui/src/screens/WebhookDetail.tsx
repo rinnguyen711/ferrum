@@ -4,9 +4,8 @@ import { Icons } from "../components/icons";
 import { LoadingState, EmptyState } from "../components/ui";
 import { useResource } from "../hooks/useResource";
 import {
-  listWebhooks,
+  getWebhook,
   listDeliveries,
-  testWebhook,
   setWebhookEnabled,
 } from "../api/webhooks";
 import type { Webhook } from "../api/webhooks";
@@ -19,8 +18,7 @@ export function WebhookDetail() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
 
-  // No GET-single endpoint — pull the list and pick this one out.
-  const webhooks = useResource(() => listWebhooks(), []);
+  const webhookRes = useResource(() => getWebhook(id), [id]);
   const deliveries = useResource(() => listDeliveries(id), [id]);
 
   const [busy, setBusy] = useState(false);
@@ -28,10 +26,10 @@ export function WebhookDetail() {
 
   const back = () => navigate("/settings/webhooks");
 
-  if (webhooks.loading) return <LoadingState />;
-  if (webhooks.error) return <EmptyState>{webhooks.error.message}</EmptyState>;
+  if (webhookRes.loading) return <LoadingState />;
+  if (webhookRes.error) return <EmptyState>{webhookRes.error.message}</EmptyState>;
 
-  const webhook = (webhooks.data ?? []).find((w) => w.id === id);
+  const webhook = webhookRes.data;
   if (!webhook) {
     return (
       <div className="rs-editor">
@@ -53,20 +51,11 @@ export function WebhookDetail() {
     setBusy(true);
     try {
       await setWebhookEnabled(w, !w.enabled);
-      webhooks.refetch();
+      webhookRes.refetch();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Failed to update webhook.");
     } finally {
       setBusy(false);
-    }
-  };
-
-  const test = async () => {
-    setError(null);
-    try {
-      await testWebhook(webhook.id);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Test failed.");
     }
   };
 
@@ -91,9 +80,7 @@ export function WebhookDetail() {
           >
             <span className="rs-toggle-knob" />
           </button>
-          <button className="rs-btn rs-btn--ghost" onClick={test}>
-            <Icons.bolt size={15} /> Send test
-          </button>
+
         </div>
       </div>
 

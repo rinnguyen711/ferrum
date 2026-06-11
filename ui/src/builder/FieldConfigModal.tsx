@@ -3,6 +3,7 @@ import { Icons } from "../components/icons";
 import { Notice } from "../components/ui";
 import { fieldLabel, type Cardinality, type DraftField } from "./draftModel";
 import { EnumEditor } from "./EnumEditor";
+import type { Component } from "../api/types";
 
 const CARDINALITIES: [Cardinality, string][] = [
   ["many_to_one", "many → one"],
@@ -14,17 +15,19 @@ export function FieldConfigModal({
   initial,
   isNew,
   typeNames,
+  components,
   lockedEnumValues,
   onSave,
   onBack,
   onClose,
 }: {
   initial: DraftField;
-  isNew: boolean;             // adding a brand-new field (vs editing existing row)
+  isNew: boolean;
   typeNames: string[];
-  lockedEnumValues: string[]; // existing enum values that cannot be removed
+  components: Component[];
+  lockedEnumValues: string[];
   onSave: (field: DraftField) => void;
-  onBack?: () => void;        // adding a new field → return to the type picker
+  onBack?: () => void;
   onClose: () => void;
 }) {
   const locked = initial.origin === "existing";
@@ -178,24 +181,43 @@ export function FieldConfigModal({
               )}
 
               {field.kind === "component" && (
-                <div className="rs-field">
-                  <div className="rs-field-label"><label>Component</label></div>
-                  <input
-                    className="rs-input"
-                    placeholder="e.g. shared.hero_block"
-                    value={field.componentUid ?? ""}
-                    onChange={(e) => set({ componentUid: e.target.value })}
-                    disabled={locked}
-                  />
-                  <div className="rs-field-label" style={{ marginTop: 12 }}><label>Repeatable</label></div>
-                  <button
-                    type="button"
-                    className={"rs-toggle" + (field.componentMultiple ? " is-on" : "")}
-                    onClick={() => !locked && set({ componentMultiple: !field.componentMultiple })}
-                  >
-                    <span className="rs-toggle-knob" />
-                  </button>
-                </div>
+                <>
+                  <div className="rs-field">
+                    <div className="rs-field-label"><label>Component</label></div>
+                    {components.length > 0 ? (
+                      <select
+                        className="rs-input"
+                        value={field.componentUid ?? ""}
+                        disabled={locked}
+                        onChange={(e) => { set({ componentUid: e.target.value }); setErr(null); }}
+                      >
+                        <option value="">Select a component…</option>
+                        {components.map((c) => (
+                          <option key={c.uid} value={c.uid}>{c.display_name} ({c.uid})</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        className="rs-input"
+                        placeholder="e.g. shared.hero_block"
+                        value={field.componentUid ?? ""}
+                        onChange={(e) => { set({ componentUid: e.target.value }); setErr(null); }}
+                        disabled={locked}
+                      />
+                    )}
+                  </div>
+                  <div className="rs-setting-row">
+                    <div className="rs-setting-meta">
+                      <strong>Repeatable</strong>
+                      <span>Store an array of this component instead of a single instance.</span>
+                    </div>
+                    <Toggle
+                      on={field.componentMultiple}
+                      disabled={locked}
+                      onChange={(v) => set({ componentMultiple: v })}
+                    />
+                  </div>
+                </>
               )}
             </div>
           )}

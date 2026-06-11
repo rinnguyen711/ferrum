@@ -29,7 +29,7 @@ pub use sort::{Sort, SortDir};
 
 pub mod webhooks;
 pub use webhooks::{
-    delete_webhook, insert_deliveries, insert_webhook, list_deliveries, list_webhooks,
+    delete_webhook, get_webhook, insert_deliveries, insert_webhook, list_deliveries, list_webhooks,
     mark_delivery_failed, mark_delivery_success, poll_pending, update_webhook, PendingDelivery,
     Webhook, WebhookDelivery,
 };

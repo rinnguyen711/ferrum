@@ -885,7 +885,12 @@ fn validate_component_instance(
                 rustapi_core::ValidationErrors::field(&field_path, "field is required"),
             )));
         }
-        if !v.is_null() {
+        // Media and Relation are stored as raw JSON inside component JSONB;
+        // BoundValue::from_json always rejects them, so skip coercion here.
+        if !v.is_null()
+            && f.kind != rustapi_core::FieldKind::Media
+            && f.kind != rustapi_core::FieldKind::Relation
+        {
             rustapi_core::BoundValue::from_json(f.kind, v).map_err(|_| {
                 ApiError(Error::Validation(rustapi_core::ValidationErrors::field(
                     &field_path,

@@ -10,8 +10,8 @@ use axum::{Extension, Json, Router};
 use chrono::{DateTime, Utc};
 use rustapi_core::{Action, Error, Principal};
 use rustapi_sql::{
-    delete_webhook, insert_webhook, list_deliveries, list_webhooks, update_webhook, Webhook,
-    WebhookDelivery,
+    delete_webhook, get_webhook, insert_webhook, list_deliveries, list_webhooks, update_webhook,
+    Webhook, WebhookDelivery,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -21,7 +21,7 @@ pub fn router() -> Router<AppState> {
         .route("/admin/webhooks", get(list).post(create))
         .route(
             "/admin/webhooks/:id",
-            axum::routing::patch(update).delete(delete),
+            get(get_one).patch(update).delete(delete),
         )
         .route("/admin/webhooks/:id/deliveries", get(deliveries))
         .route(
@@ -157,6 +157,19 @@ async fn list(
     Ok(Json(rows.into_iter().map(WebhookView::from).collect()))
 }
 
+async fn get_one(
+    State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<WebhookView>, ApiError> {
+    ensure_admin(&state, &principal).await?;
+    let row = get_webhook(&state.pool, id)
+        .await
+        .map_err(db)?
+        .ok_or(ApiError(Error::NotFound))?;
+    Ok(Json(WebhookView::from(row)))
+}
+
 async fn create(
     State(state): State<AppState>,
     Extension(principal): Extension<Principal>,
@@ -241,10 +254,9 @@ async fn test_ping(
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
     ensure_admin(&state, &principal).await?;
-    let hooks = list_webhooks(&state.pool).await.map_err(db)?;
-    let hook = hooks
-        .into_iter()
-        .find(|h| h.id == id)
+    let hook = get_webhook(&state.pool, id)
+        .await
+        .map_err(db)?
         .ok_or(ApiError(Error::NotFound))?;
     if !hook.enabled {
         return Err(ApiError(Error::Validation(

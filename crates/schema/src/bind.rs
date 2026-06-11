@@ -39,7 +39,7 @@ fn bind_one<'q>(
         BoundValue::Bool(b) => q.bind(*b),
         BoundValue::DateTime(t) => q.bind(*t),
         BoundValue::Uuid(u) => q.bind(*u),
-        BoundValue::Json(j) => q.bind(sqlx::types::Json(j)),
+        BoundValue::Json(j) => q.bind(j.clone()),
     }
 }
 
@@ -55,7 +55,7 @@ fn bind_one_as<'q>(
         BoundValue::Bool(b) => q.bind(*b),
         BoundValue::DateTime(t) => q.bind(*t),
         BoundValue::Uuid(u) => q.bind(*u),
-        BoundValue::Json(j) => q.bind(sqlx::types::Json(j)),
+        BoundValue::Json(j) => q.bind(j.clone()),
     }
 }
 
@@ -70,8 +70,8 @@ fn bind_typed_null<'q>(
         FieldKind::Boolean => q.bind(Option::<bool>::None),
         FieldKind::Datetime => q.bind(Option::<chrono::DateTime<chrono::Utc>>::None),
         FieldKind::Uuid => q.bind(Option::<uuid::Uuid>::None),
-        FieldKind::Json | FieldKind::RichText => {
-            q.bind(Option::<sqlx::types::Json<serde_json::Value>>::None)
+        FieldKind::Json | FieldKind::RichText | FieldKind::Component => {
+            q.bind(Option::<serde_json::Value>::None)
         }
         _ => q.bind(Option::<String>::None),
     }
@@ -88,8 +88,8 @@ fn bind_typed_null_as<'q>(
         FieldKind::Boolean => q.bind(Option::<bool>::None),
         FieldKind::Datetime => q.bind(Option::<chrono::DateTime<chrono::Utc>>::None),
         FieldKind::Uuid => q.bind(Option::<uuid::Uuid>::None),
-        FieldKind::Json | FieldKind::RichText => {
-            q.bind(Option::<sqlx::types::Json<serde_json::Value>>::None)
+        FieldKind::Json | FieldKind::RichText | FieldKind::Component => {
+            q.bind(Option::<serde_json::Value>::None)
         }
         _ => q.bind(Option::<String>::None),
     }

@@ -54,6 +54,10 @@ export function listWebhooks(): Promise<Webhook[]> {
   return apiFetch<Webhook[]>('/admin/webhooks');
 }
 
+export function getWebhook(id: string): Promise<Webhook> {
+  return apiFetch<Webhook>(`/admin/webhooks/${encodeURIComponent(id)}`);
+}
+
 export function createWebhook(body: CreateWebhookBody): Promise<Webhook> {
   return apiFetch<Webhook>('/admin/webhooks', { method: 'POST', body });
 }

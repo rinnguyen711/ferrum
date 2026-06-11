@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { Icons } from "../components/icons";
 import { Notice, LoadingState } from "../components/ui";
 import { useResource } from "../hooks/useResource";
-import { getComponent, updateComponent, deleteComponent, listContentTypes } from "../api/endpoints";
+import { getComponent, updateComponent, deleteComponent, listContentTypes, listComponents } from "../api/endpoints";
 import type { FieldKind } from "../api/types";
 import { relationMeta, enumValues, mediaMeta } from "../api/types";
 import { ApiError } from "../api/client";
@@ -92,6 +92,7 @@ export function ComponentEditor() {
   );
 
   const allTypes = useResource(() => listContentTypes(), []);
+  const allComponents = useResource(() => listComponents(), []);
 
   const [fields, setFields] = useState<DraftField[]>([]);
   const [displayName, setDisplayName] = useState("");
@@ -256,6 +257,7 @@ export function ComponentEditor() {
           initial={modal.field}
           isNew={modal.isNew}
           typeNames={allTypes.data?.map((t) => t.name) ?? []}
+          components={allComponents.data ?? []}
           lockedEnumValues={[]}
           onSave={saveField}
           onBack={modal.isNew ? () => setModal({ step: "pick" }) : undefined}

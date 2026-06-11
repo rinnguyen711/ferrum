@@ -362,7 +362,7 @@ h1, h2 { margin: 0; }
 
 .rs-fields { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--field-gap); max-width: 840px; }
 .rs-fields--single { grid-template-columns: 1fr; }
-.rs-field { display: flex; flex-direction: column; gap: 8px; }
+.rs-field { display: flex; flex-direction: column; gap: 8px; margin: 5px 0}
 .rs-field[data-wide="true"] { grid-column: 1 / -1; }
 .rs-field-label { display: flex; align-items: baseline; gap: 10px; }
 .rs-field-label label { font-size: 13px; font-weight: 600; color: var(--text); }
@@ -624,7 +624,7 @@ select.rs-input { appearance: none; background-image: url("data:image/svg+xml,%3
   font-size: 16px;
 }
 .rs-modal-body {
-  padding: 22px 20px;
+  padding: 20px 20px;
   overflow-y: auto;
 }
 .rs-modal-foot {
