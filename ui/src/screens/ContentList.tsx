@@ -98,16 +98,28 @@ export function ContentList() {
     }
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
     if (selected.length === 0) return;
     const params = `ids=${selected.map(encodeURIComponent).join(',')}`;
-    const url = `/admin/content-types/${type}/entries/export?${params}`;
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${type}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    const token = getToken();
+    try {
+      const resp = await fetch(
+        `/admin/content-types/${type}/entries/export?${params}`,
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+      );
+      if (!resp.ok) return; // silent on error — export is best-effort
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${type}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      // network error — ignore
+    }
   };
 
   const colKey = `rs-cols:${type}`;
