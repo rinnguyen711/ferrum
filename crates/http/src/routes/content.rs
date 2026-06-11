@@ -914,8 +914,7 @@ fn validate_component_instance(
 
 #[derive(Debug, Deserialize)]
 struct ExportQuery {
-    #[serde(rename = "ids[]")]
-    ids: Option<Vec<String>>,
+    ids: Option<String>,
 }
 
 async fn export_entries(
@@ -933,7 +932,13 @@ async fn export_entries(
         .await
         .ok_or(ApiError(Error::NotFound))?;
 
-    let raw_ids = q.ids.unwrap_or_default();
+    let raw_ids: Vec<String> = q.ids
+        .as_deref()
+        .unwrap_or("")
+        .split(',')
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect();
     if raw_ids.is_empty() {
         return Err(ApiError(Error::Validation(
             rustapi_core::ValidationErrors::single("ids required"),
@@ -957,14 +962,14 @@ async fn export_entries(
         .bind(&ids)
         .fetch_all(&state.pool)
         .await
-        .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e))))?;
+        .map_err(db)?;
 
     let mut headers_written = false;
     let mut wtr = csv::WriterBuilder::new().from_writer(vec![]);
 
     for row in &rows {
-        let obj = crate::entry::row_to_json(&ct, row)
-            .map_err(|e| ApiError(e))?;
+        let obj = row_to_json(&ct, row)
+            .map_err(ApiError)?;
         let (headers, record) = row_to_csv_record(&ct, &obj);
         if !headers_written {
             wtr.write_record(&headers)
@@ -998,7 +1003,7 @@ async fn export_entries(
                 header::HeaderValue::from_str(&format!(
                     "attachment; filename=\"{filename}\""
                 ))
-                .unwrap(),
+                .unwrap_or_else(|_| header::HeaderValue::from_static("attachment")),
             ),
         ],
         Body::from(csv_bytes),
@@ -1007,10 +1012,11 @@ async fn export_entries(
 }
 
 async fn import_entries(
-    State(_state): State<AppState>,
-    Path(_ct_name): Path<String>,
-    axum::extract::Extension(_principal): axum::extract::Extension<Principal>,
+    State(state): State<AppState>,
+    Path(ct_name): Path<String>,
+    axum::extract::Extension(principal): axum::extract::Extension<Principal>,
     _multipart: axum::extract::Multipart,
 ) -> Result<Json<Value>, ApiError> {
+    ensure(&state, &principal, Action::ContentWrite, &ct_name).await?;
     Ok(Json(serde_json::json!({"inserted": 0, "updated": 0, "errors": []})))
 }
