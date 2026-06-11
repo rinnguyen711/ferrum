@@ -340,6 +340,49 @@ pub fn row_to_json(ct: &ContentType, row: &PgRow) -> Result<Value, Error> {
     Ok(Value::Object(obj))
 }
 
+/// Convert a JSON entry object (from `row_to_json`) into a CSV row.
+/// Returns `(headers, values)` — both vecs in the same order.
+/// System columns first (`id`, `created_at`, `updated_at`, optionally
+/// `published_at`), then content fields (stored columns only, in definition
+/// order).
+/// Scalars → raw string. JSON/Component/RichText → compact JSON string. Null → "".
+pub fn row_to_csv_record(ct: &ContentType, obj: &Value) -> (Vec<String>, Vec<String>) {
+    let mut headers: Vec<String> = vec![];
+    let mut values: Vec<String> = vec![];
+
+    let mut push = |key: &str| {
+        headers.push(key.to_string());
+        values.push(json_value_to_csv_cell(obj.get(key).unwrap_or(&Value::Null)));
+    };
+
+    push("id");
+    push("created_at");
+    push("updated_at");
+    if ct.draft_publish() {
+        push("published_at");
+    }
+
+    for f in &ct.fields {
+        if is_system_column(&f.name) || !f.is_stored_column() {
+            continue;
+        }
+        push(&f.name);
+    }
+
+    (headers, values)
+}
+
+fn json_value_to_csv_cell(v: &Value) -> String {
+    match v {
+        Value::Null => String::new(),
+        Value::String(s) => s.clone(),
+        Value::Bool(b) => b.to_string(),
+        Value::Number(n) => n.to_string(),
+        // JSON objects/arrays → compact JSON string
+        _ => v.to_string(),
+    }
+}
+
 fn decode_field(row: &PgRow, f: &Field) -> Result<Value, Error> {
     debug_assert!(
         f.is_stored_column(),
@@ -889,5 +932,76 @@ mod tests {
         .clone();
         let (_o, _c, _l, _mc, media_links) = body_to_binds(&ct_with_media(), body, true).unwrap();
         assert_eq!(media_links[0].ids, vec![a, b]);
+    }
+
+    #[test]
+    fn row_to_csv_record_basic() {
+        let ct = ContentType {
+            id: Uuid::nil(),
+            name: "post".into(),
+            display_name: "Post".into(),
+            fields: vec![
+                Field {
+                    name: "title".into(),
+                    kind: FieldKind::String,
+                    required: false,
+                    unique: false,
+                    default: json!(null),
+                    max_length: None,
+                    kind_meta: json!({}),
+                },
+            ],
+            options: json!({}),
+            kind: rustapi_core::ContentTypeKind::Collection,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let id = Uuid::nil();
+        let obj = json!({
+            "id": id.to_string(),
+            "title": "Hello",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z",
+        });
+        let (headers, record) = row_to_csv_record(&ct, &obj);
+        assert_eq!(headers[0], "id");
+        assert!(headers.contains(&"title".to_string()));
+        let title_idx = headers.iter().position(|h| h == "title").unwrap();
+        assert_eq!(record[title_idx], "Hello");
+        let id_idx = headers.iter().position(|h| h == "id").unwrap();
+        assert_eq!(record[id_idx], id.to_string());
+    }
+
+    #[test]
+    fn row_to_csv_record_null_is_empty() {
+        let ct = ContentType {
+            id: Uuid::nil(),
+            name: "post".into(),
+            display_name: "Post".into(),
+            fields: vec![
+                Field {
+                    name: "title".into(),
+                    kind: FieldKind::String,
+                    required: false,
+                    unique: false,
+                    default: json!(null),
+                    max_length: None,
+                    kind_meta: json!({}),
+                },
+            ],
+            options: json!({}),
+            kind: rustapi_core::ContentTypeKind::Collection,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let obj = json!({
+            "id": Uuid::nil().to_string(),
+            "title": serde_json::Value::Null,
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z",
+        });
+        let (headers, record) = row_to_csv_record(&ct, &obj);
+        let title_idx = headers.iter().position(|h| h == "title").unwrap();
+        assert_eq!(record[title_idx], "");
     }
 }
