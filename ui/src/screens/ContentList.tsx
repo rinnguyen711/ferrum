@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { Icons } from "../components/icons";
+import { getToken } from "../auth";
 import { Avatar, StatusBadge } from "../components/shell";
 import { Checkbox, LoadingState, EmptyState } from "../components/ui";
 import { FieldsMenu, type ColumnDef } from "./FieldsMenu";
@@ -60,6 +61,37 @@ export function ContentList() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [selected, setSelected] = useState<string[]>([]);
   const [fieldsOpen, setFieldsOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{
+    inserted: number;
+    updated: number;
+    errors: { row: number; message: string }[];
+  } | null>(null);
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const token = getToken();
+      const resp = await fetch(`/admin/content-types/${type}/entries/import`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      });
+      const data = await resp.json();
+      setImportResult(data);
+      if (resp.ok) {
+        entries.refetch();
+      }
+    } finally {
+      setImporting(false);
+      e.target.value = '';
+    }
+  };
 
   const handleExport = () => {
     if (selected.length === 0) return;
@@ -260,7 +292,43 @@ export function ContentList() {
             />
           )}
         </div>
+        <>
+          <input
+            id="import-csv-input"
+            type="file"
+            accept=".csv"
+            style={{ display: 'none' }}
+            onChange={handleImport}
+          />
+          <button
+            className="rs-btn rs-btn--ghost"
+            onClick={() => document.getElementById('import-csv-input')?.click()}
+            disabled={importing}
+          >
+            <Icons.upload size={15} /> {importing ? 'Importing…' : 'Import CSV'}
+          </button>
+        </>
       </div>
+
+      {importResult && (
+        <div className={`rs-notice ${importResult.errors.length > 0 ? 'rs-notice--warn' : 'rs-notice--ok'}`}>
+          <span>
+            Imported {importResult.inserted + importResult.updated} rows
+            ({importResult.inserted} new, {importResult.updated} updated
+            {importResult.errors.length > 0 && `, ${importResult.errors.length} errors`})
+          </span>
+          {importResult.errors.length > 0 && (
+            <ul>
+              {importResult.errors.map((e) => (
+                <li key={e.row}>Row {e.row}: {e.message}</li>
+              ))}
+            </ul>
+          )}
+          <button className="rs-btn rs-btn--ghost rs-btn--sm" onClick={() => setImportResult(null)}>
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {selected.length > 0 && (
         <div className="rs-bulkbar">
