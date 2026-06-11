@@ -82,11 +82,16 @@ export function ContentList() {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: form,
       });
+      if (!resp.ok) {
+        const text = await resp.text();
+        setImportResult({ inserted: 0, updated: 0, errors: [{ row: 0, message: text || `HTTP ${resp.status}` }] });
+        return;
+      }
       const data = await resp.json();
       setImportResult(data);
-      if (resp.ok) {
-        entries.refetch();
-      }
+      entries.refetch();
+    } catch (err) {
+      setImportResult({ inserted: 0, updated: 0, errors: [{ row: 0, message: String(err) }] });
     } finally {
       setImporting(false);
       e.target.value = '';

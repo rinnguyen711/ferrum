@@ -550,6 +550,10 @@ select.rs-input { appearance: none; background-image: url("data:image/svg+xml,%3
   color: var(--danger-text);
   background: var(--danger-bg);
   border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 .rs-notice--ok {
   color: var(--ok);
@@ -561,7 +565,6 @@ select.rs-input { appearance: none; background-image: url("data:image/svg+xml,%3
   background: var(--warn-bg);
   border-color: color-mix(in srgb, var(--warn) 30%, transparent);
 }
-.rs-notice { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
 
 /* ============ Type builder ============ */
 .rs-fieldrow-sub {
