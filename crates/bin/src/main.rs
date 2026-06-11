@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use clap::{Parser, Subcommand};
 use rustapi::config::Config;
 use rustapi::seed;
 use rustapi_http::{
@@ -15,8 +16,27 @@ use tracing_subscriber::{prelude::*, EnvFilter};
 
 mod migrate;
 
+#[derive(Debug, Parser)]
+#[command(name = "rustapi", about = "Headless CMS")]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Migrate an existing Postgres database into Rustapi.
+    Migrate(migrate::MigrateArgs),
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    let cli = Cli::parse();
+    if let Some(Command::Migrate(args)) = cli.command {
+        tracing_subscriber::fmt().with_env_filter("info").init();
+        return migrate::run(args).await;
+    }
+
     let cfg = Config::from_env()?;
     init_tracing(&cfg.log);
 
