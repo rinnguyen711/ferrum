@@ -9,7 +9,7 @@ use std::collections::HashSet;
 
 use async_graphql::dynamic::{
     Enum, Field, FieldFuture, InputObject, InputValue, Object, ResolverContext, Scalar, Schema,
-    SchemaError, TypeRef,
+    SchemaBuilder, SchemaError, TypeRef,
 };
 use rustapi_core::field::FieldKind;
 use rustapi_core::{ContentType, ContentTypeKind};
@@ -54,12 +54,92 @@ fn stub_resolver() -> impl Fn(ResolverContext) -> FieldFuture + Clone {
     |_ctx: ResolverContext| FieldFuture::new(async { Ok(None::<async_graphql::Value>) })
 }
 
+/// Output object for a content type: system fields + one per content field.
+/// All output `Field::new` resolver call sites live here (Task 5 swaps them).
+fn build_output_object(ct: &ContentType) -> Object {
+    let mut object = Object::new(pascal(&ct.name))
+        .field(Field::new(
+            "id",
+            TypeRef::named_nn(scalars::UUID_SCALAR),
+            stub_resolver(),
+        ))
+        .field(Field::new(
+            "created_at",
+            TypeRef::named_nn(scalars::DATETIME_SCALAR),
+            stub_resolver(),
+        ))
+        .field(Field::new(
+            "updated_at",
+            TypeRef::named_nn(scalars::DATETIME_SCALAR),
+            stub_resolver(),
+        ));
+    for field in &ct.fields {
+        object = object.field(Field::new(
+            &field.name,
+            scalars::field_type_ref(field),
+            stub_resolver(),
+        ));
+    }
+    object
+}
+
+/// Input object for a content type: writable fields. List-valued fields (m2m
+/// relation, multiple media) accept lists, matching the output read shape.
+fn build_input_object(ct: &ContentType) -> InputObject {
+    let mut input = InputObject::new(format!("{}Input", pascal(&ct.name)));
+    for field in &ct.fields {
+        input = input.field(InputValue::new(&field.name, scalars::input_type_ref(field)));
+    }
+    input
+}
+
+/// List envelope object (`<Type>List`): paginated `data` + `meta`.
+fn build_list_envelope(type_name: &str) -> Object {
+    Object::new(format!("{type_name}List"))
+        .field(Field::new(
+            "data",
+            TypeRef::named_nn_list_nn(type_name),
+            stub_resolver(),
+        ))
+        .field(Field::new(
+            "meta",
+            TypeRef::named_nn("Meta"),
+            stub_resolver(),
+        ))
+}
+
+/// Register one Enum type per distinct enum field, deduped by name across types.
+fn register_enums(
+    mut builder: SchemaBuilder,
+    ct: &ContentType,
+    seen: &mut HashSet<String>,
+) -> SchemaBuilder {
+    for field in &ct.fields {
+        if field.kind != FieldKind::Enum {
+            continue;
+        }
+        let enum_name = scalars::enum_type_name(field);
+        if !seen.insert(enum_name.clone()) {
+            continue;
+        }
+        let Some(meta) = field.enum_meta() else {
+            continue;
+        };
+        let mut e = Enum::new(&enum_name);
+        for v in &meta.values {
+            e = e.item(v.as_str());
+        }
+        builder = builder.register(e);
+    }
+    builder
+}
+
 /// Build a dynamic GraphQL schema from the content-type registry. Only
 /// `Collection` types are surfaced in v1; `Single` types are skipped.
 pub fn build_schema(types: &[ContentType]) -> Result<Schema, SchemaError> {
     let mut builder = Schema::build("Query", Some("Mutation"), None);
 
-    // Shared, registered once.
+    // Shared, registered once: custom scalars, Meta envelope, Media object.
     builder = builder
         .register(Scalar::new(scalars::UUID_SCALAR))
         .register(Scalar::new(scalars::DATETIME_SCALAR))
@@ -110,77 +190,13 @@ pub fn build_schema(types: &[ContentType]) -> Result<Schema, SchemaError> {
         let input_name = format!("{type_name}Input");
         let list_name = format!("{type_name}List");
 
-        // Output object: system fields + one per content field.
-        let mut object = Object::new(&type_name)
-            .field(Field::new(
-                "id",
-                TypeRef::named_nn(scalars::UUID_SCALAR),
-                stub_resolver(),
-            ))
-            .field(Field::new(
-                "created_at",
-                TypeRef::named_nn(scalars::DATETIME_SCALAR),
-                stub_resolver(),
-            ))
-            .field(Field::new(
-                "updated_at",
-                TypeRef::named_nn(scalars::DATETIME_SCALAR),
-                stub_resolver(),
-            ));
-        for field in &ct.fields {
-            object = object.field(Field::new(
-                &field.name,
-                scalars::field_type_ref(field),
-                stub_resolver(),
-            ));
-        }
-        builder = builder.register(object);
-
-        // Input object: writable fields.
-        let mut input = InputObject::new(&input_name);
-        for field in &ct.fields {
-            let base = scalars::base_type_name(field);
-            let ty = if field.required {
-                TypeRef::named_nn(base)
-            } else {
-                TypeRef::named(base)
-            };
-            input = input.field(InputValue::new(&field.name, ty));
-        }
-        builder = builder.register(input);
-
-        // List envelope.
-        let list = Object::new(&list_name)
-            .field(Field::new(
-                "data",
-                TypeRef::named_nn_list_nn(&type_name),
-                stub_resolver(),
-            ))
-            .field(Field::new(
-                "meta",
-                TypeRef::named_nn("Meta"),
-                stub_resolver(),
-            ));
-        builder = builder.register(list);
-
-        // One Enum per distinct enum field, deduped by name.
-        for field in &ct.fields {
-            if field.kind != FieldKind::Enum {
-                continue;
-            }
-            let enum_name = scalars::enum_type_name(field);
-            if !registered_enums.insert(enum_name.clone()) {
-                continue;
-            }
-            let Some(meta) = field.enum_meta() else {
-                continue;
-            };
-            let mut e = Enum::new(&enum_name);
-            for v in &meta.values {
-                e = e.item(v.as_str());
-            }
-            builder = builder.register(e);
-        }
+        // Per-type objects (resolver call sites for these live in the
+        // sub-builders above; root fields below stay in the orchestrator).
+        builder = builder
+            .register(build_output_object(ct))
+            .register(build_input_object(ct))
+            .register(build_list_envelope(&type_name));
+        builder = register_enums(builder, ct, &mut registered_enums);
 
         // Query: list + single.
         query = query.field(

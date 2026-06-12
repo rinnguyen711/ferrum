@@ -9,17 +9,29 @@ pub const UUID_SCALAR: &str = "UUID";
 pub const DATETIME_SCALAR: &str = "DateTime";
 pub const JSON_SCALAR: &str = "JSON";
 
-/// The GraphQL output type for a field (used in output objects).
-/// Non-null when the field is required.
-pub fn field_type_ref(field: &Field) -> TypeRef {
-    let base = base_type_name(field);
-    let many = is_list(field);
-    match (many, field.required) {
+/// Shared list/non-null wrapping for output and input type refs.
+fn wrap_ref(base: String, many: bool, required: bool) -> TypeRef {
+    match (many, required) {
         (true, true) => TypeRef::named_nn_list_nn(base),
         (true, false) => TypeRef::named_nn_list(base),
         (false, true) => TypeRef::named_nn(base),
         (false, false) => TypeRef::named(base),
     }
+}
+
+/// The GraphQL output type for a field (used in output objects).
+/// Non-null when the field is required.
+pub fn field_type_ref(field: &Field) -> TypeRef {
+    wrap_ref(base_type_name(field), is_list(field), field.required)
+}
+
+/// The GraphQL input type for a field. Same list/non-null shape as the output
+/// type ref, so list-valued fields (m2m relation, multiple media) accept lists
+/// on write, matching the read shape.
+pub fn input_type_ref(field: &Field) -> TypeRef {
+    // relations/media on input are the scalar id type(s) — base_type_name
+    // already yields the right base.
+    wrap_ref(base_type_name(field), is_list(field), field.required)
 }
 
 /// Base GraphQL type name for a field's value (before list/non-null wrapping).
@@ -154,5 +166,18 @@ mod tests {
         let mut e = f(FieldKind::Enum, false, json!({"values":["a","b"]}));
         e.name = "status".into();
         assert_eq!(enum_type_name(&e), "StatusEnum");
+    }
+    #[test]
+    fn input_list_matches_output_list() {
+        let many = f(
+            FieldKind::Relation,
+            false,
+            json!({"target":"tag","cardinality":"many_to_many"}),
+        );
+        // input and output use the same list/non-null wrapping for a field.
+        assert_eq!(
+            format!("{:?}", super::input_type_ref(&many)),
+            format!("{:?}", super::field_type_ref(&many))
+        );
     }
 }
