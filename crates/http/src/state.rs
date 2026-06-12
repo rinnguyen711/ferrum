@@ -1,7 +1,10 @@
 //! Application state and pluggable traits (authz, event sink).
 
+use crate::roles::RoleRegistry;
 use async_trait::async_trait;
-use rustapi_core::{action_to_scope, role_allows, Action, Error, Event, Principal};
+use rustapi_core::{
+    action_to_scope, role_allows, verb_to_action, Action, Error, Event, Principal, PERM_VERBS,
+};
 use rustapi_media::StorageProvider;
 use rustapi_schema::{ComponentService, SchemaService};
 use serde_json::{Map, Value};
@@ -23,14 +26,46 @@ impl Authz for AlwaysAllow {
     }
 }
 
-/// Production authorizer: unions the hardcoded permissions of a user's roles.
-pub struct RoleAuthz;
+/// Production authorizer. For users: `admin` and any system role keep the
+/// hardcoded `role_allows` behavior; custom roles are resolved against the
+/// cached permission map. For API tokens: unchanged scope matching.
+pub struct RoleAuthz {
+    roles: Arc<RoleRegistry>,
+}
+
+impl RoleAuthz {
+    pub fn new(roles: Arc<RoleRegistry>) -> Self {
+        Self { roles }
+    }
+}
 
 #[async_trait]
 impl Authz for RoleAuthz {
     async fn can(&self, principal: &Principal, action: Action, content_type: &str) -> bool {
         match principal {
-            Principal::User { roles, .. } => roles.iter().any(|r| role_allows(r, action)),
+            Principal::User { roles, .. } => {
+                for r in roles {
+                    // System roles (admin/editor/viewer) use the compiled map.
+                    if self.roles.is_system(r).await {
+                        if role_allows(r, action) {
+                            return true;
+                        }
+                        continue;
+                    }
+                    // Custom role: any granted verb that maps to this action on
+                    // this content type authorizes.
+                    if !content_type.is_empty() {
+                        for verb in PERM_VERBS {
+                            if verb_to_action(verb) == Some(action)
+                                && self.roles.grants(r, content_type, verb).await
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                false
+            }
             Principal::ApiToken { scopes, .. } => {
                 let base = action_to_scope(action); // e.g. "content:read"
                 scopes.iter().any(|s| {
@@ -128,6 +163,7 @@ pub struct AppState {
     pub schemas: SchemaService,
     pub components: ComponentService,
     pub authz: Arc<dyn Authz>,
+    pub roles: crate::roles::RoleRegistry,
     pub events: Arc<dyn EventSink>,
     pub hooks: Arc<dyn WriteHook>,
     pub config: AppConfig,
@@ -154,20 +190,44 @@ mod tests {
 
     #[tokio::test]
     async fn role_authz_admin_can_write_schema() {
-        let az = RoleAuthz;
+        let reg = crate::roles::RoleRegistry::seeded(
+            std::collections::HashMap::new(),
+            std::collections::HashSet::from([
+                "admin".to_string(),
+                "editor".to_string(),
+                "viewer".to_string(),
+            ]),
+        );
+        let az = RoleAuthz::new(std::sync::Arc::new(reg));
         assert!(az.can(&user(&["admin"]), Action::SchemaWrite, "x").await);
     }
 
     #[tokio::test]
     async fn role_authz_viewer_cannot_write() {
-        let az = RoleAuthz;
+        let reg = crate::roles::RoleRegistry::seeded(
+            std::collections::HashMap::new(),
+            std::collections::HashSet::from([
+                "admin".to_string(),
+                "editor".to_string(),
+                "viewer".to_string(),
+            ]),
+        );
+        let az = RoleAuthz::new(std::sync::Arc::new(reg));
         assert!(!az.can(&user(&["viewer"]), Action::ContentWrite, "x").await);
         assert!(az.can(&user(&["viewer"]), Action::ContentRead, "x").await);
     }
 
     #[tokio::test]
     async fn role_authz_union_of_roles() {
-        let az = RoleAuthz;
+        let reg = crate::roles::RoleRegistry::seeded(
+            std::collections::HashMap::new(),
+            std::collections::HashSet::from([
+                "admin".to_string(),
+                "editor".to_string(),
+                "viewer".to_string(),
+            ]),
+        );
+        let az = RoleAuthz::new(std::sync::Arc::new(reg));
         // editor + viewer → still no schema write
         assert!(
             !az.can(&user(&["editor", "viewer"]), Action::SchemaWrite, "x")
@@ -177,5 +237,25 @@ mod tests {
             az.can(&user(&["editor", "viewer"]), Action::ContentWrite, "x")
                 .await
         );
+    }
+
+    #[tokio::test]
+    async fn role_authz_custom_role_per_type() {
+        use std::collections::{HashMap, HashSet};
+        let mut perms: HashMap<String, HashSet<(String, String)>> = HashMap::new();
+        perms.insert(
+            "author".into(),
+            HashSet::from([
+                ("article".into(), "find".into()),
+                ("article".into(), "create".into()),
+            ]),
+        );
+        let reg = crate::roles::RoleRegistry::seeded(perms, HashSet::new());
+        let az = RoleAuthz::new(std::sync::Arc::new(reg));
+
+        assert!(az.can(&user(&["author"]), Action::ContentRead, "article").await);
+        assert!(az.can(&user(&["author"]), Action::ContentWrite, "article").await);
+        assert!(!az.can(&user(&["author"]), Action::ContentDelete, "article").await);
+        assert!(!az.can(&user(&["author"]), Action::ContentRead, "author").await);
     }
 }

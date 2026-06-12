@@ -4,7 +4,7 @@ use rustapi::config::Config;
 use rustapi::seed;
 use rustapi_http::{
     build_router, mount_studio, resolve_provider, secret_key_from_env, AppConfig, AppState,
-    NoopHook, RoleAuthz,
+    NoopHook, RoleAuthz, RoleRegistry,
 };
 use rustapi_schema::{
     ComponentRegistry, ComponentService, SchemaRegistry, SchemaService, MIGRATOR,
@@ -74,6 +74,12 @@ async fn main() -> Result<()> {
         .context("hydrate component registry")?;
     let components = ComponentService::new(pool.clone(), component_registry);
 
+    let roles = RoleRegistry::new();
+    roles
+        .reload_from_db(&pool)
+        .await
+        .context("hydrate role registry")?;
+
     seed::seed_if_empty(&pool, &schemas, cfg.seed)
         .await
         .context("seed default content")?;
@@ -85,7 +91,8 @@ async fn main() -> Result<()> {
         pool: pool.clone(),
         schemas,
         components,
-        authz: Arc::new(RoleAuthz),
+        authz: Arc::new(RoleAuthz::new(Arc::new(roles.clone()))),
+        roles,
         events: Arc::new(rustapi::webhook_worker::DbEventSink::new(pool.clone())),
         hooks: Arc::new(NoopHook),
         config: AppConfig {
