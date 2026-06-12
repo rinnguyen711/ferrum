@@ -45,7 +45,12 @@ fn principal(ctx: &ResolverContext<'_>) -> Result<Principal, GqlError> {
 fn gql_err(e: Error) -> GqlError {
     let code = match &e {
         Error::NotFound => "NOT_FOUND",
-        Error::Validation(_) => "BAD_USER_INPUT",
+        Error::Validation(_)
+        | Error::Unsupported(_)
+        | Error::BadEmail
+        | Error::BadUrl
+        | Error::BadSlug
+        | Error::EnumValueNotAllowed { .. } => "BAD_USER_INPUT",
         Error::Forbidden => "FORBIDDEN",
         Error::Unauthorized => "UNAUTHORIZED",
         Error::Conflict(_) | Error::RelationFkViolation { .. } => "CONFLICT",
@@ -154,6 +159,15 @@ fn data_arg(ctx: &ResolverContext<'_>) -> Result<Map<String, JsonValue>, GqlErro
 /// `content::list_entries` parses. Shape:
 /// `{"title":{"$containsi":"hi"}}` -> `filters[title][$containsi]=hi`.
 fn filters_to_raw_query(v: JsonValue) -> String {
+    // Percent-encode each dynamic component so a field/op/value containing `&`,
+    // `=`, `%`, space, etc. can't corrupt the query string. The literal brackets
+    // must survive un-encoded — `crate::filter::tokenize_key` scans for `[`/`]` —
+    // so only the pieces *inside* the brackets and the value are encoded. This
+    // mirrors what an HTTP client sends on the REST path, which `filter::parse`
+    // already round-trips via `form_urlencoded::parse` (decodes both key + value).
+    fn enc(s: &str) -> String {
+        url::form_urlencoded::byte_serialize(s.as_bytes()).collect()
+    }
     let mut parts = Vec::new();
     if let JsonValue::Object(fields) = v {
         for (field, ops) in fields {
@@ -163,7 +177,12 @@ fn filters_to_raw_query(v: JsonValue) -> String {
                         JsonValue::String(s) => s,
                         other => other.to_string(),
                     };
-                    parts.push(format!("filters[{field}][{op}]={val_s}"));
+                    parts.push(format!(
+                        "filters[{}][{}]={}",
+                        enc(&field),
+                        enc(&op),
+                        enc(&val_s)
+                    ));
                 }
             }
         }
