@@ -1,5 +1,6 @@
 import type {
-  ContentType, ContentTypeKind, Field, FieldKind, NewContentType, PatchContentType, EnumExtension,
+  Component, ContentType, ContentTypeKind, Field, FieldKind, NewContentType,
+  PatchContentType, EnumExtension, UpdateComponent,
 } from "../api/types";
 import { draftPublishEnabled, enumValues, relationMeta, mediaMeta } from "../api/types";
 import type { IconKey } from "../components/icons";
@@ -64,6 +65,17 @@ export interface Draft {
   serverSnapshot?: ContentType;  // existing only — diff baseline
 }
 
+export interface ComponentDraft {
+  mode: "component";
+  uid: string;
+  display_name: string;
+  fields: DraftField[];
+  serverSnapshot: Component;     // full-replace baseline
+}
+
+/** Whatever the Builder section is currently editing. */
+export type BuilderDraft = Draft | ComponentDraft;
+
 export function blankField(kind: FieldKind = "string"): DraftField {
   return {
     id: crypto.randomUUID(),
@@ -101,27 +113,29 @@ export function newDraft(name: string, display_name: string, kind: ContentTypeKi
   return { name, display_name, fields: [], mode: "new", draft_publish: true, kind };
 }
 
+export function fieldToDraftField(f: Field): DraftField {
+  const rel = relationMeta(f);
+  return {
+    id: crypto.randomUUID(),
+    name: f.name,
+    kind: f.kind,
+    required: f.required,
+    unique: f.unique,
+    enumValues: enumValues(f),
+    target: rel?.target ?? "",
+    inverse: rel?.inverse ?? "",
+    cardinality: (rel?.cardinality as Cardinality) ?? "many_to_one",
+    mediaMultiple: mediaMeta(f)?.multiple ?? false,
+    componentUid: (f.kind_meta as any)?.component ?? "",
+    componentMultiple: (f.kind_meta as any)?.multiple === true,
+    defaultValue: defaultToText(f.default),
+    isPrivate: false,
+    origin: "existing",
+  };
+}
+
 export function seedFromContentType(ct: ContentType): Draft {
-  const fields: DraftField[] = ct.fields.map((f) => {
-    const rel = relationMeta(f);
-    return {
-      id: crypto.randomUUID(),
-      name: f.name,
-      kind: f.kind,
-      required: f.required,
-      unique: f.unique,
-      enumValues: enumValues(f),
-      target: rel?.target ?? "",
-      inverse: rel?.inverse ?? "",
-      cardinality: (rel?.cardinality as Cardinality) ?? "many_to_one",
-      mediaMultiple: mediaMeta(f)?.multiple ?? false,
-      componentUid: (f.kind_meta as any)?.component ?? "",
-      componentMultiple: (f.kind_meta as any)?.multiple === true,
-      defaultValue: defaultToText(f.default),
-      isPrivate: false,
-      origin: "existing",
-    };
-  });
+  const fields: DraftField[] = ct.fields.map(fieldToDraftField);
   return {
     name: ct.name,
     display_name: ct.display_name,
@@ -241,8 +255,28 @@ export function isPatchEmpty(p: PatchContentType): boolean {
   );
 }
 
-export function isDirty(draft: Draft | null): boolean {
+export function seedFromComponent(c: Component): ComponentDraft {
+  return {
+    mode: "component",
+    uid: c.uid,
+    display_name: c.display_name,
+    fields: c.fields.map(fieldToDraftField),
+    serverSnapshot: c,
+  };
+}
+
+export function componentToUpdate(d: ComponentDraft): UpdateComponent {
+  return { display_name: d.display_name, fields: d.fields.map(draftFieldToField) };
+}
+
+export function isDirty(draft: BuilderDraft | null): boolean {
   if (!draft) return false;
+  if (draft.mode === "component") {
+    // Compare both sides through the same draft→wire transform so the
+    // default-value round-trip can't produce false positives.
+    const baseline = componentToUpdate(seedFromComponent(draft.serverSnapshot));
+    return JSON.stringify(componentToUpdate(draft)) !== JSON.stringify(baseline);
+  }
   if (draft.mode === "new") {
     // A new type is only savable once it has at least one field — the server
     // rejects an empty field list, so name alone is not enough to enable Save.

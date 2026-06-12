@@ -10,10 +10,11 @@ import { ApiError } from "../api/client";
 import { draftPublishEnabled, enumValues } from "../api/types";
 import type { FieldKind } from "../api/types";
 import { useBuilderDraft } from "./BuilderDraftContext";
-import { blankField, type DraftField } from "./draftModel";
+import { blankField, type Draft, type DraftField } from "./draftModel";
 import { FieldRow } from "./FieldRow";
 import { FieldConfigModal } from "./FieldConfigModal";
 import { FieldPicker } from "./FieldPicker";
+import { SaveBar } from "./SaveBar";
 
 function DeleteTypeModal({
   typeName,
@@ -139,7 +140,11 @@ export function SchemaEditor() {
     setDelBanner(null);
   }, [type]);
 
-  if (!draft) return <LoadingState />;
+  if (!draft || draft.mode === "component") return <LoadingState />;
+
+  // Narrowed setter — this editor only ever touches content-type drafts.
+  const setTypeDraft = (fn: (d: Draft) => Draft) =>
+    setDraft((d) => (d.mode === "component" ? d : fn(d)));
 
   const snapshot = draft.serverSnapshot;
 
@@ -156,7 +161,7 @@ export function SchemaEditor() {
   };
 
   const removeField = (f: DraftField) =>
-    setDraft((d) => ({ ...d, fields: d.fields.filter((x) => x.id !== f.id) }));
+    setTypeDraft((d) => ({ ...d, fields: d.fields.filter((x) => x.id !== f.id) }));
 
   const addField = () => setModal({ step: "pick" });
 
@@ -167,7 +172,7 @@ export function SchemaEditor() {
     setModal({ step: "config", field: f, isNew: false });
 
   const saveField = (f: DraftField) => {
-    setDraft((d) => {
+    setTypeDraft((d) => {
       const exists = d.fields.some((x) => x.id === f.id);
       return exists
         ? { ...d, fields: d.fields.map((x) => (x.id === f.id ? f : x)) }
@@ -183,7 +188,7 @@ export function SchemaEditor() {
           <input
             className="rs-input rs-title-input"
             value={draft.display_name}
-            onChange={(e) => { clearBanner(); setDraft((d) => ({ ...d, display_name: e.target.value })); }}
+            onChange={(e) => { clearBanner(); setTypeDraft((d) => ({ ...d, display_name: e.target.value })); }}
             placeholder="Display name"
           />
           <p className="rs-cm-sub rs-mono">
@@ -232,7 +237,7 @@ export function SchemaEditor() {
           aria-pressed={draft.draft_publish}
           onClick={() => {
             clearBanner();
-            setDraft((d) => ({ ...d, draft_publish: !d.draft_publish }));
+            setTypeDraft((d) => ({ ...d, draft_publish: !d.draft_publish }));
           }}
         >
           <span className="rs-toggle-knob" />
@@ -253,6 +258,8 @@ export function SchemaEditor() {
           <Icons.plus size={16} /> Add another field to this collection type
         </button>
       </div>
+
+      <SaveBar />
 
       {confirming && type && (
         <DeleteTypeModal

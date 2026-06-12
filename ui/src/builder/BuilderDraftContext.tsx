@@ -4,15 +4,15 @@ import {
 } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError } from "../api/client";
-import { createContentType, patchContentType } from "../api/endpoints";
-import type { ContentType, ContentTypeKind } from "../api/types";
+import { createContentType, patchContentType, updateComponent } from "../api/endpoints";
+import type { Component, ContentType, ContentTypeKind } from "../api/types";
 import {
-  type Draft, diffToPatch, isDirty, newDraft, seedFromContentType,
-  toNewContentType,
+  type BuilderDraft, componentToUpdate, diffToPatch, isDirty, newDraft,
+  seedFromComponent, seedFromContentType, toNewContentType,
 } from "./draftModel";
 
 interface BuilderDraftCtx {
-  draft: Draft | null;
+  draft: BuilderDraft | null;
   dirty: boolean;
   saving: boolean;
   banner: string | null;
@@ -20,9 +20,12 @@ interface BuilderDraftCtx {
   saveNonce: number;
   startNew(name: string, display: string, kind?: ContentTypeKind): void;
   loadExisting(ct: ContentType): void;
-  setDraft(updater: (d: Draft) => Draft): void;
+  loadExistingComponent(c: Component): void;
+  setDraft(updater: (d: BuilderDraft) => BuilderDraft): void;
   clearBanner(): void;
   save(): Promise<void>;
+  /** Revert existing-type / component drafts to their server snapshot. */
+  discard(): void;
   reset(): void;
   guardedNavigate(to: string): void;
   bumpNonce(): void;
@@ -38,7 +41,7 @@ export function useBuilderDraft(): BuilderDraftCtx {
 
 export function BuilderDraftProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
-  const [draft, setDraftState] = useState<Draft | null>(null);
+  const [draft, setDraftState] = useState<BuilderDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -72,8 +75,25 @@ export function BuilderDraftProvider({ children }: { children: ReactNode }) {
     setDraftState(seedFromContentType(ct));
   }, []);
 
-  const setDraft = useCallback((updater: (d: Draft) => Draft) => {
+  const loadExistingComponent = useCallback((c: Component) => {
+    setBanner(null);
+    setFieldErrors({});
+    setDraftState(seedFromComponent(c));
+  }, []);
+
+  const setDraft = useCallback((updater: (d: BuilderDraft) => BuilderDraft) => {
     setDraftState((d) => (d ? updater(d) : d));
+  }, []);
+
+  const discard = useCallback(() => {
+    setBanner(null);
+    setFieldErrors({});
+    setDraftState((d) => {
+      if (!d) return d;
+      if (d.mode === "component") return seedFromComponent(d.serverSnapshot);
+      if (d.mode === "existing" && d.serverSnapshot) return seedFromContentType(d.serverSnapshot);
+      return d; // mode "new" — caller decides (reset + navigate)
+    });
   }, []);
 
   const reset = useCallback(() => {
@@ -101,6 +121,20 @@ export function BuilderDraftProvider({ children }: { children: ReactNode }) {
     if (!draft) return;
     setBanner(null);
     setFieldErrors({});
+
+    if (draft.mode === "component") {
+      setSaving(true);
+      try {
+        const c = await updateComponent(draft.uid, componentToUpdate(draft));
+        setDraftState(seedFromComponent(c));
+        setSaveNonce((n) => n + 1);
+      } catch (e) {
+        applyApiError(e, "Save failed.");
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
 
     if (draft.mode === "new") {
       if (draft.fields.length === 0) {
@@ -151,10 +185,12 @@ export function BuilderDraftProvider({ children }: { children: ReactNode }) {
   const value = useMemo<BuilderDraftCtx>(
     () => ({
       draft, dirty, saving, banner, fieldErrors, saveNonce,
-      startNew, loadExisting, setDraft, clearBanner, save, reset, guardedNavigate, bumpNonce,
+      startNew, loadExisting, loadExistingComponent, setDraft, clearBanner,
+      save, discard, reset, guardedNavigate, bumpNonce,
     }),
     [draft, dirty, saving, banner, fieldErrors, saveNonce, startNew, loadExisting,
-     setDraft, clearBanner, save, reset, guardedNavigate, bumpNonce],
+     loadExistingComponent, setDraft, clearBanner, save, discard, reset,
+     guardedNavigate, bumpNonce],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

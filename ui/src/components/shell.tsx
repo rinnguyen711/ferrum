@@ -2,16 +2,14 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Icons, type IconKey } from "./icons";
 import { getHealth, listContentTypes, listComponents } from "../api/endpoints";
-import type { Health, PatchContentType, Component } from "../api/types";
+import type { Health, Component } from "../api/types";
 import { useResource } from "../hooks/useResource";
 import type { Section } from "../Layout";
 import { useBuilderDraft } from "../builder/BuilderDraftContext";
 import { getClaims } from "../auth";
-import { diffToPatch } from "../builder/draftModel";
 import { CreateTypeModal } from "../builder/CreateTypeModal";
 import { CreateSingleTypeModal } from "../builder/CreateSingleTypeModal";
 import { CreateComponentModal } from "../builder/CreateComponentModal";
-import { SaveConfirmModal } from "../builder/SaveConfirmModal";
 import { initials, AVATAR_NEUTRAL } from "../util";
 
 export function Avatar({
@@ -313,7 +311,6 @@ function TypePanel({
   const location = useLocation();
   const [modalOpen, setModalOpen] = useState(false);
   const [singleModalOpen, setSingleModalOpen] = useState(false);
-  const [confirmPatch, setConfirmPatch] = useState<PatchContentType | null>(null);
   const [createComponentOpen, setCreateComponentOpen] = useState(false);
   const [compRefetchKey, setCompRefetchKey] = useState(0);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -337,41 +334,11 @@ function TypePanel({
     [base, builder.saveNonce, compRefetchKey],
   );
 
-  const onSaveClick = () => {
-    const d = builder.draft;
-    if (!d) return;
-    if (d.mode === "existing") {
-      const patch = diffToPatch(d);
-      if (patch.drop_fields.length > 0) {
-        setConfirmPatch(patch);
-        return;
-      }
-    }
-    void builder.save();
-  };
-
   return (
     <aside className="rs-panel">
       <div className="rs-panel-head">
         <h2>{isBuilder ? "Content-Type Builder" : "Content Manager"}</h2>
-        {isBuilder && (
-          <button
-            className={"rs-btn rs-btn--primary rs-btn--sm rs-panel-save" + (builder.saving ? " is-saving" : "")}
-            disabled={!builder.dirty || builder.saving}
-            onClick={onSaveClick}
-            title={builder.dirty ? "Save schema changes" : "No unsaved changes"}
-          >
-            {builder.saving
-              ? <><Icons.spinner size={14} className="rs-spin" /> Saving…</>
-              : <><Icons.save size={14} /> Save</>}
-          </button>
-        )}
       </div>
-      {isBuilder && builder.dirty && !builder.saving && (
-        <div className="rs-panel-dirty">
-          <span className="rs-dot" /> Unsaved schema changes
-        </div>
-      )}
       <div className="rs-panel-scroll">
         <div className="rs-panel-search">
           <Icons.search size={15} />
@@ -498,14 +465,6 @@ function TypePanel({
             setCompRefetchKey((k) => k + 1);
             builder.guardedNavigate(`/builder/components/${encodeURIComponent(uid)}`);
           }}
-        />
-      )}
-      {confirmPatch && (
-        <SaveConfirmModal
-          patch={confirmPatch}
-          saving={builder.saving}
-          onConfirm={() => { setConfirmPatch(null); void builder.save(); }}
-          onCancel={() => setConfirmPatch(null)}
         />
       )}
     </aside>

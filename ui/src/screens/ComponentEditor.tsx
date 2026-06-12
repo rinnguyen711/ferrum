@@ -3,15 +3,15 @@ import { useNavigate, useParams } from "react-router-dom";
 import { Icons } from "../components/icons";
 import { Notice, LoadingState } from "../components/ui";
 import { useResource } from "../hooks/useResource";
-import { getComponent, updateComponent, deleteComponent, listContentTypes, listComponents } from "../api/endpoints";
+import { getComponent, deleteComponent, listContentTypes, listComponents } from "../api/endpoints";
 import type { FieldKind } from "../api/types";
-import { relationMeta, enumValues, mediaMeta } from "../api/types";
 import { ApiError } from "../api/client";
 import { useBuilderDraft } from "../builder/BuilderDraftContext";
 import { FieldRow } from "../builder/FieldRow";
 import { FieldPicker } from "../builder/FieldPicker";
 import { FieldConfigModal } from "../builder/FieldConfigModal";
-import { blankField, draftFieldToField, type Cardinality, type DraftField } from "../builder/draftModel";
+import { SaveBar } from "../builder/SaveBar";
+import { blankField, type ComponentDraft, type DraftField } from "../builder/draftModel";
 
 function DeleteComponentModal({
   uid,
@@ -84,7 +84,9 @@ type FieldModal =
 export function ComponentEditor() {
   const { uid } = useParams<{ uid: string }>();
   const navigate = useNavigate();
-  const { bumpNonce } = useBuilderDraft();
+  const {
+    draft, banner, setDraft, clearBanner, loadExistingComponent, reset, bumpNonce,
+  } = useBuilderDraft();
 
   const { data: component, loading, error: loadError } = useResource(
     () => (uid ? getComponent(uid) : Promise.resolve(null)),
@@ -94,65 +96,28 @@ export function ComponentEditor() {
   const allTypes = useResource(() => listContentTypes(), []);
   const allComponents = useResource(() => listComponents(), []);
 
-  const [fields, setFields] = useState<DraftField[]>([]);
-  const [displayName, setDisplayName] = useState("");
-  const [banner, setBanner] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [delBanner, setDelBanner] = useState<string | null>(null);
   const [modal, setModal] = useState<FieldModal | null>(null);
 
+  // Seed the shared builder draft from the loaded component (once per uid).
   useEffect(() => {
-    if (component) {
-      setDisplayName(component.display_name);
-      setFields(
-        component.fields.map((f) => {
-          const rel = relationMeta(f);
-          return {
-            ...blankField(f.kind),
-            name: f.name,
-            kind: f.kind,
-            required: f.required,
-            unique: f.unique,
-            enumValues: enumValues(f),
-            target: rel?.target ?? "",
-            inverse: rel?.inverse ?? "",
-            cardinality: (rel?.cardinality as Cardinality) ?? "many_to_one",
-            mediaMultiple: mediaMeta(f)?.multiple ?? false,
-            componentUid: (f.kind_meta as Record<string, unknown>)?.component as string ?? "",
-            componentMultiple: (f.kind_meta as Record<string, unknown>)?.multiple === true,
-            defaultValue: "",
-            isPrivate: false,
-            origin: "existing" as const,
-          };
-        }),
-      );
-    }
-  }, [component]);
+    if (!component) return;
+    if (draft && draft.mode === "component" && draft.uid === component.uid) return;
+    loadExistingComponent(component);
+  }, [component, draft, loadExistingComponent]);
 
   useEffect(() => {
     setModal(null);
     setConfirming(false);
     setDeleting(false);
     setDelBanner(null);
-    setBanner(null);
   }, [uid]);
 
-  const saveFields = async () => {
-    if (!uid) return;
-    setSaving(true);
-    setBanner(null);
-    try {
-      const wireFields = fields.map(draftFieldToField);
-      await updateComponent(uid, { display_name: displayName, fields: wireFields });
-      bumpNonce();
-    } catch (e: unknown) {
-      setBanner(e instanceof ApiError ? e.message : "Save failed.");
-    } finally {
-      setSaving(false);
-    }
-  };
+  // Narrowed setter — this editor only ever touches component drafts.
+  const setCompDraft = (fn: (d: ComponentDraft) => ComponentDraft) =>
+    setDraft((d) => (d.mode === "component" ? fn(d) : d));
 
   const doDelete = async () => {
     if (!uid) return;
@@ -160,6 +125,7 @@ export function ComponentEditor() {
     setDelBanner(null);
     try {
       await deleteComponent(uid);
+      reset();
       bumpNonce();
       navigate("/builder");
     } catch (e: unknown) {
@@ -174,18 +140,21 @@ export function ComponentEditor() {
     setModal({ step: "config", field: blankField(kind), isNew: true });
 
   const saveField = (f: DraftField) => {
-    setFields((prev) => {
-      const exists = prev.some((x) => x.id === f.id);
-      return exists ? prev.map((x) => (x.id === f.id ? f : x)) : [...prev, f];
+    setCompDraft((d) => {
+      const exists = d.fields.some((x) => x.id === f.id);
+      return exists
+        ? { ...d, fields: d.fields.map((x) => (x.id === f.id ? f : x)) }
+        : { ...d, fields: [...d.fields, f] };
     });
     setModal(null);
   };
 
   const removeField = (f: DraftField) =>
-    setFields((prev) => prev.filter((x) => x.id !== f.id));
+    setCompDraft((d) => ({ ...d, fields: d.fields.filter((x) => x.id !== f.id) }));
 
   if (loading) return <LoadingState />;
   if (loadError || !component) return <div className="rs-empty">Component not found.</div>;
+  if (!draft || draft.mode !== "component" || draft.uid !== component.uid) return <LoadingState />;
 
   return (
     <div className="rs-cm">
@@ -193,12 +162,12 @@ export function ComponentEditor() {
         <div>
           <input
             className="rs-input rs-title-input"
-            value={displayName}
-            onChange={(e) => { setBanner(null); setDisplayName(e.target.value); }}
+            value={draft.display_name}
+            onChange={(e) => { clearBanner(); setCompDraft((d) => ({ ...d, display_name: e.target.value })); }}
             placeholder="Display name"
           />
           <p className="rs-cm-sub rs-mono">
-            component::{uid} · {fields.length} fields
+            component::{uid} · {draft.fields.length} fields
           </p>
         </div>
         <div className="rs-editor-actions">
@@ -208,13 +177,6 @@ export function ComponentEditor() {
           >
             Delete component
           </button>
-          <button
-            className="rs-btn rs-btn--primary"
-            onClick={saveFields}
-            disabled={saving}
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
         </div>
       </div>
 
@@ -222,7 +184,7 @@ export function ComponentEditor() {
 
       <div className="rs-schema">
         <div className="rs-schema-head"><span>Field</span><span>Type</span><span></span></div>
-        {fields.map((f) => (
+        {draft.fields.map((f) => (
           <FieldRow
             key={f.id}
             field={f}
@@ -235,6 +197,8 @@ export function ComponentEditor() {
         </button>
       </div>
 
+      <SaveBar />
+
       {confirming && uid && (
         <DeleteComponentModal
           uid={uid}
@@ -246,8 +210,8 @@ export function ComponentEditor() {
       )}
       {modal?.step === "pick" && (
         <FieldPicker
-          typeDisplay={displayName || uid || ""}
-          isFirst={fields.length === 0}
+          typeDisplay={draft.display_name || uid || ""}
+          isFirst={draft.fields.length === 0}
           onPick={pickKind}
           onClose={() => setModal(null)}
         />
