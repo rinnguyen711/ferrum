@@ -1089,10 +1089,10 @@ select.rs-input { appearance: none; background-image: url("data:image/svg+xml,%3
   border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
 }
 
-/* ---- Role editor: 2-column field layout ---- */
+/* ---- Editor: full-width field in a 2-col grid + bold labels ---- */
+.rs-field--full { grid-column: 1 / -1; }
 .rs-role-fields { max-width: none; }
 .rs-role-fields .rs-field-label { font-weight: 650; color: var(--text); }
-.rs-role-fields .rs-field--full { grid-column: 1 / -1; }
 
 /* ---- Role editor: permission cards (scoped, does not affect ApiTokens) ---- */
 .rs-perm-cards { border: none; border-radius: 0; overflow: visible; display: flex; flex-direction: column; gap: 12px; }

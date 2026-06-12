@@ -152,6 +152,9 @@ export interface User {
   id: string;
   email: string;
   roles: string[];
+  confirmed: boolean;
+  blocked: boolean;
+  created_at: string;
 }
 
 export interface NewUser {
@@ -164,6 +167,8 @@ export interface PatchUser {
   email?: string;
   password?: string;
   roles?: string[];
+  confirmed?: boolean;
+  blocked?: boolean;
 }
 
 export interface MediaFolder {

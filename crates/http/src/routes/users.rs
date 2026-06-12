@@ -25,6 +25,9 @@ struct UserView {
     id: Uuid,
     email: String,
     roles: Vec<String>,
+    confirmed: bool,
+    blocked: bool,
+    created_at: chrono::DateTime<chrono::Utc>,
 }
 
 impl From<users::UserRow> for UserView {
@@ -33,6 +36,9 @@ impl From<users::UserRow> for UserView {
             id: u.id,
             email: u.email,
             roles: u.roles,
+            confirmed: u.confirmed,
+            blocked: u.blocked,
+            created_at: u.created_at,
         }
     }
 }
@@ -50,6 +56,8 @@ struct UpdateBody {
     email: Option<String>,
     password: Option<String>,
     roles: Option<Vec<String>>,
+    confirmed: Option<bool>,
+    blocked: Option<bool>,
 }
 
 /// Authz gate. Denial → 403.
@@ -149,6 +157,8 @@ async fn update(
         body.email.as_deref(),
         hash.as_deref(),
         body.roles.as_deref(),
+        body.confirmed,
+        body.blocked,
     )
     .await
     .map_err(map_db_err)?
