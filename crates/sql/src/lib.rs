@@ -33,3 +33,9 @@ pub use webhooks::{
     mark_delivery_failed, mark_delivery_success, poll_pending, update_webhook, PendingDelivery,
     Webhook, WebhookDelivery,
 };
+
+pub mod roles;
+pub use roles::{
+    delete_role, get_role, list_roles, load_all, set_permissions, upsert_role, RolePermission,
+    RoleRecord,
+};
