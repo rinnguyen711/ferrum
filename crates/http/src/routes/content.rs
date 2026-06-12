@@ -67,15 +67,16 @@ async fn ensure(
 // see fit. Behavior is identical to the previous inline handler bodies.
 // ---------------------------------------------------------------------------
 
-pub(crate) async fn list_entries(
+/// Authorize `action` on `ct_name`, fetch the content type, and reject single
+/// types (which have their own /api/single-types route). Shared preamble for
+/// every collection entry operation.
+async fn authorize_collection(
     state: &AppState,
     principal: &Principal,
+    action: Action,
     ct_name: &str,
-    params: ListParams,
-    populate: Option<&str>,
-    raw_query: &str,
-) -> Result<Value, Error> {
-    if !state.authz.can(principal, Action::ContentRead, ct_name).await {
+) -> Result<ContentType, Error> {
+    if !state.authz.can(principal, action, ct_name).await {
         return Err(Error::Forbidden);
     }
     let ct = state
@@ -89,6 +90,18 @@ pub(crate) async fn list_entries(
             "use /api/single-types/:name for single types",
         )));
     }
+    Ok(ct)
+}
+
+pub(crate) async fn list_entries(
+    state: &AppState,
+    principal: &Principal,
+    ct_name: &str,
+    params: ListParams,
+    populate: Option<&str>,
+    raw_query: &str,
+) -> Result<Value, Error> {
+    let ct = authorize_collection(state, principal, Action::ContentRead, ct_name).await?;
     let status = params.status.clone();
     let opts = parse_list(&ct, params, state.config.page_size_max)?;
     let offset: i64 = ((opts.page - 1) as i64) * (opts.page_size as i64);
@@ -157,20 +170,7 @@ pub(crate) async fn get_entry(
     id: Uuid,
     populate: Option<&str>,
 ) -> Result<Value, Error> {
-    if !state.authz.can(principal, Action::ContentRead, ct_name).await {
-        return Err(Error::Forbidden);
-    }
-    let ct = state
-        .schemas
-        .registry()
-        .get(ct_name)
-        .await
-        .ok_or(Error::NotFound)?;
-    if ct.kind == rustapi_core::ContentTypeKind::Single {
-        return Err(Error::Validation(rustapi_core::ValidationErrors::single(
-            "use /api/single-types/:name for single types",
-        )));
-    }
+    let ct = authorize_collection(state, principal, Action::ContentRead, ct_name).await?;
     let (sql, binds) = rustapi_sql::select_by_id(&ct.name, id)
         .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
     let q = bind_all(sqlx::query(&sql), &binds);
@@ -203,20 +203,7 @@ pub(crate) async fn create_entry(
     ct_name: &str,
     body: Map<String, Value>,
 ) -> Result<Value, Error> {
-    if !state.authz.can(principal, Action::ContentWrite, ct_name).await {
-        return Err(Error::Forbidden);
-    }
-    let ct = state
-        .schemas
-        .registry()
-        .get(ct_name)
-        .await
-        .ok_or(Error::NotFound)?;
-    if ct.kind == rustapi_core::ContentTypeKind::Single {
-        return Err(Error::Validation(rustapi_core::ValidationErrors::single(
-            "use /api/single-types/:name for single types",
-        )));
-    }
+    let ct = authorize_collection(state, principal, Action::ContentWrite, ct_name).await?;
 
     let ctx = WriteContext {
         content_type: &ct.name,
@@ -284,20 +271,7 @@ pub(crate) async fn update_entry(
     id: Uuid,
     body: Map<String, Value>,
 ) -> Result<Value, Error> {
-    if !state.authz.can(principal, Action::ContentWrite, ct_name).await {
-        return Err(Error::Forbidden);
-    }
-    let ct = state
-        .schemas
-        .registry()
-        .get(ct_name)
-        .await
-        .ok_or(Error::NotFound)?;
-    if ct.kind == rustapi_core::ContentTypeKind::Single {
-        return Err(Error::Validation(rustapi_core::ValidationErrors::single(
-            "use /api/single-types/:name for single types",
-        )));
-    }
+    let ct = authorize_collection(state, principal, Action::ContentWrite, ct_name).await?;
 
     let ctx = WriteContext {
         content_type: &ct.name,
@@ -387,24 +361,7 @@ pub(crate) async fn delete_entry(
     ct_name: &str,
     id: Uuid,
 ) -> Result<(), Error> {
-    if !state
-        .authz
-        .can(principal, Action::ContentDelete, ct_name)
-        .await
-    {
-        return Err(Error::Forbidden);
-    }
-    let _ct = state
-        .schemas
-        .registry()
-        .get(ct_name)
-        .await
-        .ok_or(Error::NotFound)?;
-    if _ct.kind == rustapi_core::ContentTypeKind::Single {
-        return Err(Error::Validation(rustapi_core::ValidationErrors::single(
-            "use /api/single-types/:name for single types",
-        )));
-    }
+    authorize_collection(state, principal, Action::ContentDelete, ct_name).await?;
     let (sql, binds) = rustapi_sql::delete(ct_name, id)
         .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
     let q = bind_all(sqlx::query(&sql), &binds);
