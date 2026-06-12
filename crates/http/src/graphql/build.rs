@@ -1,9 +1,11 @@
 //! Builds an `async_graphql::dynamic::Schema` at runtime from the content-type
 //! registry. Walks Collection types only (Single types are excluded from v1).
 //!
-//! Field/query/mutation resolvers are TEMP stubs here — Task 5 swaps them for
-//! the real `resolve::` factories. SDL generation does not invoke resolvers, so
-//! the shape is fully exercised by the `.sdl()` tests below.
+//! Field/query/mutation resolvers come from `resolve::`: object/envelope/Meta/
+//! Media fields use `json_field_resolver` (parent JSON threaded to children),
+//! root query/mutation fields delegate to the shared `content::` CRUD. SDL
+//! generation does not invoke resolvers, so the `.sdl()` tests below exercise
+//! only the shape.
 
 use std::collections::HashSet;
 
@@ -14,7 +16,7 @@ use async_graphql::dynamic::{
 use rustapi_core::field::FieldKind;
 use rustapi_core::{ContentType, ContentTypeKind};
 
-use crate::graphql::scalars;
+use crate::graphql::{resolve, scalars};
 
 /// PascalCase a snake_case api id (`blog_post` -> `BlogPost`). Same rule as
 /// `openapi::schema::to_pascal`.
@@ -48,9 +50,9 @@ fn camel(name: &str) -> String {
     p[..1].to_lowercase() + &p[1..]
 }
 
-// TEMP stub — replaced by resolve.rs wiring in Task 5. SDL generation never
-// invokes resolvers, so a no-op that yields null is sufficient here.
-fn stub_resolver() -> impl Fn(ResolverContext) -> FieldFuture + Clone {
+// Inert resolver for the `_empty` placeholder fields (only present when no
+// Collection types are surfaced). Always yields null.
+fn empty_resolver() -> impl Fn(ResolverContext) -> FieldFuture + Clone {
     |_ctx: ResolverContext| FieldFuture::new(async { Ok(None::<async_graphql::Value>) })
 }
 
@@ -61,23 +63,23 @@ fn build_output_object(ct: &ContentType) -> Object {
         .field(Field::new(
             "id",
             TypeRef::named_nn(scalars::UUID_SCALAR),
-            stub_resolver(),
+            resolve::json_field_resolver("id"),
         ))
         .field(Field::new(
             "created_at",
             TypeRef::named_nn(scalars::DATETIME_SCALAR),
-            stub_resolver(),
+            resolve::json_field_resolver("created_at"),
         ))
         .field(Field::new(
             "updated_at",
             TypeRef::named_nn(scalars::DATETIME_SCALAR),
-            stub_resolver(),
+            resolve::json_field_resolver("updated_at"),
         ));
     for field in &ct.fields {
         object = object.field(Field::new(
             &field.name,
             scalars::field_type_ref(field),
-            stub_resolver(),
+            resolve::json_field_resolver(&field.name),
         ));
     }
     object
@@ -99,12 +101,12 @@ fn build_list_envelope(type_name: &str) -> Object {
         .field(Field::new(
             "data",
             TypeRef::named_nn_list_nn(type_name),
-            stub_resolver(),
+            resolve::json_field_resolver("data"),
         ))
         .field(Field::new(
             "meta",
             TypeRef::named_nn("Meta"),
-            stub_resolver(),
+            resolve::json_field_resolver("meta"),
         ))
 }
 
@@ -149,17 +151,17 @@ pub fn build_schema(types: &[ContentType]) -> Result<Schema, SchemaError> {
         .field(Field::new(
             "page",
             TypeRef::named_nn(TypeRef::INT),
-            stub_resolver(),
+            resolve::json_field_resolver("page"),
         ))
         .field(Field::new(
             "pageSize",
             TypeRef::named_nn(TypeRef::INT),
-            stub_resolver(),
+            resolve::json_field_resolver("pageSize"),
         ))
         .field(Field::new(
             "total",
             TypeRef::named_nn(TypeRef::INT),
-            stub_resolver(),
+            resolve::json_field_resolver("total"),
         ));
     builder = builder.register(meta);
 
@@ -167,12 +169,12 @@ pub fn build_schema(types: &[ContentType]) -> Result<Schema, SchemaError> {
         .field(Field::new(
             "id",
             TypeRef::named_nn(scalars::UUID_SCALAR),
-            stub_resolver(),
+            resolve::json_field_resolver("id"),
         ))
         .field(Field::new(
             "url",
             TypeRef::named(TypeRef::STRING),
-            stub_resolver(),
+            resolve::json_field_resolver("url"),
         ));
     builder = builder.register(media);
 
@@ -203,7 +205,7 @@ pub fn build_schema(types: &[ContentType]) -> Result<Schema, SchemaError> {
             Field::new(
                 plural(&ct.name),
                 TypeRef::named_nn(&list_name),
-                stub_resolver(),
+                resolve::list_field(ct.name.clone()),
             )
             .argument(InputValue::new("page", TypeRef::named(TypeRef::INT)))
             .argument(InputValue::new("pageSize", TypeRef::named(TypeRef::INT)))
@@ -214,9 +216,15 @@ pub fn build_schema(types: &[ContentType]) -> Result<Schema, SchemaError> {
             )),
         );
         query = query.field(
-            Field::new(camel(&ct.name), TypeRef::named(&type_name), stub_resolver()).argument(
-                InputValue::new("id", TypeRef::named_nn(scalars::UUID_SCALAR)),
-            ),
+            Field::new(
+                camel(&ct.name),
+                TypeRef::named(&type_name),
+                resolve::get_field(ct.name.clone()),
+            )
+            .argument(InputValue::new(
+                "id",
+                TypeRef::named_nn(scalars::UUID_SCALAR),
+            )),
         );
 
         // Mutation: create / update / delete.
@@ -224,33 +232,27 @@ pub fn build_schema(types: &[ContentType]) -> Result<Schema, SchemaError> {
             Field::new(
                 format!("create{type_name}"),
                 TypeRef::named_nn(&type_name),
-                stub_resolver(),
+                resolve::create_field(ct.name.clone()),
             )
-            .argument(InputValue::new(
-                "data",
-                TypeRef::named_nn(&input_name),
-            )),
+            .argument(InputValue::new("data", TypeRef::named_nn(&input_name))),
         );
         mutation = mutation.field(
             Field::new(
                 format!("update{type_name}"),
                 TypeRef::named_nn(&type_name),
-                stub_resolver(),
+                resolve::update_field(ct.name.clone()),
             )
             .argument(InputValue::new(
                 "id",
                 TypeRef::named_nn(scalars::UUID_SCALAR),
             ))
-            .argument(InputValue::new(
-                "data",
-                TypeRef::named_nn(&input_name),
-            )),
+            .argument(InputValue::new("data", TypeRef::named_nn(&input_name))),
         );
         mutation = mutation.field(
             Field::new(
                 format!("delete{type_name}"),
                 TypeRef::named_nn(TypeRef::BOOLEAN),
-                stub_resolver(),
+                resolve::delete_field(ct.name.clone()),
             )
             .argument(InputValue::new(
                 "id",
@@ -265,12 +267,12 @@ pub fn build_schema(types: &[ContentType]) -> Result<Schema, SchemaError> {
         query = query.field(Field::new(
             "_empty",
             TypeRef::named(TypeRef::BOOLEAN),
-            stub_resolver(),
+            empty_resolver(),
         ));
         mutation = mutation.field(Field::new(
             "_empty",
             TypeRef::named(TypeRef::BOOLEAN),
-            stub_resolver(),
+            empty_resolver(),
         ));
     }
 
