@@ -2412,6 +2412,7 @@ dependencies = [
  "axum",
  "chrono",
  "clap",
+ "csv",
  "dialoguer",
  "hex",
  "hmac",
