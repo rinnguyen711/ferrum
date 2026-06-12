@@ -9,6 +9,17 @@ use axum::{Json, Router};
 use rustapi_core::{ContentType, Error, Event, NewContentType, PatchContentType};
 use serde::Deserialize;
 
+/// Rebuild the cached GraphQL schema from the current content-type registry.
+/// Called after every content-type mutation. Non-fatal: a rebuild failure logs
+/// but does not fail the mutation — the registry is already consistent and the
+/// previous GraphQL schema keeps serving until the next successful rebuild.
+async fn rebuild_gql(state: &AppState) {
+    let types = state.schemas.registry().list().await;
+    if let Err(e) = state.gql.rebuild(&types).await {
+        tracing::error!(error = %e, "failed to rebuild GraphQL schema after content-type change");
+    }
+}
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/admin/content-types", get(list).post(create))
@@ -46,6 +57,7 @@ async fn create(
     Json(payload): Json<NewContentType>,
 ) -> Result<(StatusCode, Json<ContentType>), ApiError> {
     let ct = state.schemas.create(payload).await?;
+    rebuild_gql(&state).await;
     state
         .events
         .emit(Event::SchemaCreated {
@@ -61,6 +73,7 @@ async fn patch_one(
     Json(payload): Json<PatchContentType>,
 ) -> Result<Json<ContentType>, ApiError> {
     let ct = state.schemas.patch(&name, payload).await?;
+    rebuild_gql(&state).await;
     state
         .events
         .emit(Event::SchemaUpdated {
@@ -86,6 +99,7 @@ async fn delete_one(
         )));
     }
     state.schemas.delete(&name).await?;
+    rebuild_gql(&state).await;
     state.events.emit(Event::SchemaDeleted { name }).await;
     Ok(StatusCode::NO_CONTENT)
 }
