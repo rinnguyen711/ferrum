@@ -124,7 +124,10 @@ pub async fn load_all(pool: &PgPool) -> Result<HashMap<String, Vec<RolePermissio
     .await?;
     let mut out: HashMap<String, Vec<RolePermission>> = HashMap::new();
     for (key, content_type, action) in rows {
-        out.entry(key).or_default().push(RolePermission { content_type, action });
+        out.entry(key).or_default().push(RolePermission {
+            content_type,
+            action,
+        });
     }
     Ok(out)
 }

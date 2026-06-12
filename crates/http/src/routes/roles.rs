@@ -115,7 +115,12 @@ async fn validate_permissions(
             return Err(invalid("permissions", "unknown action verb"));
         }
         let known_type = PLUGIN_TYPES.contains(&p.content_type.as_str())
-            || state.schemas.registry().get(&p.content_type).await.is_some();
+            || state
+                .schemas
+                .registry()
+                .get(&p.content_type)
+                .await
+                .is_some();
         if !known_type {
             return Err(invalid("permissions", "unknown content type"));
         }
@@ -191,7 +196,11 @@ async fn create(
     if body.name.trim().is_empty() {
         return Err(invalid("name", "name is required"));
     }
-    if get_role(&state.pool, &body.key).await.map_err(db)?.is_some() {
+    if get_role(&state.pool, &body.key)
+        .await
+        .map_err(db)?
+        .is_some()
+    {
         return Err(invalid("key", "a role with this key already exists"));
     }
     let perms = validate_permissions(&state, &body.permissions).await?;

@@ -96,10 +96,7 @@ async fn webhook_crud_list_create_update_delete() {
     assert_eq!(list.len(), 1);
 
     let resp = app
-        .admin(
-            app.client
-                .patch(app.url(&format!("/admin/webhooks/{id}"))),
-        )
+        .admin(app.client.patch(app.url(&format!("/admin/webhooks/{id}"))))
         .json(&json!({
             "name": "renamed",
             "url": mock.url("/hook"),
@@ -115,10 +112,7 @@ async fn webhook_crud_list_create_update_delete() {
     assert_eq!(updated["enabled"], false);
 
     let resp = app
-        .admin(
-            app.client
-                .delete(app.url(&format!("/admin/webhooks/{id}"))),
-        )
+        .admin(app.client.delete(app.url(&format!("/admin/webhooks/{id}"))))
         .send()
         .await
         .unwrap();
@@ -224,19 +218,16 @@ async fn disabled_webhook_gets_no_delivery_row() {
     let hook: Value = create_webhook(&app, &mock.url("/hook"), &["entry.created"]).await;
     let id = hook["id"].as_str().unwrap();
 
-    app.admin(
-        app.client
-            .patch(app.url(&format!("/admin/webhooks/{id}"))),
-    )
-    .json(&json!({
-        "name": "test-hook",
-        "url": mock.url("/hook"),
-        "events": ["entry.created"],
-        "enabled": false,
-    }))
-    .send()
-    .await
-    .unwrap();
+    app.admin(app.client.patch(app.url(&format!("/admin/webhooks/{id}"))))
+        .json(&json!({
+            "name": "test-hook",
+            "url": mock.url("/hook"),
+            "events": ["entry.created"],
+            "enabled": false,
+        }))
+        .send()
+        .await
+        .unwrap();
 
     // Simulate insert_deliveries for a disabled webhook — should insert 0 rows
     sqlx::query(
@@ -353,13 +344,10 @@ async fn delete_webhook_cascades_deliveries() {
             .unwrap();
     assert_eq!(count.0, 1);
 
-    app.admin(
-        app.client
-            .delete(app.url(&format!("/admin/webhooks/{id}"))),
-    )
-    .send()
-    .await
-    .unwrap();
+    app.admin(app.client.delete(app.url(&format!("/admin/webhooks/{id}"))))
+        .send()
+        .await
+        .unwrap();
 
     let count: (i64,) =
         sqlx::query_as("SELECT COUNT(*) FROM _webhook_deliveries WHERE webhook_id=$1")

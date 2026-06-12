@@ -48,7 +48,12 @@ impl RoleRegistry {
             perms.insert(
                 key,
                 list.into_iter()
-                    .map(|RolePermission { content_type, action }| (content_type, action))
+                    .map(
+                        |RolePermission {
+                             content_type,
+                             action,
+                         }| (content_type, action),
+                    )
                     .collect(),
             );
         }

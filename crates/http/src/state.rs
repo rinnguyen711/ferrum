@@ -253,9 +253,21 @@ mod tests {
         let reg = crate::roles::RoleRegistry::seeded(perms, HashSet::new());
         let az = RoleAuthz::new(std::sync::Arc::new(reg));
 
-        assert!(az.can(&user(&["author"]), Action::ContentRead, "article").await);
-        assert!(az.can(&user(&["author"]), Action::ContentWrite, "article").await);
-        assert!(!az.can(&user(&["author"]), Action::ContentDelete, "article").await);
-        assert!(!az.can(&user(&["author"]), Action::ContentRead, "author").await);
+        assert!(
+            az.can(&user(&["author"]), Action::ContentRead, "article")
+                .await
+        );
+        assert!(
+            az.can(&user(&["author"]), Action::ContentWrite, "article")
+                .await
+        );
+        assert!(
+            !az.can(&user(&["author"]), Action::ContentDelete, "article")
+                .await
+        );
+        assert!(
+            !az.can(&user(&["author"]), Action::ContentRead, "author")
+                .await
+        );
     }
 }

@@ -45,14 +45,13 @@ pub async fn apply_schema(
     plans: &[TablePlan],
 ) -> Result<(), anyhow::Error> {
     for plan in plans {
-        let fields: Vec<Field> = plan
-            .columns
-            .iter()
-            .filter_map(decision_to_field)
-            .collect();
+        let fields: Vec<Field> = plan.columns.iter().filter_map(decision_to_field).collect();
 
         if fields.is_empty() {
-            println!("  ⚠ Skipping '{}': no valid fields.", plan.content_type_name);
+            println!(
+                "  ⚠ Skipping '{}': no valid fields.",
+                plan.content_type_name
+            );
             continue;
         }
 
@@ -119,9 +118,8 @@ pub async fn copy_rows(
         let mut fail = 0u64;
 
         for row in &rows {
-            let placeholders: Vec<String> = (1..=target_cols.len())
-                .map(|i| format!("${i}"))
-                .collect();
+            let placeholders: Vec<String> =
+                (1..=target_cols.len()).map(|i| format!("${i}")).collect();
             let insert_sql = format!(
                 "INSERT INTO \"{}\" ({}) VALUES ({})",
                 target_table,
@@ -135,9 +133,7 @@ pub async fn copy_rows(
 
             let mut q = sqlx::query(&insert_sql);
             for col in &source_cols {
-                let val: Option<String> = sqlx::Row::try_get(row, col.as_str())
-                    .ok()
-                    .flatten();
+                let val: Option<String> = sqlx::Row::try_get(row, col.as_str()).ok().flatten();
                 q = q.bind(val);
             }
 
