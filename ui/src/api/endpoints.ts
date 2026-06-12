@@ -61,6 +61,8 @@ interface ListOpts {
   sort?: string;
   populate?: string;
   status?: "published" | "draft" | "all";
+  /** Pre-built `filters[field][$op]` → value pairs (see FiltersMenu.serializeFilters). */
+  filters?: [string, string][];
 }
 
 export function listEntries(type: string, opts: ListOpts = {}): Promise<ListResponse<Entry>> {
@@ -70,6 +72,7 @@ export function listEntries(type: string, opts: ListOpts = {}): Promise<ListResp
   if (opts.sort) q.set("sort", opts.sort);
   if (opts.populate) q.set("populate", opts.populate);
   if (opts.status) q.set("status", opts.status);
+  for (const [k, v] of opts.filters ?? []) q.append(k, v);
   const qs = q.toString();
   return apiFetch<ListResponse<Entry>>(`/api/${encodeURIComponent(type)}${qs ? `?${qs}` : ""}`);
 }

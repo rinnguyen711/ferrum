@@ -1,12 +1,23 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { Icons } from "../components/icons";
 import { getToken } from "../auth";
 import { Avatar, StatusBadge } from "../components/shell";
 import { Checkbox, LoadingState, EmptyState } from "../components/ui";
 import { FieldsMenu, type ColumnDef } from "./FieldsMenu";
+import {
+  FiltersMenu,
+  filterableFields,
+  isComplete,
+  makeRule,
+  serializeFilters,
+  type FilterRule,
+} from "./FiltersMenu";
 import { useResource } from "../hooks/useResource";
-import { getContentType, listContentTypes, listEntries } from "../api/endpoints";
+import {
+  deleteEntry, getContentType, listContentTypes, listEntries,
+  publishEntry, unpublishEntry,
+} from "../api/endpoints";
 import type { ContentType, Entry, Field } from "../api/types";
 import { draftPublishEnabled, relationMeta } from "../api/types";
 import { relTime, relationLabel, shortId, initials, AVATAR_NEUTRAL } from "../util";
@@ -51,15 +62,94 @@ export function ContentList() {
     : "";
 
   const [publishFilter, setPublishFilter] = useState<"published" | "draft" | "all">("all");
-
-  const entries = useResource(
-    () => listEntries(type, { populate: populate || undefined, pageSize: 100, status: dp ? publishFilter : undefined }),
-    [type, populate, dp, publishFilter],
-  );
-
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [sortKey, setSortKey] = useState<"updated" | "title">("updated");
+
+  const [filterRules, setFilterRules] = useState<FilterRule[]>([]);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  useEffect(() => {
+    setFilterRules([]);
+    setFiltersOpen(false);
+    setQuery("");
+    setStatusFilter("all");
+    setSortKey("updated");
+  }, [type]);
+
+  const hasStatus = !!ct?.fields.some((f) => f.name === "status" && f.kind === "enum");
+  const titleField = ct?.fields.find((f) => ["title", "name"].includes(f.name))?.name;
+
+  // All server-side list shaping (user filters, search, enum-status tab)
+  // funnels through one debounced pair list so typing doesn't refetch per
+  // keystroke. JSON string is the stable dep representation.
+  const allPairs: [string, string][] = ct ? serializeFilters(filterRules, ct) : [];
+  if (query && titleField) allPairs.push([`filters[${titleField}][$containsi]`, query]);
+  if (hasStatus && statusFilter !== "all") allPairs.push(["filters[status][$eq]", statusFilter]);
+  const pairsJson = JSON.stringify(allPairs);
+  const [debouncedPairs, setDebouncedPairs] = useState(pairsJson);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedPairs(pairsJson), 300);
+    return () => clearTimeout(t);
+  }, [pairsJson]);
+  const activeFilterCount = filterRules.filter(isComplete).length;
+
+  const sort = sortKey === "title" && titleField ? `${titleField}:asc` : "updated_at:desc";
+
+  const entries = useResource(
+    () =>
+      listEntries(type, {
+        populate: populate || undefined,
+        page,
+        pageSize,
+        sort,
+        status: dp ? publishFilter : undefined,
+        filters: JSON.parse(debouncedPairs) as [string, string][],
+      }),
+    [type, populate, dp, publishFilter, debouncedPairs, page, pageSize, sort],
+  );
+
   const [selected, setSelected] = useState<string[]>([]);
+
+  // Any query-shape change invalidates the current page and selection.
+  useEffect(() => {
+    setPage(1);
+    setSelected([]);
+  }, [type, debouncedPairs, publishFilter, pageSize, sort]);
+
+  // Deleting the last rows of the final page can strand `page` past the
+  // end — clamp it back once the new total arrives.
+  useEffect(() => {
+    const t = entries.data?.meta.total ?? 0;
+    const pc = Math.max(1, Math.ceil(t / pageSize));
+    if (page > pc) setPage(pc);
+  }, [entries.data, page, pageSize]);
+
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkNotice, setBulkNotice] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  const runBulk = async (verb: "publish" | "unpublish" | "delete") => {
+    const ids = [...selected];
+    setBulkBusy(true);
+    setBulkNotice(null);
+    let failed = 0;
+    for (const id of ids) {
+      try {
+        if (verb === "publish") await publishEntry(type, id);
+        else if (verb === "unpublish") await unpublishEntry(type, id);
+        else await deleteEntry(type, id);
+      } catch {
+        failed += 1;
+      }
+    }
+    setBulkBusy(false);
+    setConfirmingDelete(false);
+    setSelected([]);
+    if (failed > 0) setBulkNotice(`${verb} failed for ${failed} of ${ids.length} entries.`);
+    entries.refetch();
+  };
   const [fieldsOpen, setFieldsOpen] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{
@@ -141,22 +231,11 @@ export function ContentList() {
     localStorage.removeItem(colKey);
   };
 
-  const hasStatus = !!ct?.fields.some((f) => f.name === "status" && f.kind === "enum");
-  const titleField = ct?.fields.find((f) => ["title", "name"].includes(f.name))?.name;
-
   const rows = entries.data?.data ?? [];
-  const filtered = useMemo(() => {
-    return rows.filter((e) => {
-      if (hasStatus && statusFilter !== "all" && e["status"] !== statusFilter) return false;
-      if (query && titleField) {
-        const t = String(e[titleField] ?? "").toLowerCase();
-        if (!t.includes(query.toLowerCase())) return false;
-      }
-      return true;
-    });
-  }, [rows, statusFilter, query, hasStatus, titleField]);
 
-  if (schema.loading || entries.loading) return <LoadingState />;
+  // Filter refetches flip entries.loading; keep the table (and the open
+  // filters popover) mounted — full-page loader only before first data.
+  if (schema.loading || (entries.loading && !entries.data)) return <LoadingState />;
   if (schema.error)
     return (
       <EmptyState>
@@ -185,16 +264,21 @@ export function ContentList() {
     allColumns.map((c) => [c.key, colVisible(c.key)]),
   );
   const total = entries.data.meta.total;
-  const statusCount = (s: string) =>
-    s === "all" ? rows.length : rows.filter((e) => e["status"] === s).length;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  // Sliding window of up to 5 page buttons, current page centered.
+  const winStart = Math.max(1, Math.min(page - 2, pageCount - 4));
+  const pageWindow = Array.from(
+    { length: Math.min(5, pageCount) },
+    (_, i) => winStart + i,
+  );
 
   const targetSchema = (f: Field): ContentType | undefined => {
     const m = relationMeta(f);
     return m ? allTypes.data?.find((t) => t.name === m.target) : undefined;
   };
 
-  const allOn = filtered.length > 0 && selected.length === filtered.length;
-  const toggleAll = () => setSelected(allOn ? [] : filtered.map((e) => e.id));
+  const allOn = rows.length > 0 && selected.length === rows.length;
+  const toggleAll = () => setSelected(allOn ? [] : rows.map((e) => e.id));
   const toggle = (id: string) =>
     setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
 
@@ -272,24 +356,56 @@ export function ContentList() {
               className={"rs-tab" + (statusFilter === k ? " is-active" : "")}
               onClick={() => setStatusFilter(k)}
             >
-              {l} <span className="rs-tab-count">{statusCount(k)}</span>
+              {l} {statusFilter === k && <span className="rs-tab-count">{total}</span>}
             </button>
           ))}
         </div>
       )}
 
       <div className="rs-cm-toolbar">
-        <div className="rs-search rs-search--inline">
-          <Icons.search size={15} />
-          <input
-            placeholder={`Search ${ct.display_name.toLowerCase()}`}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
+        {titleField && (
+          <div className="rs-search rs-search--inline">
+            <Icons.search size={15} />
+            <input
+              placeholder={`Search ${ct.display_name.toLowerCase()}`}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+        )}
+        <div className="rs-pop-anchor">
+          <button
+            className={"rs-btn rs-btn--ghost" + (activeFilterCount > 0 ? " is-active" : "")}
+            onClick={() => {
+              // Seed an empty rule on open so the first condition is one
+              // click closer — no need to hit "Add filter" first.
+              if (!filtersOpen && filterRules.length === 0) {
+                const fs = filterableFields(ct);
+                if (fs.length > 0) setFilterRules([makeRule(fs[0])]);
+              }
+              setFiltersOpen(!filtersOpen);
+            }}
+          >
+            <Icons.filter size={15} /> Filters{activeFilterCount > 0 ? ` · ${activeFilterCount}` : ""}
+          </button>
+          {filtersOpen && (
+            <FiltersMenu
+              ct={ct}
+              allTypes={allTypes.data}
+              rules={filterRules}
+              setRules={setFilterRules}
+              onClose={() => setFiltersOpen(false)}
+            />
+          )}
         </div>
-        <button className="rs-btn rs-btn--ghost" data-placeholder title="Coming soon">
-          <Icons.filter size={15} /> Filters
-        </button>
+        {titleField && (
+          <button
+            className="rs-btn rs-btn--ghost"
+            onClick={() => setSortKey(sortKey === "title" ? "updated" : "title")}
+          >
+            <Icons.sort size={15} /> {sortKey === "title" ? "Title" : "Last update"}
+          </button>
+        )}
         <div className="rs-spacer" />
         <div className="rs-pop-anchor">
           <button
@@ -347,20 +463,36 @@ export function ContentList() {
         </div>
       )}
 
+      {bulkNotice && (
+        <div className="rs-notice rs-notice--warn">
+          <span>{bulkNotice}</span>
+          <button className="rs-btn rs-btn--ghost rs-btn--sm" onClick={() => setBulkNotice(null)}>
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {selected.length > 0 && (
         <div className="rs-bulkbar">
           <span><strong>{selected.length}</strong> selected</span>
           <div className="rs-bulkbar-actions">
-            <button className="rs-btn rs-btn--ghost rs-btn--sm" onClick={handleExport}>
+            <button className="rs-btn rs-btn--ghost rs-btn--sm" onClick={handleExport} disabled={bulkBusy}>
               <Icons.doc size={14} /> Export CSV
             </button>
-            <button className="rs-btn rs-btn--ghost rs-btn--sm" data-placeholder title="Coming soon">
-              <Icons.eye size={14} /> Publish
-            </button>
-            <button className="rs-btn rs-btn--ghost rs-btn--sm rs-danger" data-placeholder title="Coming soon">
+            {dp && (
+              <>
+                <button className="rs-btn rs-btn--ghost rs-btn--sm" onClick={() => void runBulk("publish")} disabled={bulkBusy}>
+                  <Icons.eye size={14} /> Publish
+                </button>
+                <button className="rs-btn rs-btn--ghost rs-btn--sm" onClick={() => void runBulk("unpublish")} disabled={bulkBusy}>
+                  <Icons.x size={14} /> Unpublish
+                </button>
+              </>
+            )}
+            <button className="rs-btn rs-btn--ghost rs-btn--sm rs-danger" onClick={() => setConfirmingDelete(true)} disabled={bulkBusy}>
               <Icons.trash size={14} /> Delete
             </button>
-            <button className="rs-btn rs-btn--ghost rs-btn--sm" onClick={() => setSelected([])}>Clear</button>
+            <button className="rs-btn rs-btn--ghost rs-btn--sm" onClick={() => setSelected([])} disabled={bulkBusy}>Clear</button>
           </div>
         </div>
       )}
@@ -379,7 +511,7 @@ export function ContentList() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((e) => (
+            {rows.map((e) => (
               <tr
                 key={e.id}
                 className={selected.includes(e.id) ? "is-selected" : ""}
@@ -400,18 +532,81 @@ export function ContentList() {
             ))}
           </tbody>
         </table>
-        {filtered.length === 0 && <div className="rs-empty">No entries match.</div>}
+        {rows.length === 0 && <div className="rs-empty">No entries match.</div>}
       </div>
 
       <div className="rs-pager">
-        <span className="rs-cell-muted">Showing {filtered.length} of {total}</span>
+        <span className="rs-cell-muted">Showing {rows.length} of {total}</span>
         <div className="rs-pager-ctrl">
-          <button className="rs-page-btn is-active">1</button>
-          <button className="rs-page-btn" data-placeholder disabled title="Coming soon">
+          <button className="rs-page-btn" disabled={page <= 1} onClick={() => setPage(page - 1)}>
+            <Icons.chevLeft size={16} />
+          </button>
+          {pageWindow.map((p) => (
+            <button
+              key={p}
+              className={"rs-page-btn" + (p === page ? " is-active" : "")}
+              onClick={() => setPage(p)}
+            >
+              {p}
+            </button>
+          ))}
+          <button className="rs-page-btn" disabled={page >= pageCount} onClick={() => setPage(page + 1)}>
             <Icons.chevRight size={16} />
           </button>
+          <select
+            className="rs-select-sm"
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
+          >
+            <option value={25}>25 / page</option>
+            <option value={50}>50 / page</option>
+            <option value={100}>100 / page</option>
+          </select>
         </div>
       </div>
+
+      {confirmingDelete && (
+        <div className="rs-modal-backdrop" onClick={() => { if (!bulkBusy) setConfirmingDelete(false); }}>
+          <div
+            className="rs-modal"
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 420 }}
+          >
+            <div className="rs-modal-head">
+              <div className="rs-modal-ico" style={{ background: "var(--danger-soft, var(--surface-3))", color: "var(--danger)" }}>
+                <Icons.trash size={18} />
+              </div>
+              <div className="rs-modal-titles">
+                <span className="rs-modal-eyebrow">Destructive action</span>
+                <h2>Delete {selected.length} {selected.length === 1 ? "entry" : "entries"}?</h2>
+              </div>
+              <button className="rs-modal-x" onClick={() => setConfirmingDelete(false)} disabled={bulkBusy} aria-label="Close">
+                <Icons.x size={18} />
+              </button>
+            </div>
+            <div className="rs-modal-body">
+              <p style={{ fontSize: 14, color: "var(--text-muted)", margin: 0 }}>
+                This permanently deletes the selected entries. This cannot be undone.
+              </p>
+            </div>
+            <div className="rs-modal-foot" style={{ justifyContent: "space-between" }}>
+              <button className="rs-btn rs-btn--ghost" onClick={() => setConfirmingDelete(false)} disabled={bulkBusy}>
+                Cancel
+              </button>
+              <button
+                className="rs-btn rs-btn--primary"
+                onClick={() => void runBulk("delete")}
+                disabled={bulkBusy}
+                style={{ background: "var(--danger)", borderColor: "var(--danger)", color: "#fff" }}
+              >
+                {bulkBusy ? "Deleting…" : "Delete entries"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
