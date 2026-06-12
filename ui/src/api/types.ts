@@ -262,3 +262,41 @@ export interface NewApiToken {
 export interface CreatedApiToken extends ApiToken {
   token: string;
 }
+
+export interface RolePermission {
+  content_type: string;
+  action: string;
+}
+
+export interface RoleSummary {
+  key: string;
+  name: string;
+  description: string;
+  color: string;
+  is_system: boolean;
+  permission_count: number;
+}
+
+export interface Role {
+  key: string;
+  name: string;
+  description: string;
+  color: string;
+  is_system: boolean;
+  permissions: RolePermission[];
+}
+
+export interface NewRole {
+  key: string;
+  name: string;
+  description: string;
+  color: string;
+  permissions: RolePermission[];
+}
+
+export interface PatchRole {
+  name: string;
+  description: string;
+  color: string;
+  permissions: RolePermission[];
+}
