@@ -60,31 +60,40 @@ async fn ensure(
     Ok(())
 }
 
-async fn list(
-    State(state): State<AppState>,
-    Path(ct_name): Path<String>,
-    Query(params): Query<ListParams>,
-    axum::extract::RawQuery(raw_query): axum::extract::RawQuery,
-    axum::extract::Extension(principal): axum::extract::Extension<Principal>,
-) -> Result<Json<Value>, ApiError> {
-    ensure(&state, &principal, Action::ContentRead, &ct_name).await?;
+// ---------------------------------------------------------------------------
+// Shared, non-axum entry CRUD core. The REST handlers below are thin wrappers
+// over these; GraphQL resolvers (Task 3+) call the same functions. These
+// return `rustapi_core::Error` directly so both surfaces map errors as they
+// see fit. Behavior is identical to the previous inline handler bodies.
+// ---------------------------------------------------------------------------
+
+pub(crate) async fn list_entries(
+    state: &AppState,
+    principal: &Principal,
+    ct_name: &str,
+    params: ListParams,
+    populate: Option<&str>,
+    raw_query: &str,
+) -> Result<Value, Error> {
+    if !state.authz.can(principal, Action::ContentRead, ct_name).await {
+        return Err(Error::Forbidden);
+    }
     let ct = state
         .schemas
         .registry()
-        .get(&ct_name)
+        .get(ct_name)
         .await
-        .ok_or(ApiError(Error::NotFound))?;
+        .ok_or(Error::NotFound)?;
     if ct.kind == rustapi_core::ContentTypeKind::Single {
-        return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::single("use /api/single-types/:name for single types"),
+        return Err(Error::Validation(rustapi_core::ValidationErrors::single(
+            "use /api/single-types/:name for single types",
         )));
     }
-    let populate_param = params.populate.clone();
     let status = params.status.clone();
     let opts = parse_list(&ct, params, state.config.page_size_max)?;
     let offset: i64 = ((opts.page - 1) as i64) * (opts.page_size as i64);
 
-    let filter = crate::filter::parse(raw_query.as_deref().unwrap_or(""), &ct)?;
+    let filter = crate::filter::parse(raw_query, &ct)?;
 
     let publish = if ct.draft_publish() {
         match status.as_deref() {
@@ -104,10 +113,10 @@ async fn list(
         offset,
         publish,
     )
-    .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
+    .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
 
     let q = bind_all(sqlx::query(&list_sql), &list_binds);
-    let rows = q.fetch_all(&state.pool).await.map_err(db)?;
+    let rows = q.fetch_all(&state.pool).await.map_err(|e| db(e).0)?;
 
     let mut maps: Vec<Map<String, Value>> = Vec::with_capacity(rows.len());
     for r in &rows {
@@ -117,92 +126,147 @@ async fn list(
         }
     }
 
-    if let Some(raw) = populate_param.as_deref() {
-        apply_populate(&state, &ct, raw, &mut maps).await?;
+    if let Some(raw) = populate {
+        apply_populate(state, &ct, raw, &mut maps)
+            .await
+            .map_err(|e| e.0)?;
     }
-    crate::media_embed::apply_media_embed(&state.pool, &ct, &mut maps)
-        .await
-        .map_err(ApiError)?;
+    crate::media_embed::apply_media_embed(&state.pool, &ct, &mut maps).await?;
 
     let data: Vec<Value> = maps.into_iter().map(Value::Object).collect();
 
     let (count_sql, count_binds) = rustapi_sql::count_status(&ct.name, &filter, publish)
-        .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
+        .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
     let cq = bind_all_as(sqlx::query_as::<_, (i64,)>(&count_sql), &count_binds);
-    let total: i64 = cq.fetch_one(&state.pool).await.map_err(db)?.0;
+    let total: i64 = cq.fetch_one(&state.pool).await.map_err(|e| db(e).0)?.0;
 
-    Ok(Json(json!({
+    Ok(json!({
         "data": data,
         "meta": {
             "page": opts.page,
             "pageSize": opts.page_size,
             "total": total
         }
-    })))
+    }))
 }
 
-async fn create(
-    State(state): State<AppState>,
-    Path(ct_name): Path<String>,
-    axum::extract::Extension(principal): axum::extract::Extension<Principal>,
-    Json(body): Json<Map<String, Value>>,
-) -> Result<(StatusCode, Json<Value>), ApiError> {
-    ensure(&state, &principal, Action::ContentWrite, &ct_name).await?;
+pub(crate) async fn get_entry(
+    state: &AppState,
+    principal: &Principal,
+    ct_name: &str,
+    id: Uuid,
+    populate: Option<&str>,
+) -> Result<Value, Error> {
+    if !state.authz.can(principal, Action::ContentRead, ct_name).await {
+        return Err(Error::Forbidden);
+    }
     let ct = state
         .schemas
         .registry()
-        .get(&ct_name)
+        .get(ct_name)
         .await
-        .ok_or(ApiError(Error::NotFound))?;
+        .ok_or(Error::NotFound)?;
     if ct.kind == rustapi_core::ContentTypeKind::Single {
-        return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::single("use /api/single-types/:name for single types"),
+        return Err(Error::Validation(rustapi_core::ValidationErrors::single(
+            "use /api/single-types/:name for single types",
+        )));
+    }
+    let (sql, binds) = rustapi_sql::select_by_id(&ct.name, id)
+        .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
+    let q = bind_all(sqlx::query(&sql), &binds);
+    let row = q.fetch_optional(&state.pool).await.map_err(|e| db(e).0)?;
+    let row = row.ok_or(Error::NotFound)?;
+    let mut map = match row_to_json(&ct, &row)? {
+        Value::Object(m) => m,
+        _ => unreachable!("row_to_json returns an object"),
+    };
+    if let Some(raw) = populate {
+        // Reuse the list pipeline with a 1-row slice so forward/inverse
+        // batched SELECTs apply identically to single-GET.
+        let mut one = vec![std::mem::take(&mut map)];
+        apply_populate(state, &ct, raw, &mut one)
+            .await
+            .map_err(|e| e.0)?;
+        map = one.pop().unwrap_or_default();
+    }
+    {
+        let mut one = vec![std::mem::take(&mut map)];
+        crate::media_embed::apply_media_embed(&state.pool, &ct, &mut one).await?;
+        map = one.pop().unwrap_or_default();
+    }
+    Ok(Value::Object(map))
+}
+
+pub(crate) async fn create_entry(
+    state: &AppState,
+    principal: &Principal,
+    ct_name: &str,
+    body: Map<String, Value>,
+) -> Result<Value, Error> {
+    if !state.authz.can(principal, Action::ContentWrite, ct_name).await {
+        return Err(Error::Forbidden);
+    }
+    let ct = state
+        .schemas
+        .registry()
+        .get(ct_name)
+        .await
+        .ok_or(Error::NotFound)?;
+    if ct.kind == rustapi_core::ContentTypeKind::Single {
+        return Err(Error::Validation(rustapi_core::ValidationErrors::single(
+            "use /api/single-types/:name for single types",
         )));
     }
 
     let ctx = WriteContext {
         content_type: &ct.name,
         operation: WriteOp::Create,
-        principal: &principal,
+        principal,
     };
-    let body = state
-        .hooks
-        .before_write(&ctx, body)
+    let body = state.hooks.before_write(&ctx, body).await?;
+    validate_component_fields(state, &ct, &body)
         .await
-        .map_err(ApiError)?;
-    validate_component_fields(&state, &ct, &body).await?;
+        .map_err(|e| e.0)?;
 
     let (binds_map, checks, links, media_checks, media_links) = body_to_binds(&ct, body, true)?;
-    verify_relation_targets_exist(&state, &checks).await?;
-    verify_link_targets_exist(&state, &links).await?;
-    verify_media_targets_exist(&state, &media_checks).await?;
-    verify_media_link_targets_exist(&state, &media_links).await?;
+    verify_relation_targets_exist(state, &checks)
+        .await
+        .map_err(|e| e.0)?;
+    verify_link_targets_exist(state, &links)
+        .await
+        .map_err(|e| e.0)?;
+    verify_media_targets_exist(state, &media_checks)
+        .await
+        .map_err(|e| e.0)?;
+    verify_media_link_targets_exist(state, &media_links)
+        .await
+        .map_err(|e| e.0)?;
 
     let (sql, binds) = rustapi_sql::insert(&ct, &binds_map)
-        .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
+        .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
 
-    let mut tx = state.pool.begin().await.map_err(db)?;
+    let mut tx = state.pool.begin().await.map_err(|e| db(e).0)?;
     let q = bind_all(sqlx::query(&sql), &binds);
     let row = q
         .fetch_one(&mut *tx)
         .await
-        .map_err(|e| db_with_relation_context(e, &checks))?;
+        .map_err(|e| db_with_relation_context(e, &checks).0)?;
     let record = row_to_json(&ct, &row)?;
     let new_id = record
         .get("id")
         .and_then(|v| v.as_str())
         .and_then(|s| Uuid::parse_str(s).ok())
-        .ok_or_else(|| ApiError(Error::Internal(anyhow::anyhow!("insert returned no id"))))?;
+        .ok_or_else(|| Error::Internal(anyhow::anyhow!("insert returned no id")))?;
 
-    write_links(&mut tx, &ct.name, &links, new_id).await?;
-    write_media_links(&mut tx, &ct.name, &media_links, new_id).await?;
-    tx.commit().await.map_err(db)?;
-
-    state
-        .hooks
-        .after_write(&ctx, &record)
+    write_links(&mut tx, &ct.name, &links, new_id)
         .await
-        .map_err(ApiError)?;
+        .map_err(|e| e.0)?;
+    write_media_links(&mut tx, &ct.name, &media_links, new_id)
+        .await
+        .map_err(|e| e.0)?;
+    tx.commit().await.map_err(|e| db(e).0)?;
+
+    state.hooks.after_write(&ctx, &record).await?;
     state
         .events
         .emit(Event::EntryCreated {
@@ -210,89 +274,54 @@ async fn create(
             id: new_id,
         })
         .await;
-    Ok((StatusCode::CREATED, Json(record)))
+    Ok(record)
 }
 
-async fn get_one(
-    State(state): State<AppState>,
-    Path((ct_name, id)): Path<(String, Uuid)>,
-    Query(params): Query<GetParams>,
-    axum::extract::Extension(principal): axum::extract::Extension<Principal>,
-) -> Result<Json<Value>, ApiError> {
-    ensure(&state, &principal, Action::ContentRead, &ct_name).await?;
+pub(crate) async fn update_entry(
+    state: &AppState,
+    principal: &Principal,
+    ct_name: &str,
+    id: Uuid,
+    body: Map<String, Value>,
+) -> Result<Value, Error> {
+    if !state.authz.can(principal, Action::ContentWrite, ct_name).await {
+        return Err(Error::Forbidden);
+    }
     let ct = state
         .schemas
         .registry()
-        .get(&ct_name)
+        .get(ct_name)
         .await
-        .ok_or(ApiError(Error::NotFound))?;
+        .ok_or(Error::NotFound)?;
     if ct.kind == rustapi_core::ContentTypeKind::Single {
-        return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::single("use /api/single-types/:name for single types"),
-        )));
-    }
-    let (sql, binds) = rustapi_sql::select_by_id(&ct.name, id)
-        .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
-    let q = bind_all(sqlx::query(&sql), &binds);
-    let row = q.fetch_optional(&state.pool).await.map_err(db)?;
-    let row = row.ok_or(ApiError(Error::NotFound))?;
-    let mut map = match row_to_json(&ct, &row)? {
-        Value::Object(m) => m,
-        _ => unreachable!("row_to_json returns an object"),
-    };
-    if let Some(raw) = params.populate.as_deref() {
-        // Reuse the list pipeline with a 1-row slice so forward/inverse
-        // batched SELECTs apply identically to single-GET.
-        let mut one = vec![std::mem::take(&mut map)];
-        apply_populate(&state, &ct, raw, &mut one).await?;
-        map = one.pop().unwrap_or_default();
-    }
-    {
-        let mut one = vec![std::mem::take(&mut map)];
-        crate::media_embed::apply_media_embed(&state.pool, &ct, &mut one)
-            .await
-            .map_err(ApiError)?;
-        map = one.pop().unwrap_or_default();
-    }
-    Ok(Json(Value::Object(map)))
-}
-
-async fn update(
-    State(state): State<AppState>,
-    Path((ct_name, id)): Path<(String, Uuid)>,
-    axum::extract::Extension(principal): axum::extract::Extension<Principal>,
-    Json(body): Json<Map<String, Value>>,
-) -> Result<Json<Value>, ApiError> {
-    ensure(&state, &principal, Action::ContentWrite, &ct_name).await?;
-    let ct = state
-        .schemas
-        .registry()
-        .get(&ct_name)
-        .await
-        .ok_or(ApiError(Error::NotFound))?;
-    if ct.kind == rustapi_core::ContentTypeKind::Single {
-        return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::single("use /api/single-types/:name for single types"),
+        return Err(Error::Validation(rustapi_core::ValidationErrors::single(
+            "use /api/single-types/:name for single types",
         )));
     }
 
     let ctx = WriteContext {
         content_type: &ct.name,
         operation: WriteOp::Update,
-        principal: &principal,
+        principal,
     };
-    let body = state
-        .hooks
-        .before_write(&ctx, body)
+    let body = state.hooks.before_write(&ctx, body).await?;
+    validate_component_fields(state, &ct, &body)
         .await
-        .map_err(ApiError)?;
-    validate_component_fields(&state, &ct, &body).await?;
+        .map_err(|e| e.0)?;
 
     let (mut binds_map, checks, links, media_checks, media_links) = body_to_binds(&ct, body, true)?;
-    verify_relation_targets_exist(&state, &checks).await?;
-    verify_link_targets_exist(&state, &links).await?;
-    verify_media_targets_exist(&state, &media_checks).await?;
-    verify_media_link_targets_exist(&state, &media_links).await?;
+    verify_relation_targets_exist(state, &checks)
+        .await
+        .map_err(|e| e.0)?;
+    verify_link_targets_exist(state, &links)
+        .await
+        .map_err(|e| e.0)?;
+    verify_media_targets_exist(state, &media_checks)
+        .await
+        .map_err(|e| e.0)?;
+    verify_media_link_targets_exist(state, &media_links)
+        .await
+        .map_err(|e| e.0)?;
 
     // PUT is full-replace per spec §6.2: fields absent from the body that are
     // not required get explicitly nulled. Required-with-no-default would have
@@ -320,28 +349,28 @@ async fn update(
     }
 
     let (sql, binds) = rustapi_sql::update(&ct, id, &binds_map)
-        .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
+        .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
 
-    let mut tx = state.pool.begin().await.map_err(db)?;
+    let mut tx = state.pool.begin().await.map_err(|e| db(e).0)?;
     let q = bind_all(sqlx::query(&sql), &binds);
     let row = q
         .fetch_optional(&mut *tx)
         .await
-        .map_err(|e| db_with_relation_context(e, &checks))?;
+        .map_err(|e| db_with_relation_context(e, &checks).0)?;
     let row = match row {
         Some(r) => r,
-        None => return Err(ApiError(Error::NotFound)), // tx rolls back on drop
+        None => return Err(Error::NotFound), // tx rolls back on drop
     };
-    write_links(&mut tx, &ct.name, &links, id).await?;
-    write_media_links(&mut tx, &ct.name, &media_links, id).await?;
-    tx.commit().await.map_err(db)?;
+    write_links(&mut tx, &ct.name, &links, id)
+        .await
+        .map_err(|e| e.0)?;
+    write_media_links(&mut tx, &ct.name, &media_links, id)
+        .await
+        .map_err(|e| e.0)?;
+    tx.commit().await.map_err(|e| db(e).0)?;
 
     let record = row_to_json(&ct, &row)?;
-    state
-        .hooks
-        .after_write(&ctx, &record)
-        .await
-        .map_err(ApiError)?;
+    state.hooks.after_write(&ctx, &record).await?;
     state
         .events
         .emit(Event::EntryUpdated {
@@ -349,7 +378,113 @@ async fn update(
             id,
         })
         .await;
-    Ok(Json(record))
+    Ok(record)
+}
+
+pub(crate) async fn delete_entry(
+    state: &AppState,
+    principal: &Principal,
+    ct_name: &str,
+    id: Uuid,
+) -> Result<(), Error> {
+    if !state
+        .authz
+        .can(principal, Action::ContentDelete, ct_name)
+        .await
+    {
+        return Err(Error::Forbidden);
+    }
+    let _ct = state
+        .schemas
+        .registry()
+        .get(ct_name)
+        .await
+        .ok_or(Error::NotFound)?;
+    if _ct.kind == rustapi_core::ContentTypeKind::Single {
+        return Err(Error::Validation(rustapi_core::ValidationErrors::single(
+            "use /api/single-types/:name for single types",
+        )));
+    }
+    let (sql, binds) = rustapi_sql::delete(ct_name, id)
+        .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
+    let q = bind_all(sqlx::query(&sql), &binds);
+    let result = q.execute(&state.pool).await.map_err(|e| db(e).0)?;
+    if result.rows_affected() == 0 {
+        return Err(Error::NotFound);
+    }
+    state
+        .events
+        .emit(Event::EntryDeleted {
+            content_type: ct_name.to_string(),
+            id,
+        })
+        .await;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// REST axum handlers — thin wrappers re-wrapping the shared core's Result.
+// ---------------------------------------------------------------------------
+
+async fn list(
+    State(state): State<AppState>,
+    Path(ct_name): Path<String>,
+    Query(params): Query<ListParams>,
+    axum::extract::RawQuery(raw_query): axum::extract::RawQuery,
+    axum::extract::Extension(principal): axum::extract::Extension<Principal>,
+) -> Result<Json<Value>, ApiError> {
+    let populate = params.populate.clone();
+    let raw_query = raw_query.as_deref().unwrap_or("").to_string();
+    Ok(Json(
+        list_entries(
+            &state,
+            &principal,
+            &ct_name,
+            params,
+            populate.as_deref(),
+            &raw_query,
+        )
+        .await
+        .map_err(ApiError)?,
+    ))
+}
+
+async fn create(
+    State(state): State<AppState>,
+    Path(ct_name): Path<String>,
+    axum::extract::Extension(principal): axum::extract::Extension<Principal>,
+    Json(body): Json<Map<String, Value>>,
+) -> Result<(StatusCode, Json<Value>), ApiError> {
+    let record = create_entry(&state, &principal, &ct_name, body)
+        .await
+        .map_err(ApiError)?;
+    Ok((StatusCode::CREATED, Json(record)))
+}
+
+async fn get_one(
+    State(state): State<AppState>,
+    Path((ct_name, id)): Path<(String, Uuid)>,
+    Query(params): Query<GetParams>,
+    axum::extract::Extension(principal): axum::extract::Extension<Principal>,
+) -> Result<Json<Value>, ApiError> {
+    Ok(Json(
+        get_entry(&state, &principal, &ct_name, id, params.populate.as_deref())
+            .await
+            .map_err(ApiError)?,
+    ))
+}
+
+async fn update(
+    State(state): State<AppState>,
+    Path((ct_name, id)): Path<(String, Uuid)>,
+    axum::extract::Extension(principal): axum::extract::Extension<Principal>,
+    Json(body): Json<Map<String, Value>>,
+) -> Result<Json<Value>, ApiError> {
+    Ok(Json(
+        update_entry(&state, &principal, &ct_name, id, body)
+            .await
+            .map_err(ApiError)?,
+    ))
 }
 
 async fn delete_one(
@@ -357,32 +492,9 @@ async fn delete_one(
     Path((ct_name, id)): Path<(String, Uuid)>,
     axum::extract::Extension(principal): axum::extract::Extension<Principal>,
 ) -> Result<StatusCode, ApiError> {
-    ensure(&state, &principal, Action::ContentDelete, &ct_name).await?;
-    let _ct = state
-        .schemas
-        .registry()
-        .get(&ct_name)
+    delete_entry(&state, &principal, &ct_name, id)
         .await
-        .ok_or(ApiError(Error::NotFound))?;
-    if _ct.kind == rustapi_core::ContentTypeKind::Single {
-        return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::single("use /api/single-types/:name for single types"),
-        )));
-    }
-    let (sql, binds) = rustapi_sql::delete(&ct_name, id)
-        .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
-    let q = bind_all(sqlx::query(&sql), &binds);
-    let result = q.execute(&state.pool).await.map_err(db)?;
-    if result.rows_affected() == 0 {
-        return Err(ApiError(Error::NotFound));
-    }
-    state
-        .events
-        .emit(Event::EntryDeleted {
-            content_type: ct_name.clone(),
-            id,
-        })
-        .await;
+        .map_err(ApiError)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
