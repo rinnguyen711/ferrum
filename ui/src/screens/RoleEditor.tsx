@@ -6,13 +6,7 @@ import { EditorBar } from "../components/ui";
 import { useResource } from "../hooks/useResource";
 import { listContentTypes, listUsers, getRole, createRole, updateRole } from "../api/endpoints";
 import type { RolePermission } from "../api/types";
-import {
-  PLUGIN_TYPES,
-  CONTENT_VERBS,
-  ROLE_COLORS,
-  DEFAULT_ROLE_COLOR,
-  type PermType,
-} from "../roles";
+import { PLUGIN_TYPES, CONTENT_VERBS, DEFAULT_ROLE_COLOR, type PermType } from "../roles";
 import { initials, AVATAR_NEUTRAL } from "../util";
 
 const permKey = (type: string, verb: string) => `${type}::${verb}`;
@@ -21,7 +15,7 @@ const permKey = (type: string, verb: string) => `${type}::${verb}`;
  *  is the raw content_type). Plugin pseudo-types already carry their namespace. */
 const scopeOf = (key: string) => (key.startsWith("plugin::") ? key : `api::${key}`);
 
-type Tab = "permissions" | "members" | "api";
+type Tab = "permissions" | "api";
 
 export function RoleEditor() {
   const { key } = useParams<{ key: string }>();
@@ -183,7 +177,6 @@ export function RoleEditor() {
 
   const tabs: [Tab, string][] = [
     ["permissions", "Permissions"],
-    ["members", `Members · ${members.length}`],
     ["api", "API & preview"],
   ];
 
@@ -257,7 +250,7 @@ export function RoleEditor() {
           )}
 
           {tab === "permissions" && (
-            <div className="rs-fields">
+            <div className="rs-fields rs-role-fields">
               <div className="rs-field">
                 <span className="rs-field-label">
                   Name <span className="rs-req">*</span>
@@ -284,7 +277,7 @@ export function RoleEditor() {
                 </div>
               )}
 
-              <div className="rs-field">
+              <div className="rs-field rs-field--full">
                 <span className="rs-field-label">
                   Description <span className="rs-field-hint">What this role is for</span>
                 </span>
@@ -298,24 +291,7 @@ export function RoleEditor() {
                 />
               </div>
 
-              <div className="rs-field">
-                <span className="rs-field-label">Color</span>
-                <div className="rs-color-swatches">
-                  {ROLE_COLORS.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      className={"rs-swatch" + (color === c ? " is-active" : "")}
-                      style={{ background: c }}
-                      disabled={isSystem}
-                      onClick={() => mutate(() => setColor(c))}
-                      aria-label={c}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              <div className="rs-field">
+              <div className="rs-field rs-field--full">
                 <span className="rs-field-label">
                   Permissions
                   <span className="rs-field-hint">
@@ -385,36 +361,6 @@ export function RoleEditor() {
                   })}
                 </div>
               </div>
-            </div>
-          )}
-
-          {tab === "members" && (
-            <div className="rs-table-wrap">
-              {members.length === 0 ? (
-                <div className="rs-empty">No users have this role yet.</div>
-              ) : (
-                <table className="rs-table">
-                  <tbody>
-                    {members.map((u) => (
-                      <tr key={u.id} onClick={() => navigate(`/users/${u.id}`)}>
-                        <td>
-                          <span className="rs-user-cell">
-                            <Avatar
-                              name={u.email}
-                              initials={initials(u.email)}
-                              color={AVATAR_NEUTRAL}
-                              size={32}
-                            />
-                            <span className="rs-user-id">
-                              <strong>{u.email}</strong>
-                            </span>
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
             </div>
           )}
 
