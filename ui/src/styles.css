@@ -1089,6 +1089,33 @@ select.rs-input { appearance: none; background-image: url("data:image/svg+xml,%3
   border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
 }
 
+/* ---- Role editor: permission cards (scoped, does not affect ApiTokens) ---- */
+.rs-perm-cards { border: none; border-radius: 0; overflow: visible; display: flex; flex-direction: column; gap: 12px; }
+.rs-perm-cards .rs-perm-type { border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); overflow: hidden; }
+.rs-perm-cards .rs-perm-type-head { padding: 14px 16px; }
+.rs-perm-cards .rs-perm-type-head:hover { background: var(--surface-2); }
+.rs-perm-cards .rs-perm-type.is-open .rs-perm-type-head { border-bottom: 1px solid var(--border); }
+.rs-perm-cards .rs-perm-type-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+.rs-perm-cards .rs-perm-tally.is-full { color: var(--accent); }
+
+/* 3-column verb grid inside an open card */
+.rs-perm-type-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px 24px;
+  padding: 16px;
+  background: var(--surface);
+}
+.rs-perm-type-grid .rs-perm-action { display: flex; align-items: center; gap: 10px; padding: 2px 0; }
+.rs-perm-type-grid .rs-perm-action input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); flex-shrink: 0; cursor: pointer; }
+.rs-perm-type-grid .rs-perm-action span { font-size: 12.5px; color: var(--text-muted); cursor: pointer; }
+@media (max-width: 1100px) { .rs-perm-type-grid { grid-template-columns: repeat(2, 1fr); } }
+
 /* Rail note */
 .rs-rail-note { font-size: 12.5px; color: var(--text-muted); line-height: 1.55; margin: 0; }
 
