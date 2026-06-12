@@ -1,0 +1,158 @@
+//! Maps the content-type field model to async-graphql dynamic TypeRefs,
+//! mirroring the decisions in `openapi/schema.rs`. Keep the two in sync.
+
+use async_graphql::dynamic::TypeRef;
+use rustapi_core::field::{Cardinality, Field, FieldKind};
+
+/// Custom scalar names registered on the schema.
+pub const UUID_SCALAR: &str = "UUID";
+pub const DATETIME_SCALAR: &str = "DateTime";
+pub const JSON_SCALAR: &str = "JSON";
+
+/// The GraphQL output type for a field (used in output objects).
+/// Non-null when the field is required.
+pub fn field_type_ref(field: &Field) -> TypeRef {
+    let base = base_type_name(field);
+    let many = is_list(field);
+    match (many, field.required) {
+        (true, true) => TypeRef::named_nn_list_nn(base),
+        (true, false) => TypeRef::named_nn_list(base),
+        (false, true) => TypeRef::named_nn(base),
+        (false, false) => TypeRef::named(base),
+    }
+}
+
+/// Base GraphQL type name for a field's value (before list/non-null wrapping).
+/// Relation/Media return the *target object* name (PascalCase) so nested
+/// selection works; resolution is wired in build.rs.
+pub fn base_type_name(field: &Field) -> String {
+    match field.kind {
+        FieldKind::String
+        | FieldKind::Text
+        | FieldKind::Slug
+        | FieldKind::Email
+        | FieldKind::Url => TypeRef::STRING.to_string(),
+        FieldKind::Integer => TypeRef::INT.to_string(),
+        FieldKind::Float => TypeRef::FLOAT.to_string(),
+        FieldKind::Boolean => TypeRef::BOOLEAN.to_string(),
+        FieldKind::Datetime => DATETIME_SCALAR.to_string(),
+        FieldKind::Uuid => UUID_SCALAR.to_string(),
+        FieldKind::Enum => enum_type_name(field),
+        FieldKind::Json => JSON_SCALAR.to_string(),
+        FieldKind::Relation => crate::graphql::build::pascal(
+            &field.relation_meta().map(|m| m.target).unwrap_or_default(),
+        ),
+        FieldKind::Media => "Media".to_string(),
+        _ => JSON_SCALAR.to_string(),
+    }
+}
+
+/// True when the field encodes a list (m2m relation or multiple media).
+pub fn is_list(field: &Field) -> bool {
+    match field.kind {
+        FieldKind::Relation => field
+            .relation_meta()
+            .map(|m| matches!(m.cardinality, Cardinality::ManyToMany))
+            .unwrap_or(false),
+        FieldKind::Media => field.media_meta().map(|m| m.multiple).unwrap_or(false),
+        _ => false,
+    }
+}
+
+/// Enum GraphQL type name: `<Pascal(field_name)>Enum`. build.rs registers one
+/// Enum type per enum field using this same name.
+pub fn enum_type_name(field: &Field) -> String {
+    format!("{}Enum", crate::graphql::build::pascal(&field.name))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rustapi_core::field::Field;
+    use serde_json::{json, Value};
+
+    fn f(kind: FieldKind, required: bool, kind_meta: Value) -> Field {
+        Field {
+            name: "x".into(),
+            kind,
+            required,
+            unique: false,
+            default: Value::Null,
+            max_length: None,
+            kind_meta,
+        }
+    }
+
+    #[test]
+    fn string_maps_to_string() {
+        assert_eq!(
+            base_type_name(&f(FieldKind::String, false, json!({}))),
+            "String"
+        );
+    }
+    #[test]
+    fn integer_float_bool() {
+        assert_eq!(
+            base_type_name(&f(FieldKind::Integer, false, json!({}))),
+            "Int"
+        );
+        assert_eq!(
+            base_type_name(&f(FieldKind::Float, false, json!({}))),
+            "Float"
+        );
+        assert_eq!(
+            base_type_name(&f(FieldKind::Boolean, false, json!({}))),
+            "Boolean"
+        );
+    }
+    #[test]
+    fn datetime_uuid_json_scalars() {
+        assert_eq!(
+            base_type_name(&f(FieldKind::Datetime, false, json!({}))),
+            "DateTime"
+        );
+        assert_eq!(
+            base_type_name(&f(FieldKind::Uuid, false, json!({}))),
+            "UUID"
+        );
+        assert_eq!(
+            base_type_name(&f(FieldKind::Json, false, json!({}))),
+            "JSON"
+        );
+    }
+    #[test]
+    fn relation_single_not_list_many_is_list() {
+        let one = f(
+            FieldKind::Relation,
+            false,
+            json!({"target":"user","cardinality":"many_to_one"}),
+        );
+        assert!(!is_list(&one));
+        assert_eq!(base_type_name(&one), "User");
+        let many = f(
+            FieldKind::Relation,
+            false,
+            json!({"target":"tag","cardinality":"many_to_many"}),
+        );
+        assert!(is_list(&many));
+    }
+    #[test]
+    fn media_single_vs_multiple() {
+        assert!(!is_list(&f(
+            FieldKind::Media,
+            false,
+            json!({"multiple": false})
+        )));
+        assert!(is_list(&f(
+            FieldKind::Media,
+            false,
+            json!({"multiple": true})
+        )));
+    }
+    #[test]
+    fn enum_name_is_field_pascal_plus_enum() {
+        let mut e = f(FieldKind::Enum, false, json!({"values":["a","b"]}));
+        e.name = "status".into();
+        assert_eq!(enum_type_name(&e), "StatusEnum");
+    }
+}
