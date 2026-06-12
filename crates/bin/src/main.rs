@@ -93,6 +93,7 @@ async fn main() -> Result<()> {
         components,
         authz: Arc::new(RoleAuthz::new(Arc::new(roles.clone()))),
         roles,
+        gql: rustapi_http::graphql::GqlRegistry::new(),
         events: Arc::new(rustapi::webhook_worker::DbEventSink::new(pool.clone())),
         hooks: Arc::new(NoopHook),
         config: AppConfig {

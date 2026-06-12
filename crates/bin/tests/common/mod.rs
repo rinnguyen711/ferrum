@@ -121,6 +121,7 @@ impl TestApp {
             components: components.clone(),
             authz: Arc::new(RoleAuthz::new(Arc::new(roles.clone()))),
             roles,
+            gql: rustapi_http::graphql::GqlRegistry::new(),
             events: sink,
             hooks: hook,
             config: AppConfig {

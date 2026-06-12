@@ -197,7 +197,9 @@ async fn test_copy_rows_migrates_data() {
         ],
     };
 
-    apply_schema(&app.schemas, &[plan.clone()]).await.unwrap();
+    apply_schema(&app.schemas, std::slice::from_ref(&plan))
+        .await
+        .unwrap();
     copy_rows(&source_pool, &app.pool, &[plan]).await.unwrap();
 
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ct_article")
