@@ -38,7 +38,9 @@ async fn export_selected_ids_returns_csv() {
     let id2 = create_entry(&app, "Second").await;
     let _id3 = create_entry(&app, "Third").await; // not exported
 
-    let url = app.url(&format!("/admin/content-types/post/entries/export?ids={id1},{id2}"));
+    let url = app.url(&format!(
+        "/admin/content-types/post/entries/export?ids={id1},{id2}"
+    ));
     let resp = app.admin(app.client.get(&url)).send().await.unwrap();
     assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
     assert!(resp
@@ -71,7 +73,10 @@ async fn export_no_ids_returns_422() {
     let app = TestApp::spawn().await;
     setup_post_type(&app).await;
     let resp = app
-        .admin(app.client.get(app.url("/admin/content-types/post/entries/export")))
+        .admin(
+            app.client
+                .get(app.url("/admin/content-types/post/entries/export")),
+        )
         .send()
         .await
         .unwrap();

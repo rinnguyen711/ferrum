@@ -63,6 +63,21 @@ pub fn role_allows(role: &str, action: Action) -> bool {
     }
 }
 
+/// Permission action verbs used by the roles UI/API. These collapse onto the
+/// coarse `Action` enum for enforcement (`publish` has no separate gate yet).
+pub const PERM_VERBS: &[&str] = &["find", "findOne", "create", "update", "delete", "publish"];
+
+/// Maps a permission verb to the `Action` it is enforced as. Unknown → None.
+pub fn verb_to_action(verb: &str) -> Option<Action> {
+    use Action::*;
+    Some(match verb {
+        "find" | "findOne" => ContentRead,
+        "create" | "update" | "publish" => ContentWrite,
+        "delete" => ContentDelete,
+        _ => return None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -145,5 +160,23 @@ mod tests {
             scopes: vec![],
         };
         assert_eq!(p.kind(), "api_token");
+    }
+
+    #[test]
+    fn verb_to_action_maps_all_verbs() {
+        assert_eq!(verb_to_action("find"), Some(Action::ContentRead));
+        assert_eq!(verb_to_action("findOne"), Some(Action::ContentRead));
+        assert_eq!(verb_to_action("create"), Some(Action::ContentWrite));
+        assert_eq!(verb_to_action("update"), Some(Action::ContentWrite));
+        assert_eq!(verb_to_action("publish"), Some(Action::ContentWrite));
+        assert_eq!(verb_to_action("delete"), Some(Action::ContentDelete));
+        assert_eq!(verb_to_action("nonsense"), None);
+    }
+
+    #[test]
+    fn perm_verbs_are_known() {
+        for v in PERM_VERBS {
+            assert!(verb_to_action(v).is_some(), "{v} should map");
+        }
     }
 }

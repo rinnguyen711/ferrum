@@ -11,6 +11,7 @@ pub mod components;
 pub mod content;
 pub mod health;
 pub mod media;
+pub mod roles;
 pub mod schema;
 pub mod single_type;
 pub mod users;
@@ -34,6 +35,7 @@ pub fn build_router(state: AppState, extra: Vec<Router<AppState>>) -> Router {
         .merge(components::router())
         .merge(api_tokens::router())
         .merge(webhooks::router())
+        .merge(roles::router())
         .merge(auth::protected_router());
 
     // Custom routers from the bin, merged after built-ins. Behind the same

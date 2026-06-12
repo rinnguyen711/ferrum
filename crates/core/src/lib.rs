@@ -19,5 +19,5 @@ pub use field::{
     BoundValue, Cardinality, CoerceError, ComponentMeta, EnumMeta, Field, FieldError, FieldKind,
     RelationMeta,
 };
-pub use principal::{action_to_scope, role_allows, Action, Principal};
+pub use principal::{action_to_scope, role_allows, verb_to_action, Action, Principal, PERM_VERBS};
 pub use system::{is_system_column, SystemColumn, SYSTEM_COLUMNS};

@@ -106,6 +106,7 @@ mod tests {
             schemas,
             components,
             authz: Arc::new(AlwaysAllow),
+            roles: crate::RoleRegistry::new(),
             events: Arc::new(NoopSink),
             hooks: Arc::new(NoopHook),
             config: AppConfig {

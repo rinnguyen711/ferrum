@@ -152,6 +152,9 @@ export interface User {
   id: string;
   email: string;
   roles: string[];
+  confirmed: boolean;
+  blocked: boolean;
+  created_at: string;
 }
 
 export interface NewUser {
@@ -164,6 +167,8 @@ export interface PatchUser {
   email?: string;
   password?: string;
   roles?: string[];
+  confirmed?: boolean;
+  blocked?: boolean;
 }
 
 export interface MediaFolder {
@@ -261,4 +266,42 @@ export interface NewApiToken {
 
 export interface CreatedApiToken extends ApiToken {
   token: string;
+}
+
+export interface RolePermission {
+  content_type: string;
+  action: string;
+}
+
+export interface RoleSummary {
+  key: string;
+  name: string;
+  description: string;
+  color: string;
+  is_system: boolean;
+  permission_count: number;
+}
+
+export interface Role {
+  key: string;
+  name: string;
+  description: string;
+  color: string;
+  is_system: boolean;
+  permissions: RolePermission[];
+}
+
+export interface NewRole {
+  key: string;
+  name: string;
+  description: string;
+  color: string;
+  permissions: RolePermission[];
+}
+
+export interface PatchRole {
+  name: string;
+  description: string;
+  color: string;
+  permissions: RolePermission[];
 }

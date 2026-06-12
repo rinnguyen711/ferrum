@@ -3,7 +3,7 @@
 
 use rustapi_http::{
     build_router, resolve_provider, secret_key_from_env, AppConfig, AppState, EventSink, NoopHook,
-    NoopSink, RoleAuthz, WriteHook,
+    NoopSink, RoleAuthz, RoleRegistry, WriteHook,
 };
 use rustapi_schema::{
     ComponentRegistry, ComponentService, SchemaRegistry, SchemaService, MIGRATOR,
@@ -91,6 +91,9 @@ impl TestApp {
 
         MIGRATOR.run(&pool).await.expect("migrate");
 
+        let roles = RoleRegistry::new();
+        roles.reload_from_db(&pool).await.expect("hydrate roles");
+
         let registry = SchemaRegistry::new();
         registry.reload_from_db(&pool).await.expect("hydrate");
         let schemas = SchemaService::new(pool.clone(), registry.clone());
@@ -116,7 +119,8 @@ impl TestApp {
             pool: pool.clone(),
             schemas: schemas.clone(),
             components: components.clone(),
-            authz: Arc::new(RoleAuthz),
+            authz: Arc::new(RoleAuthz::new(Arc::new(roles.clone()))),
+            roles,
             events: sink,
             hooks: hook,
             config: AppConfig {

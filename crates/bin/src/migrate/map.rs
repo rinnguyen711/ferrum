@@ -25,12 +25,15 @@ pub fn infer(pg_type: &str, udt_name: &str, is_fk: bool) -> Mapping {
             Mapping::Field(FieldKind::String)
         }
         "bool" | "boolean" => Mapping::Field(FieldKind::Boolean),
-        "int2" | "int4" | "int8" | "integer" | "bigint" | "smallint" | "serial"
-        | "bigserial" | "smallserial" => Mapping::Field(FieldKind::Integer),
+        "int2" | "int4" | "int8" | "integer" | "bigint" | "smallint" | "serial" | "bigserial"
+        | "smallserial" => Mapping::Field(FieldKind::Integer),
         "float4" | "float8" | "real" | "double precision" | "numeric" | "decimal" => {
             Mapping::Field(FieldKind::Float)
         }
-        "date" | "timestamp" | "timestamptz" | "timestamp without time zone"
+        "date"
+        | "timestamp"
+        | "timestamptz"
+        | "timestamp without time zone"
         | "timestamp with time zone" => Mapping::Field(FieldKind::Datetime),
         "json" | "jsonb" => Mapping::Field(FieldKind::Json),
         "uuid" => Mapping::Skip,
@@ -52,34 +55,75 @@ mod tests {
     #[test]
     fn text_variants_map_to_string() {
         for t in &["text", "varchar", "character varying", "char", "bpchar"] {
-            assert_eq!(infer(t, "", false), Mapping::Field(FieldKind::String), "failed for {t}");
+            assert_eq!(
+                infer(t, "", false),
+                Mapping::Field(FieldKind::String),
+                "failed for {t}"
+            );
         }
     }
 
     #[test]
     fn bool_maps() {
         assert_eq!(infer("bool", "", false), Mapping::Field(FieldKind::Boolean));
-        assert_eq!(infer("boolean", "", false), Mapping::Field(FieldKind::Boolean));
+        assert_eq!(
+            infer("boolean", "", false),
+            Mapping::Field(FieldKind::Boolean)
+        );
     }
 
     #[test]
     fn integer_variants() {
-        for t in &["int2", "int4", "int8", "integer", "bigint", "smallint", "serial", "bigserial"] {
-            assert_eq!(infer(t, "", false), Mapping::Field(FieldKind::Integer), "failed for {t}");
+        for t in &[
+            "int2",
+            "int4",
+            "int8",
+            "integer",
+            "bigint",
+            "smallint",
+            "serial",
+            "bigserial",
+        ] {
+            assert_eq!(
+                infer(t, "", false),
+                Mapping::Field(FieldKind::Integer),
+                "failed for {t}"
+            );
         }
     }
 
     #[test]
     fn float_variants() {
-        for t in &["float4", "float8", "real", "double precision", "numeric", "decimal"] {
-            assert_eq!(infer(t, "", false), Mapping::Field(FieldKind::Float), "failed for {t}");
+        for t in &[
+            "float4",
+            "float8",
+            "real",
+            "double precision",
+            "numeric",
+            "decimal",
+        ] {
+            assert_eq!(
+                infer(t, "", false),
+                Mapping::Field(FieldKind::Float),
+                "failed for {t}"
+            );
         }
     }
 
     #[test]
     fn datetime_variants() {
-        for t in &["date", "timestamp", "timestamptz", "timestamp without time zone", "timestamp with time zone"] {
-            assert_eq!(infer(t, "", false), Mapping::Field(FieldKind::Datetime), "failed for {t}");
+        for t in &[
+            "date",
+            "timestamp",
+            "timestamptz",
+            "timestamp without time zone",
+            "timestamp with time zone",
+        ] {
+            assert_eq!(
+                infer(t, "", false),
+                Mapping::Field(FieldKind::Datetime),
+                "failed for {t}"
+            );
         }
     }
 
@@ -114,6 +158,9 @@ mod tests {
 
     #[test]
     fn user_defined_enum() {
-        assert_eq!(infer("USER-DEFINED", "my_status", false), Mapping::Field(FieldKind::Enum));
+        assert_eq!(
+            infer("USER-DEFINED", "my_status", false),
+            Mapping::Field(FieldKind::Enum)
+        );
     }
 }

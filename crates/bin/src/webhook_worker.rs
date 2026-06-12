@@ -95,7 +95,9 @@ impl EventSink for DbEventSink {
                     tracing::debug!(event = name, "no enabled webhooks subscribe to event");
                 }
             }
-            Err(e) => tracing::warn!(error = %e, event = name, "failed to queue webhook deliveries"),
+            Err(e) => {
+                tracing::warn!(error = %e, event = name, "failed to queue webhook deliveries")
+            }
         }
     }
 }

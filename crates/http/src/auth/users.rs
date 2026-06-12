@@ -1,15 +1,22 @@
 //! `_users` table access.
 
+use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sqlx::FromRow)]
 pub struct UserRow {
     pub id: Uuid,
     pub email: String,
     pub password_hash: String,
     pub roles: Vec<String>,
+    pub confirmed: bool,
+    pub blocked: bool,
+    pub created_at: DateTime<Utc>,
 }
+
+/// Column list shared by every `SELECT`/`RETURNING` that maps to `UserRow`.
+const COLS: &str = "id, email, password_hash, roles, confirmed, blocked, created_at";
 
 /// True if any user exists. Backs the public setup-status endpoint.
 pub async fn any_users(pool: &PgPool) -> Result<bool, sqlx::Error> {
@@ -21,20 +28,11 @@ pub async fn any_users(pool: &PgPool) -> Result<bool, sqlx::Error> {
 
 /// All users, newest first.
 pub async fn list(pool: &PgPool) -> Result<Vec<UserRow>, sqlx::Error> {
-    let rows = sqlx::query_as::<_, (Uuid, String, String, Vec<String>)>(
-        "SELECT id, email, password_hash, roles FROM _users ORDER BY created_at DESC",
-    )
+    sqlx::query_as::<_, UserRow>(&format!(
+        "SELECT {COLS} FROM _users ORDER BY created_at DESC"
+    ))
     .fetch_all(pool)
-    .await?;
-    Ok(rows
-        .into_iter()
-        .map(|(id, email, password_hash, roles)| UserRow {
-            id,
-            email,
-            password_hash,
-            roles,
-        })
-        .collect())
+    .await
 }
 
 /// Insert a user (admin-created). Distinct from `insert_first_admin`, which is
@@ -45,54 +43,47 @@ pub async fn create(
     password_hash: &str,
     roles: &[String],
 ) -> Result<UserRow, sqlx::Error> {
-    let (id, email, password_hash, roles) =
-        sqlx::query_as::<_, (Uuid, String, String, Vec<String>)>(
-            "INSERT INTO _users (email, password_hash, roles) VALUES ($1, $2, $3) \
-         RETURNING id, email, password_hash, roles",
-        )
-        .bind(email)
-        .bind(password_hash)
-        .bind(roles)
-        .fetch_one(pool)
-        .await?;
-    Ok(UserRow {
-        id,
-        email,
-        password_hash,
-        roles,
-    })
+    sqlx::query_as::<_, UserRow>(&format!(
+        "INSERT INTO _users (email, password_hash, roles) VALUES ($1, $2, $3) RETURNING {COLS}"
+    ))
+    .bind(email)
+    .bind(password_hash)
+    .bind(roles)
+    .fetch_one(pool)
+    .await
 }
 
 /// Update selected fields. `None` arguments are left unchanged. Returns the
 /// updated row, or `None` if no user has that id. `updated_at` bumped.
+#[allow(clippy::too_many_arguments)]
 pub async fn update(
     pool: &PgPool,
     id: Uuid,
     email: Option<&str>,
     password_hash: Option<&str>,
     roles: Option<&[String]>,
+    confirmed: Option<bool>,
+    blocked: Option<bool>,
 ) -> Result<Option<UserRow>, sqlx::Error> {
-    let row = sqlx::query_as::<_, (Uuid, String, String, Vec<String>)>(
+    sqlx::query_as::<_, UserRow>(&format!(
         "UPDATE _users SET \
            email = COALESCE($2, email), \
            password_hash = COALESCE($3, password_hash), \
            roles = COALESCE($4, roles), \
+           confirmed = COALESCE($5, confirmed), \
+           blocked = COALESCE($6, blocked), \
            updated_at = now() \
          WHERE id = $1 \
-         RETURNING id, email, password_hash, roles",
-    )
+         RETURNING {COLS}"
+    ))
     .bind(id)
     .bind(email)
     .bind(password_hash)
     .bind(roles)
+    .bind(confirmed)
+    .bind(blocked)
     .fetch_optional(pool)
-    .await?;
-    Ok(row.map(|(id, email, password_hash, roles)| UserRow {
-        id,
-        email,
-        password_hash,
-        roles,
-    }))
+    .await
 }
 
 /// Delete by id. Returns true if a row was removed.
@@ -115,38 +106,24 @@ pub async fn insert_first_admin(
     password_hash: &str,
     roles: &[String],
 ) -> Result<Option<UserRow>, sqlx::Error> {
-    let row = sqlx::query_as::<_, (Uuid, String, String, Vec<String>)>(
+    sqlx::query_as::<_, UserRow>(&format!(
         "INSERT INTO _users (email, password_hash, roles) \
          SELECT $1, $2, $3 WHERE NOT EXISTS (SELECT 1 FROM _users) \
-         RETURNING id, email, password_hash, roles",
-    )
+         RETURNING {COLS}"
+    ))
     .bind(email)
     .bind(password_hash)
     .bind(roles)
     .fetch_optional(pool)
-    .await?;
-    Ok(row.map(|(id, email, password_hash, roles)| UserRow {
-        id,
-        email,
-        password_hash,
-        roles,
-    }))
+    .await
 }
 
 /// Look up by case-insensitive email. `None` if absent.
 pub async fn find_by_email(pool: &PgPool, email: &str) -> Result<Option<UserRow>, sqlx::Error> {
-    sqlx::query_as::<_, (Uuid, String, String, Vec<String>)>(
-        "SELECT id, email, password_hash, roles FROM _users WHERE lower(email) = lower($1)",
-    )
+    sqlx::query_as::<_, UserRow>(&format!(
+        "SELECT {COLS} FROM _users WHERE lower(email) = lower($1)"
+    ))
     .bind(email)
     .fetch_optional(pool)
     .await
-    .map(|opt| {
-        opt.map(|(id, email, password_hash, roles)| UserRow {
-            id,
-            email,
-            password_hash,
-            roles,
-        })
-    })
 }

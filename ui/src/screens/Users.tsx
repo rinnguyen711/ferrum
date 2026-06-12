@@ -4,13 +4,15 @@ import { Icons } from "../components/icons";
 import { Avatar } from "../components/shell";
 import { LoadingState, EmptyState } from "../components/ui";
 import { useResource } from "../hooks/useResource";
-import { listUsers } from "../api/endpoints";
-import { ROLES, roleOf } from "../roles";
+import { listUsers, listRoles } from "../api/endpoints";
 import { shortId, initials, AVATAR_NEUTRAL } from "../util";
 
 export function Users() {
   const navigate = useNavigate();
   const users = useResource(() => listUsers(), []);
+  const roles = useResource(() => listRoles(), []);
+  const rolesData = roles.data ?? [];
+  const roleOf = (key: string) => rolesData.find((r) => r.key === key);
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
 
@@ -34,13 +36,13 @@ export function Users() {
       </div>
 
       <div className="rs-rolebar">
-        {ROLES.map((r) => (
+        {rolesData.map((r) => (
           <button
             key={r.key}
             className={"rs-rolebar-item" + (roleFilter === r.key ? " is-active" : "")}
             style={{ ["--chip" as string]: r.color }}
             onClick={() => setRoleFilter(roleFilter === r.key ? "all" : r.key)}
-            title={r.desc}
+            title={r.description}
           >
             <span className="rs-rolebar-dot" />
             <strong>{r.name}</strong>
@@ -91,8 +93,12 @@ export function Users() {
                     {u.roles.map((rk) => {
                       const r = roleOf(rk);
                       return (
-                        <span key={rk} className="rs-role-pill" style={{ ["--chip" as string]: r.color }}>
-                          {r.name}
+                        <span
+                          key={rk}
+                          className="rs-role-pill"
+                          style={{ ["--chip" as string]: r?.color ?? "#52525B" }}
+                        >
+                          {r?.name ?? rk}
                         </span>
                       );
                     })}

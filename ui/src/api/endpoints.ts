@@ -16,11 +16,15 @@ import type {
   NewComponent,
   NewContentType,
   NewFolder,
+  NewRole,
   NewUser,
   PatchAsset,
   PatchContentType,
   PatchFolder,
+  PatchRole,
   PatchUser,
+  Role,
+  RoleSummary,
   SetupStatus,
   UpdateComponent,
   User,
@@ -146,6 +150,26 @@ export function updateUser(id: string, body: PatchUser): Promise<User> {
 
 export function deleteUser(id: string): Promise<void> {
   return apiFetch<void>(`/admin/users/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function listRoles(): Promise<RoleSummary[]> {
+  return apiFetch<RoleSummary[]>("/admin/roles");
+}
+
+export function getRole(key: string): Promise<Role> {
+  return apiFetch<Role>(`/admin/roles/${encodeURIComponent(key)}`);
+}
+
+export function createRole(body: NewRole): Promise<Role> {
+  return apiFetch<Role>("/admin/roles", { method: "POST", body });
+}
+
+export function updateRole(key: string, body: PatchRole): Promise<Role> {
+  return apiFetch<Role>(`/admin/roles/${encodeURIComponent(key)}`, { method: "PUT", body });
+}
+
+export function deleteRole(key: string): Promise<void> {
+  return apiFetch<void>(`/admin/roles/${encodeURIComponent(key)}`, { method: "DELETE" });
 }
 
 export function listFolders(opts: { parentId?: string | null; all?: boolean } = {}): Promise<MediaFolder[]> {

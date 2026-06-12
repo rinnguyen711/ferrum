@@ -24,10 +24,7 @@ pub fn router() -> Router<AppState> {
             get(get_one).patch(update).delete(delete),
         )
         .route("/admin/webhooks/:id/deliveries", get(deliveries))
-        .route(
-            "/admin/webhooks/:id/test",
-            axum::routing::post(test_ping),
-        )
+        .route("/admin/webhooks/:id/test", axum::routing::post(test_ping))
 }
 
 async fn ensure_admin(state: &AppState, principal: &Principal) -> Result<(), ApiError> {

@@ -938,7 +938,8 @@ async fn export_entries(
         .await
         .ok_or(ApiError(Error::NotFound))?;
 
-    let raw_ids: Vec<String> = q.ids
+    let raw_ids: Vec<String> = q
+        .ids
         .as_deref()
         .unwrap_or("")
         .split(',')
@@ -953,11 +954,13 @@ async fn export_entries(
 
     let ids: Vec<uuid::Uuid> = raw_ids
         .iter()
-        .map(|s| uuid::Uuid::parse_str(s).map_err(|_| {
-            ApiError(Error::Validation(rustapi_core::ValidationErrors::single(
-                format!("invalid uuid: {s}"),
-            )))
-        }))
+        .map(|s| {
+            uuid::Uuid::parse_str(s).map_err(|_| {
+                ApiError(Error::Validation(rustapi_core::ValidationErrors::single(
+                    format!("invalid uuid: {s}"),
+                )))
+            })
+        })
         .collect::<Result<_, _>>()?;
 
     let sql = rustapi_sql::select_by_ids_sql(&ct.name)
@@ -974,8 +977,7 @@ async fn export_entries(
     let mut wtr = csv::WriterBuilder::new().from_writer(vec![]);
 
     for row in &rows {
-        let obj = row_to_json(&ct, row)
-            .map_err(ApiError)?;
+        let obj = row_to_json(&ct, row).map_err(ApiError)?;
         let (headers, record) = row_to_csv_record(&ct, &obj);
         if !headers_written {
             wtr.write_record(&headers)
@@ -1006,10 +1008,8 @@ async fn export_entries(
             ),
             (
                 header::CONTENT_DISPOSITION,
-                header::HeaderValue::from_str(&format!(
-                    "attachment; filename=\"{filename}\""
-                ))
-                .unwrap_or_else(|_| header::HeaderValue::from_static("attachment")),
+                header::HeaderValue::from_str(&format!("attachment; filename=\"{filename}\""))
+                    .unwrap_or_else(|_| header::HeaderValue::from_static("attachment")),
             ),
         ],
         Body::from(csv_bytes),
@@ -1050,9 +1050,10 @@ async fn import_entries(
                 )))
             }
             Some(field) if field.name() == Some("file") => {
-                break field.bytes().await.map_err(|e| {
-                    ApiError(Error::Internal(anyhow::anyhow!(e)))
-                })?;
+                break field
+                    .bytes()
+                    .await
+                    .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e))))?;
             }
             Some(_) => continue,
         }
@@ -1071,9 +1072,9 @@ async fn import_entries(
     let headers: Vec<String> = rdr
         .headers()
         .map_err(|_| {
-            ApiError(Error::Validation(
-                rustapi_core::ValidationErrors::single("empty file"),
-            ))
+            ApiError(Error::Validation(rustapi_core::ValidationErrors::single(
+                "empty file",
+            )))
         })?
         .iter()
         .map(|s| s.to_string())
@@ -1139,7 +1140,8 @@ async fn import_entries(
         if !link_plans.is_empty() || !media_link_plans.is_empty() {
             errors.push(ImportRowError {
                 row: row_num,
-                message: "import does not support many-to-many relation or multiple-media fields".to_string(),
+                message: "import does not support many-to-many relation or multiple-media fields"
+                    .to_string(),
             });
             continue;
         }
@@ -1162,8 +1164,7 @@ async fn import_entries(
                 .await
                 .unwrap_or_default();
                 if found.len() != ids.len() {
-                    relation_error =
-                        Some(format!("relation target missing in `{target}`"));
+                    relation_error = Some(format!("relation target missing in `{target}`"));
                     break;
                 }
             }
