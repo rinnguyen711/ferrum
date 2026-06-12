@@ -3,9 +3,8 @@ import { useNavigate, useParams } from "react-router-dom";
 import { Icons } from "../components/icons";
 import { Notice, EditorBar } from "../components/ui";
 import { useResource } from "../hooks/useResource";
-import { listUsers, createUser, updateUser, deleteUser } from "../api/endpoints";
+import { listUsers, listRoles, createUser, updateUser, deleteUser } from "../api/endpoints";
 import { ApiError } from "../api/client";
-import { ROLES, CAPS, capsFor } from "../roles";
 
 export function UserEditor() {
   const { id } = useParams<{ id: string }>();
@@ -14,6 +13,8 @@ export function UserEditor() {
 
   // For edit, load the user from the list (no single-get endpoint this slice).
   const users = useResource(() => listUsers(), []);
+  const roles_ = useResource(() => listRoles(), []);
+  const rolesData = roles_.data ?? [];
   const existing = isNew ? null : (users.data ?? []).find((u) => u.id === id) ?? null;
 
   const [email, setEmail] = useState("");
@@ -125,32 +126,16 @@ export function UserEditor() {
               <div className="rs-field">
                 <span className="rs-field-label">Roles</span>
                 <div className="rs-perm-grid">
-                  {ROLES.map((r) => (
+                  {rolesData.map((r) => (
                     <button key={r.key} className={"rs-role-radio" + (roles.includes(r.key) ? " is-on" : "")}
                       onClick={() => toggleRole(r.key)} type="button">
                       <span className="rs-radio-dot" />
                       <span className="rs-role-radio-text">
                         <strong><span className="rs-rolebar-dot" style={{ ["--chip" as string]: r.color }} />{r.name}</strong>
-                        <span>{r.desc}</span>
+                        <span>{r.description}</span>
                       </span>
                     </button>
                   ))}
-                </div>
-              </div>
-              <div className="rs-field">
-                <span className="rs-field-label">Capabilities (read-only)</span>
-                <div className="rs-cap">
-                  {CAPS.map((c, i) => {
-                    const on = roles.some((rk) => capsFor(rk)[i]);
-                    return (
-                      <div className="rs-cap-row" key={c}>
-                        <span>{c}</span>
-                        <span className={"rs-cap-mark " + (on ? "is-on" : "is-off")}>
-                          {on ? <Icons.check size={13} /> : <Icons.x size={12} />}
-                        </span>
-                      </div>
-                    );
-                  })}
                 </div>
               </div>
               <div className="rs-field" data-placeholder title="Coming soon">
