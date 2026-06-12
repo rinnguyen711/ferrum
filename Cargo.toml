@@ -30,7 +30,9 @@ hyper = "1.4"
 
 # GraphQL
 async-graphql = { version = "7", features = ["dynamic-schema", "chrono"] }
-async-graphql-axum = "7"
+# Pinned to the last 7.x that targets axum 0.7 (>=7.0.14 jumped to axum 0.8,
+# which conflicts with this workspace's axum 0.7 router).
+async-graphql-axum = "=7.0.13"
 
 # Database
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "macros", "migrate", "uuid", "chrono", "json"] }

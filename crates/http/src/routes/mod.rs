@@ -38,6 +38,19 @@ pub fn build_router(state: AppState, extra: Vec<Router<AppState>>) -> Router {
         .merge(roles::router())
         .merge(auth::protected_router());
 
+    // GraphQL surface — behind require_auth (NOT public). Single route
+    // registration; GET (GraphiQL playground) only when docs_enabled, since
+    // axum panics on duplicate method+path.
+    {
+        use axum::routing::{get, post};
+        let gql_route = if state.config.docs_enabled {
+            get(crate::graphql::handler::playground).post(crate::graphql::handler::execute)
+        } else {
+            post(crate::graphql::handler::execute)
+        };
+        protected = protected.merge(Router::new().route("/api/graphql", gql_route));
+    }
+
     // Custom routers from the bin, merged after built-ins. Behind the same
     // require_auth layer; axum panics on a duplicate exact path+method so
     // collisions surface at startup. Static segments take precedence over
