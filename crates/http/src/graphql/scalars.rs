@@ -27,11 +27,20 @@ pub fn field_type_ref(field: &Field) -> TypeRef {
 
 /// The GraphQL input type for a field. Same list/non-null shape as the output
 /// type ref, so list-valued fields (m2m relation, multiple media) accept lists
-/// on write, matching the read shape.
+/// on write, matching the read shape. Relation/media are written as scalar
+/// UUID id(s) — only the output side surfaces them as object refs.
 pub fn input_type_ref(field: &Field) -> TypeRef {
-    // relations/media on input are the scalar id type(s) — base_type_name
-    // already yields the right base.
-    wrap_ref(base_type_name(field), is_list(field), field.required)
+    wrap_ref(input_base_type_name(field), is_list(field), field.required)
+}
+
+/// Base GraphQL type name for a field on the INPUT side. Identical to
+/// `base_type_name` except relation/media stay scalar UUID id(s) — output
+/// objects can't be used as input types, and writes take the target/asset id.
+fn input_base_type_name(field: &Field) -> String {
+    match field.kind {
+        FieldKind::Relation | FieldKind::Media => UUID_SCALAR.to_string(),
+        _ => base_type_name(field),
+    }
 }
 
 /// Base GraphQL type name for a field's value (before list/non-null wrapping).
@@ -59,9 +68,9 @@ pub fn base_type_name(field: &Field) -> String {
         // `Media` object. Both are registered for every content type in
         // build.rs, so the ref never dangles (even for Single-type targets).
         // List-ness (m2m / multiple) is applied by `is_list` in `wrap_ref`.
-        FieldKind::Relation => {
-            crate::graphql::build::pascal(&field.relation_meta().map(|m| m.target).unwrap_or_default())
-        }
+        FieldKind::Relation => crate::graphql::build::pascal(
+            &field.relation_meta().map(|m| m.target).unwrap_or_default(),
+        ),
         FieldKind::Media => "Media".to_string(),
         _ => JSON_SCALAR.to_string(),
     }
@@ -178,15 +187,28 @@ mod tests {
     }
     #[test]
     fn input_list_matches_output_list() {
+        // A non-relation/media field has identical input + output type refs.
+        let multi = f(FieldKind::Json, false, json!({}));
+        assert_eq!(
+            format!("{:?}", super::input_type_ref(&multi)),
+            format!("{:?}", super::field_type_ref(&multi))
+        );
+        // For relations the list/non-null SHAPE matches even though the base
+        // differs (input = scalar UUID, output = target object).
         let many = f(
             FieldKind::Relation,
             false,
             json!({"target":"tag","cardinality":"many_to_many"}),
         );
-        // input and output use the same list/non-null wrapping for a field.
-        assert_eq!(
-            format!("{:?}", super::input_type_ref(&many)),
-            format!("{:?}", super::field_type_ref(&many))
+        let inp = format!("{:?}", super::input_type_ref(&many));
+        let out = format!("{:?}", super::field_type_ref(&many));
+        assert!(inp.contains("UUID"), "input relation is scalar uuid: {inp}");
+        assert!(
+            out.contains("Tag"),
+            "output relation is target object: {out}"
         );
+        // both are non-null lists (m2m): same wrapper kind.
+        assert!(inp.contains("List"));
+        assert!(out.contains("List"));
     }
 }

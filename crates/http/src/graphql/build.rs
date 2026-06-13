@@ -1,5 +1,9 @@
 //! Builds an `async_graphql::dynamic::Schema` at runtime from the content-type
-//! registry. Walks Collection types only (Single types are excluded from v1).
+//! registry. An output object is registered for EVERY content type (incl.
+//! Single) so relation fields can target any type without dangling; a shared
+//! `Media` object is registered for media fields. Only Collection types get
+//! root Query/Mutation fields — Single types are not queryable as collections
+//! in v1, but their object still exists as a relation target.
 //!
 //! Field/query/mutation resolvers come from `resolve::`: object/envelope/Meta/
 //! Media fields use `json_field_resolver` (parent JSON threaded to children),
@@ -136,18 +140,35 @@ fn register_enums(
     builder
 }
 
-/// Build a dynamic GraphQL schema from the content-type registry. Only
-/// `Collection` types are surfaced in v1; `Single` types are skipped.
+/// Build a dynamic GraphQL schema from the content-type registry. An output
+/// object is registered for EVERY content type (so relation fields can target
+/// any type, incl. Single, without dangling); only `Collection` types get root
+/// Query/Mutation fields. A shared `Media` object backs media fields.
 pub fn build_schema(types: &[ContentType]) -> Result<Schema, SchemaError> {
     let mut builder = Schema::build("Query", Some("Mutation"), None);
 
-    // Shared, registered once: custom scalars + the Meta envelope. Relation
-    // and media fields surface as scalar UUID id(s) in v1 (see
-    // `scalars::base_type_name`), so no shared Media object is needed.
+    // Shared, registered once: custom scalars, the Meta envelope, and the
+    // Media object. Relation fields are typed as the target type's object and
+    // media fields as `Media` (see `scalars::base_type_name`).
     builder = builder
         .register(Scalar::new(scalars::UUID_SCALAR))
         .register(Scalar::new(scalars::DATETIME_SCALAR))
         .register(Scalar::new(scalars::JSON_SCALAR));
+
+    // Shared Media object. Media fields embed a media object into the row JSON
+    // (see media_embed), so children read id/url/etc. from the parent value.
+    let media = Object::new("Media")
+        .field(Field::new(
+            "id",
+            TypeRef::named_nn(scalars::UUID_SCALAR),
+            resolve::json_field_resolver("id"),
+        ))
+        .field(Field::new(
+            "url",
+            TypeRef::named(TypeRef::STRING),
+            resolve::json_field_resolver("url"),
+        ));
+    builder = builder.register(media);
 
     let meta = Object::new("Meta")
         .field(Field::new(
@@ -172,22 +193,27 @@ pub fn build_schema(types: &[ContentType]) -> Result<Schema, SchemaError> {
     let mut registered_enums: HashSet<String> = HashSet::new();
     let mut surfaced_any = false;
 
-    for ct in types
-        .iter()
-        .filter(|ct| ct.kind == ContentTypeKind::Collection)
-    {
-        surfaced_any = true;
+    for ct in types.iter() {
         let type_name = pascal(&ct.name);
+
+        // Output object is registered for EVERY type so relation fields can
+        // reference Single-type targets without dangling. Each type's object is
+        // registered exactly once here.
+        builder = builder.register(build_output_object(ct));
+        builder = register_enums(builder, ct, &mut registered_enums);
+
+        // Collections also get an input, list envelope, and root Query/Mutation
+        // fields. Single types are not queryable as collections in v1.
+        if ct.kind != ContentTypeKind::Collection {
+            continue;
+        }
+        surfaced_any = true;
         let input_name = format!("{type_name}Input");
         let list_name = format!("{type_name}List");
 
-        // Per-type objects (resolver call sites for these live in the
-        // sub-builders above; root fields below stay in the orchestrator).
         builder = builder
-            .register(build_output_object(ct))
             .register(build_input_object(ct))
             .register(build_list_envelope(&type_name));
-        builder = register_enums(builder, ct, &mut registered_enums);
 
         // Query: list + single.
         query = query.field(
@@ -325,14 +351,50 @@ mod tests {
     }
 
     #[test]
-    fn single_type_is_skipped() {
+    fn single_type_object_registered_no_root_field() {
         let mut s = article();
         s.name = "homepage".into();
         s.kind = ContentTypeKind::Single;
         let schema = build_schema(&[s]).expect("build");
+        let sdl = schema.sdl();
+        // object IS registered (so relations can target it)...
         assert!(
-            !schema.sdl().contains("homepages("),
-            "single types excluded from v1"
+            sdl.contains("type Homepage"),
+            "single object registered: {sdl}"
+        );
+        // ...but NO root collection field for it
+        assert!(
+            !sdl.contains("homepages("),
+            "single type has no list query: {sdl}"
+        );
+    }
+
+    #[test]
+    fn relation_to_single_target_builds() {
+        // Single target
+        let mut home = article();
+        home.name = "homepage".into();
+        home.kind = ContentTypeKind::Single;
+        // Collection with a relation to the Single
+        let mut banner = article();
+        banner.name = "banner".into();
+        banner.kind = ContentTypeKind::Collection;
+        banner.fields = vec![Field {
+            name: "page".into(),
+            kind: FieldKind::Relation,
+            required: false,
+            unique: false,
+            default: Value::Null,
+            max_length: None,
+            kind_meta: json!({ "target": "homepage", "cardinality": "many_to_one" }),
+        }];
+        // must NOT error (previously dangling ref → Err)
+        let schema = build_schema(&[home, banner]).expect("schema with relation to single builds");
+        let sdl = schema.sdl();
+        assert!(sdl.contains("type Banner"));
+        assert!(
+            sdl.contains("page: Homepage"),
+            "relation field typed as target object: {sdl}"
         );
     }
 }
