@@ -34,6 +34,8 @@ pub use webhooks::{
     Webhook, WebhookDelivery,
 };
 
+pub mod audit;
+
 pub mod roles;
 pub use roles::{
     delete_role, get_role, list_roles, load_all, set_permissions, upsert_role, RolePermission,
