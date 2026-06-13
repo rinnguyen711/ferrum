@@ -4,7 +4,7 @@ use rustapi::config::Config;
 use rustapi::seed;
 use rustapi_http::{
     build_router, mount_studio, resolve_provider, secret_key_from_env, AppConfig, AppState,
-    NoopHook, RoleAuthz, RoleRegistry,
+    NoopAuditSink, NoopHook, RoleAuthz, RoleRegistry,
 };
 use rustapi_schema::{
     ComponentRegistry, ComponentService, SchemaRegistry, SchemaService, MIGRATOR,
@@ -95,6 +95,7 @@ async fn main() -> Result<()> {
         roles,
         gql: rustapi_http::graphql::GqlRegistry::new(),
         events: Arc::new(rustapi::webhook_worker::DbEventSink::new(pool.clone())),
+        audit: Arc::new(NoopAuditSink), // TODO(task9): swap to DbAuditSink
         hooks: Arc::new(NoopHook),
         config: AppConfig {
             jwt_secret: cfg.jwt_secret.clone(),
