@@ -64,7 +64,10 @@ pub fn build_router(state: AppState, extra: Vec<Router<AppState>>) -> Router {
         require_auth,
     ));
 
-    public.merge(protected).with_state(state)
+    public
+        .merge(protected)
+        .layer(axum::middleware::from_fn(crate::reqctx::layer))
+        .with_state(state)
 }
 
 /// Mount a built admin UI at `/studio`. Falls back to `index.html` for any

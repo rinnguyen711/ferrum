@@ -11,6 +11,7 @@ pub mod middleware;
 pub mod openapi;
 pub mod populate;
 pub mod query;
+pub mod reqctx;
 pub mod roles;
 pub mod routes;
 pub mod state;
