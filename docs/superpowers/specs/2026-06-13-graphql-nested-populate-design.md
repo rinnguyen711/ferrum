@@ -139,7 +139,13 @@ Article.author.posts (if selected) → not populated → absent → null
 - Populate parse errors (e.g. a relation field that can't be populated) surface
   through the existing `content::list_entries` error path → `gql_err` →
   `extensions.code`. Unchanged.
-- Deeper-than-one-level selections never error — they resolve to null.
+- Deeper-than-one-level selections of *nullable* relations resolve to null; a
+  *required* deep relation selected at depth 2+ raises a non-null violation that
+  nulls the containing object (see the one-level-limit decision above). Clients
+  should not select beyond one relation level in v1.
+- Media is auto-embedded by the storage layer on read, so media fields are NOT
+  passed through the populate arg (`populate_arg` matches only relations);
+  `parse_populate` rejects media field names.
 - The dangling-type class of failure is eliminated (all targets registered).
 
 ## Crate boundaries
