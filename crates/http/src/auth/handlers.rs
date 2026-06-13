@@ -63,6 +63,7 @@ pub async fn setup(
 /// POST /auth/login — verify creds, return a signed JWT.
 pub async fn login(
     State(state): State<AppState>,
+    Extension(ctx): Extension<rustapi_core::RequestContext>,
     Json(body): Json<Credentials>,
 ) -> Result<Json<Value>, ApiError> {
     let found = users::find_by_email(&state.pool, &body.email)
@@ -81,7 +82,18 @@ pub async fn login(
 
     let user = match (ok, found) {
         (true, Some(u)) => u,
-        _ => return Err(ApiError(Error::Unauthorized)),
+        _ => {
+            let entry = rustapi_core::AuditEntry::new(
+                "auth.login_failed",
+                rustapi_core::Actor::system(body.email.clone()),
+            )
+            .target("session", body.email.clone(), body.email.clone())
+            .failed()
+            .note("Invalid credentials.")
+            .ctx(ctx.clone());
+            state.audit.record(entry).await;
+            return Err(ApiError(Error::Unauthorized));
+        }
     };
 
     let ttl = state.config.jwt_ttl_secs;
@@ -93,6 +105,18 @@ pub async fn login(
         ttl,
     )
     .map_err(anyhow_internal)?;
+
+    let success = rustapi_core::AuditEntry::new(
+        "auth.login",
+        rustapi_core::Actor {
+            kind: rustapi_core::ActorKind::User,
+            id: Some(user.id),
+            label: user.email.clone(),
+        },
+    )
+    .target("session", user.email.clone(), user.email.clone())
+    .ctx(ctx.clone());
+    state.audit.record(success).await;
 
     let expires_at = chrono::Utc::now().timestamp() + ttl;
     Ok(Json(json!({ "token": token, "expires_at": expires_at })))
