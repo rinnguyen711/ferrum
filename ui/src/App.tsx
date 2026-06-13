@@ -24,6 +24,7 @@ import { ComponentEditor } from "./screens/ComponentEditor";
 import { SingleTypeEdit } from "./screens/SingleTypeEdit";
 import { ApiTokens, TokenEditor, TokenDetail } from "./screens/ApiTokens";
 import { Webhooks } from "./screens/Webhooks";
+import { AuditLog } from "./screens/AuditLog";
 import { WebhookEditor } from "./screens/WebhookEditor";
 import { WebhookDetail } from "./screens/WebhookDetail";
 import { getToken, clearToken } from "./auth";
@@ -130,6 +131,7 @@ export default function App() {
           <Route path="settings/webhooks" element={<Webhooks />} />
           <Route path="settings/webhooks/new" element={<WebhookEditor />} />
           <Route path="settings/webhooks/:id" element={<WebhookDetail />} />
+          <Route path="settings/audit" element={<AuditLog />} />
           <Route path="settings/media" element={<MediaSettings />} />
           <Route path="users" element={<Users />} />
           <Route path="users/new" element={<UserEditor />} />

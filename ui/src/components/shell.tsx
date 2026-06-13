@@ -195,7 +195,7 @@ function SettingsPanel() {
       items: [
         { label: "Users" },
         { label: "Roles" },
-        { label: "Audit logs" },
+        { label: "Audit logs", to: "/settings/audit" },
         { label: "Single sign-on" },
       ],
     },
@@ -245,6 +245,7 @@ function UsersPanel() {
   const builder = useBuilderDraft();
   const onUsers = location.pathname.startsWith("/users");
   const onRoles = location.pathname.startsWith("/roles");
+  const onAudit = location.pathname.startsWith("/settings/audit");
   return (
     <aside className="rs-panel">
       <div className="rs-panel-head">
@@ -267,11 +268,15 @@ function UsersPanel() {
           >
             Roles
           </button>
-          {["Audit logs", "Single sign-on"].map((it) => (
-            <button key={it} className="rs-panel-item" disabled title="Coming soon">
-              {it}
-            </button>
-          ))}
+          <button
+            className={"rs-panel-item" + (onAudit ? " is-active" : "")}
+            onClick={() => builder.guardedNavigate("/settings/audit")}
+          >
+            Audit logs
+          </button>
+          <button className="rs-panel-item" disabled title="Coming soon">
+            Single sign-on
+          </button>
         </div>
       </div>
     </aside>

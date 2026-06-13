@@ -8,7 +8,7 @@ use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Extension, Json, Router};
 use chrono::{DateTime, Utc};
-use rustapi_core::{Action, Error, Principal};
+use rustapi_core::{Action, Actor, AuditEntry, Error, Principal, RequestContext};
 use rustapi_sql::{delete_token, insert_token, list_tokens, update_token};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -80,6 +80,7 @@ async fn list(
 async fn create(
     State(state): State<AppState>,
     Extension(principal): Extension<Principal>,
+    Extension(ctx): Extension<RequestContext>,
     Json(body): Json<CreateBody>,
 ) -> Result<(StatusCode, Json<CreateTokenResponse>), ApiError> {
     ensure_admin(&state, &principal).await?;
@@ -123,6 +124,15 @@ async fn create(
     )
     .await
     .map_err(db)?;
+
+    state
+        .audit
+        .record(
+            AuditEntry::new("token.create", Actor::from_principal(&principal, None))
+                .target("token", row.id.to_string(), row.name.clone())
+                .ctx(ctx),
+        )
+        .await;
 
     Ok((
         StatusCode::CREATED,
@@ -209,11 +219,20 @@ async fn update(
 async fn revoke(
     State(state): State<AppState>,
     Extension(principal): Extension<Principal>,
+    Extension(ctx): Extension<RequestContext>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
     ensure_admin(&state, &principal).await?;
     let deleted = delete_token(&state.pool, id).await.map_err(db)?;
     if deleted {
+        state
+            .audit
+            .record(
+                AuditEntry::new("token.revoke", Actor::from_principal(&principal, None))
+                    .target("token", id.to_string(), id.to_string())
+                    .ctx(ctx),
+            )
+            .await;
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(ApiError(Error::NotFound))

@@ -5,8 +5,11 @@ use crate::state::AppState;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{get, patch};
-use axum::{Json, Router};
-use rustapi_core::{ContentType, Error, Event, NewContentType, PatchContentType};
+use axum::{Extension, Json, Router};
+use rustapi_core::{
+    Actor, AuditEntry, ContentType, Error, Event, NewContentType, PatchContentType, Principal,
+    RequestContext,
+};
 use serde::Deserialize;
 
 /// Rebuild the cached GraphQL schema from the current content-type registry.
@@ -54,6 +57,8 @@ async fn get_one(
 
 async fn create(
     State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
+    Extension(ctx): Extension<RequestContext>,
     Json(payload): Json<NewContentType>,
 ) -> Result<(StatusCode, Json<ContentType>), ApiError> {
     let ct = state.schemas.create(payload).await?;
@@ -64,11 +69,21 @@ async fn create(
             name: ct.name.clone(),
         })
         .await;
+    state
+        .audit
+        .record(
+            AuditEntry::new("schema.create", Actor::from_principal(&principal, None))
+                .target("settings", ct.name.clone(), ct.name.clone())
+                .ctx(ctx),
+        )
+        .await;
     Ok((StatusCode::CREATED, Json(ct)))
 }
 
 async fn patch_one(
     State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
+    Extension(ctx): Extension<RequestContext>,
     Path(name): Path<String>,
     Json(payload): Json<PatchContentType>,
 ) -> Result<Json<ContentType>, ApiError> {
@@ -80,6 +95,14 @@ async fn patch_one(
             name: ct.name.clone(),
         })
         .await;
+    state
+        .audit
+        .record(
+            AuditEntry::new("schema.update", Actor::from_principal(&principal, None))
+                .target("settings", ct.name.clone(), ct.name.clone())
+                .ctx(ctx),
+        )
+        .await;
     Ok(Json(ct))
 }
 
@@ -90,6 +113,8 @@ struct DeleteQuery {
 
 async fn delete_one(
     State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
+    Extension(ctx): Extension<RequestContext>,
     Path(name): Path<String>,
     Query(q): Query<DeleteQuery>,
 ) -> Result<StatusCode, ApiError> {
@@ -100,6 +125,14 @@ async fn delete_one(
     }
     state.schemas.delete(&name).await?;
     rebuild_gql(&state).await;
+    state
+        .audit
+        .record(
+            AuditEntry::new("schema.delete", Actor::from_principal(&principal, None))
+                .target("settings", name.clone(), name.clone())
+                .ctx(ctx),
+        )
+        .await;
     state.events.emit(Event::SchemaDeleted { name }).await;
     Ok(StatusCode::NO_CONTENT)
 }

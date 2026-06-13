@@ -9,7 +9,7 @@ use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
 use chrono::{DateTime, Utc};
-use rustapi_core::{Action, Error, Principal};
+use rustapi_core::{Action, Actor, AuditEntry, Error, Principal, RequestContext};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -290,6 +290,7 @@ fn prepare_config_for_save(
 async fn put_settings(
     State(state): State<AppState>,
     Extension(principal): Extension<Principal>,
+    Extension(ctx): Extension<RequestContext>,
     Json(body): Json<SettingsBody>,
 ) -> Result<StatusCode, ApiError> {
     ensure(&state, &principal, Action::ContentWrite).await?;
@@ -318,6 +319,14 @@ async fn put_settings(
     let provider = rustapi_media::build(&body.provider, &live_cfg)
         .map_err(|e| ApiError(Error::Unsupported(e.to_string())))?;
     *state.storage.write().await = std::sync::Arc::from(provider);
+    state
+        .audit
+        .record(
+            AuditEntry::new("settings.update", Actor::from_principal(&principal, None))
+                .target("settings", body.provider.clone(), body.provider.clone())
+                .ctx(ctx),
+        )
+        .await;
     Ok(StatusCode::NO_CONTENT)
 }
 

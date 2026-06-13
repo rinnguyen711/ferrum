@@ -11,6 +11,7 @@ pub mod middleware;
 pub mod openapi;
 pub mod populate;
 pub mod query;
+pub mod reqctx;
 pub mod roles;
 pub mod routes;
 pub mod state;
@@ -21,6 +22,6 @@ pub use roles::RoleRegistry;
 pub use routes::{build_router, mount_studio};
 pub use rustapi_media::{descriptors, LocalProvider, StorageProvider};
 pub use state::{
-    AlwaysAllow, AppConfig, AppState, Authz, EventSink, NoopHook, NoopSink, RoleAuthz,
-    WriteContext, WriteHook, WriteOp,
+    AlwaysAllow, AppConfig, AppState, AuditSink, Authz, EventSink, NoopAuditSink, NoopHook,
+    NoopSink, RoleAuthz, WriteContext, WriteHook, WriteOp,
 };

@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { useResource } from "../hooks/useResource";
 import { getHealth, listContentTypes, listEntries } from "../api/endpoints";
 import { Icons } from "../components/icons";
+import { StatCard } from "../components/StatCard";
 import { StatusBadge } from "../components/shell";
 import { LoadingState, EmptyState } from "../components/ui";
 import { relTime } from "../util";
@@ -109,29 +110,6 @@ export function Dashboard() {
             </svg>
           </div>
         </section>
-      </div>
-    </div>
-  );
-}
-
-function StatCard({
-  label, value, delta, icon, tone, mono,
-}: {
-  label: string;
-  value: string | number;
-  delta: string;
-  icon: "eye" | "clock" | "edit" | "bolt";
-  tone: string;
-  mono?: boolean;
-}) {
-  const I = Icons[icon];
-  return (
-    <div className={"rs-stat rs-stat--" + tone}>
-      <div className="rs-stat-icon"><I size={18} /></div>
-      <div className="rs-stat-body">
-        <span className="rs-stat-label">{label}</span>
-        <strong className={"rs-stat-value" + (mono ? " rs-mono" : "")}>{value}</strong>
-        <span className="rs-stat-delta">{delta}</span>
       </div>
     </div>
   );

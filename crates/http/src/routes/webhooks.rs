@@ -8,7 +8,7 @@ use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Extension, Json, Router};
 use chrono::{DateTime, Utc};
-use rustapi_core::{Action, Error, Principal};
+use rustapi_core::{Action, Actor, AuditEntry, Error, Principal, RequestContext};
 use rustapi_sql::{
     delete_webhook, get_webhook, insert_webhook, list_deliveries, list_webhooks, update_webhook,
     Webhook, WebhookDelivery,
@@ -170,6 +170,7 @@ async fn get_one(
 async fn create(
     State(state): State<AppState>,
     Extension(principal): Extension<Principal>,
+    Extension(ctx): Extension<RequestContext>,
     Json(body): Json<CreateBody>,
 ) -> Result<(StatusCode, Json<WebhookView>), ApiError> {
     ensure_admin(&state, &principal).await?;
@@ -189,6 +190,14 @@ async fn create(
     )
     .await
     .map_err(db)?;
+    state
+        .audit
+        .record(
+            AuditEntry::new("webhook.create", Actor::from_principal(&principal, None))
+                .target("webhook", row.id.to_string(), row.name.clone())
+                .ctx(ctx),
+        )
+        .await;
     Ok((StatusCode::CREATED, Json(WebhookView::from(row))))
 }
 

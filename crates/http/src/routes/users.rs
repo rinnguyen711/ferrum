@@ -7,7 +7,7 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Extension, Json, Router};
-use rustapi_core::{Action, Error, Principal, ValidationErrors};
+use rustapi_core::{Action, Actor, AuditEntry, Error, Principal, RequestContext, ValidationErrors};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -109,6 +109,7 @@ async fn list(
 async fn create(
     State(state): State<AppState>,
     Extension(principal): Extension<Principal>,
+    Extension(ctx): Extension<RequestContext>,
     Json(body): Json<CreateBody>,
 ) -> Result<(StatusCode, Json<UserView>), ApiError> {
     ensure(&state, &principal, Action::UserWrite).await?;
@@ -118,12 +119,21 @@ async fn create(
     let row = users::create(&state.pool, &body.email, &hash, &body.roles)
         .await
         .map_err(map_db_err)?;
+    state
+        .audit
+        .record(
+            AuditEntry::new("user.invite", Actor::from_principal(&principal, None))
+                .target("user", row.id.to_string(), row.email.clone())
+                .ctx(ctx),
+        )
+        .await;
     Ok((StatusCode::CREATED, Json(row.into())))
 }
 
 async fn update(
     State(state): State<AppState>,
     Extension(principal): Extension<Principal>,
+    Extension(ctx): Extension<RequestContext>,
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateBody>,
 ) -> Result<Json<UserView>, ApiError> {
@@ -163,6 +173,19 @@ async fn update(
     .await
     .map_err(map_db_err)?
     .ok_or(ApiError(Error::NotFound))?;
+
+    // Only audit suspensions (blocked -> true), not general profile edits.
+    if body.blocked == Some(true) {
+        state
+            .audit
+            .record(
+                AuditEntry::new("user.suspend", Actor::from_principal(&principal, None))
+                    .target("user", row.id.to_string(), row.email.clone())
+                    .ctx(ctx),
+            )
+            .await;
+    }
+
     Ok(Json(row.into()))
 }
 

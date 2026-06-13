@@ -3,7 +3,8 @@
 use crate::roles::RoleRegistry;
 use async_trait::async_trait;
 use rustapi_core::{
-    action_to_scope, role_allows, verb_to_action, Action, Error, Event, Principal, PERM_VERBS,
+    action_to_scope, role_allows, verb_to_action, Action, AuditEntry, Error, Event, Principal,
+    PERM_VERBS,
 };
 use rustapi_media::StorageProvider;
 use rustapi_schema::{ComponentService, SchemaService};
@@ -90,6 +91,18 @@ impl EventSink for NoopSink {
     async fn emit(&self, _event: Event) {}
 }
 
+#[async_trait]
+pub trait AuditSink: Send + Sync + 'static {
+    async fn record(&self, entry: AuditEntry);
+}
+
+pub struct NoopAuditSink;
+
+#[async_trait]
+impl AuditSink for NoopAuditSink {
+    async fn record(&self, _entry: AuditEntry) {}
+}
+
 /// Which content write a hook is being invoked for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WriteOp {
@@ -166,6 +179,7 @@ pub struct AppState {
     pub roles: crate::roles::RoleRegistry,
     pub gql: crate::graphql::GqlRegistry,
     pub events: Arc<dyn EventSink>,
+    pub audit: Arc<dyn AuditSink>,
     pub hooks: Arc<dyn WriteHook>,
     pub config: AppConfig,
     /// Active media storage provider, hot-swappable when settings change.

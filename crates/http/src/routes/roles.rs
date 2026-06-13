@@ -7,7 +7,9 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Extension, Json, Router};
-use rustapi_core::{Action, Error, Principal, ValidationErrors, PERM_VERBS};
+use rustapi_core::{
+    Action, Actor, AuditEntry, Error, Principal, RequestContext, ValidationErrors, PERM_VERBS,
+};
 use rustapi_sql::{
     delete_role, get_role, list_roles, set_permissions, upsert_role, RolePermission, RoleRecord,
 };
@@ -228,6 +230,7 @@ async fn create(
 async fn update(
     State(state): State<AppState>,
     Extension(principal): Extension<Principal>,
+    Extension(ctx): Extension<RequestContext>,
     Path(key): Path<String>,
     Json(body): Json<UpdateBody>,
 ) -> Result<Json<RoleView>, ApiError> {
@@ -261,6 +264,14 @@ async fn update(
         .await
         .map_err(db)?
         .ok_or(ApiError(Error::NotFound))?;
+    state
+        .audit
+        .record(
+            AuditEntry::new("role.change", Actor::from_principal(&principal, None))
+                .target("role", role.key.clone(), role.name.clone())
+                .ctx(ctx),
+        )
+        .await;
     Ok(Json(to_view(role, perms)))
 }
 

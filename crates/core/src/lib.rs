@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+pub mod audit;
 pub mod content_type;
 pub mod error;
 pub mod event;
@@ -9,6 +10,7 @@ pub mod reserved;
 pub mod system;
 pub mod validators;
 
+pub use audit::{category_for, Actor, ActorKind, AuditEntry, FieldChange, RequestContext};
 pub use content_type::{
     ContentType, ContentTypeError, ContentTypeKind, EnumExtension, NewContentType,
     PatchContentType, PatchError,
