@@ -35,12 +35,12 @@ pub fn input_type_ref(field: &Field) -> TypeRef {
 }
 
 /// Base GraphQL type name for a field's value (before list/non-null wrapping).
-/// Relation/Media are represented as scalar UUID id(s) in v1 — a relation is
-/// the target row's UUID and media is the asset UUID (a list of UUIDs for m2m
-/// relations / multiple media, via `is_list`). Nested object population is
-/// deferred, so these are NOT object refs: typing them as object refs would
-/// dangle when the target isn't surfaced (e.g. a relation to a Single type),
-/// breaking `Schema::finish()`.
+/// Relation fields are typed as the target content type's object (PascalCase);
+/// media fields as the shared `Media` object. List-ness (m2m relation /
+/// multiple media) is applied by `is_list`. build.rs registers an object for
+/// every content type (incl. Single targets) and the `Media` object, so these
+/// refs never dangle on `Schema::finish()`. Relation/media fields are populated
+/// one level deep via the selection set; unpopulated relations resolve to null.
 pub fn base_type_name(field: &Field) -> String {
     match field.kind {
         FieldKind::String
@@ -55,8 +55,14 @@ pub fn base_type_name(field: &Field) -> String {
         FieldKind::Uuid => UUID_SCALAR.to_string(),
         FieldKind::Enum => enum_type_name(field),
         FieldKind::Json => JSON_SCALAR.to_string(),
-        // Relation/Media surface as UUID id(s); list-ness handled by `is_list`.
-        FieldKind::Relation | FieldKind::Media => UUID_SCALAR.to_string(),
+        // Relation → the target type's object (PascalCase). Media → the shared
+        // `Media` object. Both are registered for every content type in
+        // build.rs, so the ref never dangles (even for Single-type targets).
+        // List-ness (m2m / multiple) is applied by `is_list` in `wrap_ref`.
+        FieldKind::Relation => {
+            crate::graphql::build::pascal(&field.relation_meta().map(|m| m.target).unwrap_or_default())
+        }
+        FieldKind::Media => "Media".to_string(),
         _ => JSON_SCALAR.to_string(),
     }
 }
@@ -135,32 +141,34 @@ mod tests {
         );
     }
     #[test]
-    fn relation_single_not_list_many_is_list() {
-        // v1: relation fields surface as scalar UUID id(s), not object refs.
-        let one = f(
+    fn relation_base_is_target_object() {
+        // many_to_one relation → single object ref named after the target (PascalCase)
+        let mto = f(
             FieldKind::Relation,
             false,
-            json!({"target":"user","cardinality":"many_to_one"}),
+            json!({ "target": "writer", "cardinality": "many_to_one" }),
         );
-        assert!(!is_list(&one));
-        assert_eq!(base_type_name(&one), "UUID");
-        let many = f(
+        assert_eq!(base_type_name(&mto), "Writer");
+        assert!(!is_list(&mto));
+
+        // many_to_many → still object ref (Tag), but is_list = true
+        let mtm = f(
             FieldKind::Relation,
             false,
-            json!({"target":"tag","cardinality":"many_to_many"}),
+            json!({ "target": "tag", "cardinality": "many_to_many" }),
         );
-        assert!(is_list(&many));
-        assert_eq!(base_type_name(&many), "UUID");
+        assert_eq!(base_type_name(&mtm), "Tag");
+        assert!(is_list(&mtm));
     }
     #[test]
-    fn media_single_vs_multiple() {
-        // v1: media fields surface as scalar UUID id(s), not object refs.
-        let single = f(FieldKind::Media, false, json!({"multiple": false}));
+    fn media_base_is_media_object() {
+        let single = f(FieldKind::Media, false, json!({ "multiple": false }));
+        assert_eq!(base_type_name(&single), "Media");
         assert!(!is_list(&single));
-        assert_eq!(base_type_name(&single), "UUID");
-        let multiple = f(FieldKind::Media, false, json!({"multiple": true}));
+
+        let multiple = f(FieldKind::Media, false, json!({ "multiple": true }));
+        assert_eq!(base_type_name(&multiple), "Media");
         assert!(is_list(&multiple));
-        assert_eq!(base_type_name(&multiple), "UUID");
     }
     #[test]
     fn enum_name_is_field_pascal_plus_enum() {
