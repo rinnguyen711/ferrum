@@ -9,12 +9,19 @@
 //! and read back here through `ctx.data::<T>()` (ResolverContext derefs to the
 //! async-graphql `Context`).
 //!
-//! Populate: list/get derive which first-level relation/media fields the client
+//! Populate: list/get derive which first-level relation fields the client
 //! selected via the selection set (`selected_field_names` + `populate_arg`) and
 //! pass them as the batched `populate` arg to `content::list_entries`/`get_entry`,
 //! which embeds the related object(s) into each row's JSON before child resolvers
-//! run. Deeper sub-relations are not populated and resolve to GraphQL `null`
-//! (`json_field_resolver` returns `None` for absent keys).
+//! run. Media fields are NOT populated this way — the storage layer always
+//! embeds the full media object on read, so the `Media` resolvers read straight
+//! from the row JSON. One-level limit: a selected relation's own sub-relations
+//! are not populated. A NULLABLE deep relation resolves to GraphQL `null`
+//! (`json_field_resolver` returns `None` for the absent key); but a REQUIRED
+//! deep relation selected at depth 2+ (a `T!`/`[T!]!` field with no value)
+//! triggers a non-null violation that nulls its containing object instead of
+//! resolving to clean null. Multi-level populate is deferred (see the design
+//! spec); clients should not select beyond one relation level in v1.
 
 use async_graphql::dynamic::{FieldFuture, FieldValue, ResolverContext};
 use async_graphql::{Error as GqlError, ErrorExtensions, Value as GqlValue};
@@ -212,12 +219,15 @@ fn selected_field_names(entry: async_graphql::Lookahead<'_>) -> Vec<String> {
         .collect()
 }
 
-/// Filter selected names down to relation/media fields of `ct`, joined for the
-/// REST-style `populate` arg. `None` when nothing to populate.
+/// Filter selected names down to *relation* fields of `ct`, joined for the
+/// REST-style `populate` arg. `None` when nothing to populate. Media fields are
+/// excluded: the storage layer always embeds the full media object on read, so
+/// they are not valid `?populate` targets (`parse_populate` rejects them) and
+/// the `Media` object resolves from the already-embedded row JSON.
 fn populate_arg(selected: &[String], ct: &ContentType) -> Option<String> {
     let mut out: Vec<&str> = Vec::new();
     for f in &ct.fields {
-        if matches!(f.kind, FieldKind::Relation | FieldKind::Media)
+        if matches!(f.kind, FieldKind::Relation)
             && selected.iter().any(|s| s == &f.name)
             && !out.contains(&f.name.as_str())
         {

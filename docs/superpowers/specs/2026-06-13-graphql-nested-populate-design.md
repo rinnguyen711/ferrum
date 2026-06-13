@@ -39,11 +39,17 @@ existing batched pipeline embeds nested objects before child resolvers run.
   with the object's `id`).
 - **One-level populate depth for v1.** Relations selected at the first level
   (directly on the entry) are populated; their own sub-relations are not.
-- **Deeper sub-relations resolve to null, not error.** This is already how
-  `json_field_resolver` behaves for absent keys — an unpopulated sub-relation
-  is naturally null. No depth-walking/rejection logic. Forward-compatible:
-  when deeper populate ships later, those nulls become data with no breaking
-  change.
+- **A selected relation's own sub-relations are not populated (one-level
+  limit).** This is already how `json_field_resolver` behaves for absent keys —
+  an unpopulated sub-relation has no value in the row JSON. No depth-walking/
+  rejection logic. The resolved value depends on the deep field's nullability:
+  a NULLABLE deep relation resolves to GraphQL `null`; a REQUIRED deep relation
+  selected at depth 2+ (a `T!` / `[T!]!` field with no populated value)
+  triggers a GraphQL non-null violation, which nulls the containing object
+  rather than resolving to a clean null. Clients should not select beyond one
+  relation level in v1; full multi-level populate is deferred. Forward-
+  compatible: when deeper populate ships later, those nulls/violations become
+  data with no breaking change.
 - **No N+1.** Population is eager and batched, driven by the selection set at
   the list/get resolver — never per-row in a child resolver.
 
@@ -154,8 +160,10 @@ Extend `crates/bin/tests/graphql.rs` (testcontainers):
   tag objects.
 - **media field populated:** a media field selected as `cover { id url }`
   returns the media object.
-- **one-level cap:** `author { posts { title } }` — `author.posts` is null (not
-  populated, no error); `author`'s own scalar fields resolve.
+- **one-level cap:** `author { posts { title } }` — `author`'s own scalar
+  fields resolve, but its sub-relation `posts` is not populated. If `posts` is
+  nullable it resolves to null (no error); if it were a required `[Post!]!` the
+  unpopulated field would trigger a non-null violation that nulls `author`.
 - **relation to a Single type does not break schema** (regression, generalizes
   the existing `relation_to_single_type_does_not_break_schema`): now `banner`'s
   `page` (relation to Single `homepage`) is selectable as an object
@@ -172,9 +180,13 @@ no root field (assert SDL has `type Homepage` but not `homepages(`).
 
 ## Explicit non-goals (v1)
 
-- **Multi-level nested populate** (author { posts { ... } }) — deferred; deeper
-  levels are null. A later version walks the full selection tree with a depth
-  cap.
+- **Multi-level nested populate** (author { posts { ... } }) — deferred. A
+  selected relation's own sub-relations are not populated. Nullable deep
+  relations resolve to null; a REQUIRED deep relation selected at depth 2+ (the
+  unpopulated `T!` / `[T!]!` field has no value) triggers a GraphQL non-null
+  violation, which nulls the containing object rather than resolving to clean
+  null. Clients should not select beyond one relation level in v1. A later
+  version walks the full selection tree with a depth cap.
 - **Per-relation arguments** (filtering/paginating a nested relation list) — out
   of scope.
 - **DataLoader** — not needed; the eager batched populate already avoids N+1 at

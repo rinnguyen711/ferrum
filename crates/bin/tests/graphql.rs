@@ -526,6 +526,85 @@ async fn relation_to_single_type_object_selectable() {
     assert_eq!(q["data"]["banners"]["meta"]["total"], 0, "{q}");
 }
 
+/// The canonical 1x1 PNG used by the media tests.
+const TINY_PNG: &[u8] = &[
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+    0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+    0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+    0x42, 0x60, 0x82,
+];
+
+/// Upload the tiny PNG via the admin multipart endpoint and return the asset id.
+async fn upload_asset(app: &TestApp, filename: &str) -> String {
+    let part = reqwest::multipart::Part::bytes(TINY_PNG.to_vec())
+        .file_name(filename.to_string())
+        .mime_str("application/octet-stream")
+        .unwrap();
+    let form = reqwest::multipart::Form::new().part("file", part);
+
+    let resp = app
+        .admin(app.client.post(app.url("/admin/media/assets")))
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "{}", resp.text().await.unwrap());
+    let body: Value = resp.json().await.unwrap();
+    body["id"].as_str().unwrap().to_string()
+}
+
+/// A single media field populates to a nested `Media` object whose scalars
+/// (`id`/`file_name`/`mime_type`) resolve when selected under `data`. The
+/// media input is a scalar uuid, exactly like a forward relation.
+#[tokio::test]
+async fn media_field_populated() {
+    let app = TestApp::spawn().await;
+
+    // Content type `doc` with a single media field `cover`. This POST rebuilds
+    // the GraphQL schema, so `docs` / `DocInput` exist afterwards.
+    let r = app
+        .admin(app.client.post(app.url("/admin/content-types")))
+        .json(&json!({
+            "name": "doc", "display_name": "Doc",
+            "fields": [
+                {"name": "title", "kind": "string", "required": true},
+                {"name": "cover", "kind": "media", "kind_meta": {"multiple": false}}
+            ]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 201, "{}", r.text().await.unwrap());
+
+    // Upload an asset and capture its id.
+    let asset_id = upload_asset(&app, "cover.png").await;
+
+    // Create a doc whose `cover` references the asset (scalar uuid input).
+    let c = gql(
+        &app,
+        "mutation($d: DocInput!){ createDoc(data:$d){ id } }",
+        json!({"d": {"title": "P", "cover": asset_id.clone()}}),
+    )
+    .await;
+    assert!(c["errors"].is_null(), "{c}");
+
+    // Query selecting the media object's fields — proves the media field
+    // populates to a Media object, not a scalar uuid.
+    let q = gql(
+        &app,
+        "{ docs{ data{ title cover { id file_name mime_type } } } }",
+        json!({}),
+    )
+    .await;
+    assert!(q["errors"].is_null(), "{q}");
+    let row = &q["data"]["docs"]["data"][0];
+    assert_eq!(row["title"], "P", "{q}");
+    assert_eq!(row["cover"]["id"], asset_id, "media object populated: {q}");
+    assert_eq!(row["cover"]["file_name"], "cover.png", "{q}");
+    assert_eq!(row["cover"]["mime_type"], "image/png", "{q}");
+}
+
 // ---------------------------------------------------------------------------
 // Coverage-gap tests: field-kind round-trips + an extra error-code mapping.
 // ---------------------------------------------------------------------------
