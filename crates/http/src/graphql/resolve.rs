@@ -194,14 +194,21 @@ fn filters_to_raw_query(v: JsonValue) -> String {
 
 // --- selection-set populate ------------------------------------------------
 
-/// Sync: collect the names selected under the entry object. The `Lookahead`
-/// borrows the resolver context, so the owned `Vec<String>` must be extracted
-/// here (before the `FieldFuture`'s `async move`), then moved into the future.
+/// Sync: collect the names of the fields selected ON the entry object.
+///
+/// `entry` is a `Lookahead` positioned AT the field whose sub-selection holds
+/// the entry fields — for the list query that is `data` (`look_ahead().field
+/// ("data")`), for get-one it is the field itself. `selection_fields()` yields
+/// that field (e.g. `data`), so we must descend one more level via
+/// `selection_set()` to reach the entry's own fields (`title`, `author`, …).
+/// The `Lookahead` borrows the resolver context, so the owned `Vec<String>`
+/// must be extracted here (before the `FieldFuture`'s `async move`), then moved
+/// into the future.
 fn selected_field_names(entry: async_graphql::Lookahead<'_>) -> Vec<String> {
     entry
         .selection_fields()
         .iter()
-        .map(|sf| sf.name().to_string())
+        .flat_map(|sf| sf.selection_set().map(|child| child.name().to_string()))
         .collect()
 }
 
