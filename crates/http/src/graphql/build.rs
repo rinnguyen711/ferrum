@@ -141,7 +141,9 @@ fn register_enums(
 pub fn build_schema(types: &[ContentType]) -> Result<Schema, SchemaError> {
     let mut builder = Schema::build("Query", Some("Mutation"), None);
 
-    // Shared, registered once: custom scalars, Meta envelope, Media object.
+    // Shared, registered once: custom scalars + the Meta envelope. Relation
+    // and media fields surface as scalar UUID id(s) in v1 (see
+    // `scalars::base_type_name`), so no shared Media object is needed.
     builder = builder
         .register(Scalar::new(scalars::UUID_SCALAR))
         .register(Scalar::new(scalars::DATETIME_SCALAR))
@@ -164,19 +166,6 @@ pub fn build_schema(types: &[ContentType]) -> Result<Schema, SchemaError> {
             resolve::json_field_resolver("total"),
         ));
     builder = builder.register(meta);
-
-    let media = Object::new("Media")
-        .field(Field::new(
-            "id",
-            TypeRef::named_nn(scalars::UUID_SCALAR),
-            resolve::json_field_resolver("id"),
-        ))
-        .field(Field::new(
-            "url",
-            TypeRef::named(TypeRef::STRING),
-            resolve::json_field_resolver("url"),
-        ));
-    builder = builder.register(media);
 
     let mut query = Object::new("Query");
     let mut mutation = Object::new("Mutation");

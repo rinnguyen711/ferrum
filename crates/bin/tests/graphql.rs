@@ -200,6 +200,69 @@ async fn schema_reflects_new_type_without_restart() {
 }
 
 #[tokio::test]
+async fn relation_to_single_type_does_not_break_schema() {
+    // Regression: a relation whose target is a Single type used to type the
+    // field as an object ref to a type the schema never registers (Singles are
+    // excluded from v1), producing a dangling type ref → Schema::finish() Err.
+    // That froze the GraphQL schema on rebuild, so the `banner` type (and its
+    // `banners` query) would never appear. With relation/media as scalar UUID
+    // ids the schema always builds and the new type is selectable.
+    let app = TestApp::spawn().await;
+
+    // Single content type — a valid relation target whose REST validation only
+    // checks existence, not kind.
+    let r = app
+        .admin(app.client.post(app.url("/admin/content-types")))
+        .json(&json!({
+            "name": "homepage",
+            "display_name": "Homepage",
+            "kind": "single",
+            "fields": [{"name": "hero", "kind": "string"}]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 201, "{}", r.text().await.unwrap());
+
+    // Collection with a many_to_one relation pointing at the Single type. This
+    // create triggers the GraphQL rebuild — the trigger for the bug.
+    let r = app
+        .admin(app.client.post(app.url("/admin/content-types")))
+        .json(&json!({
+            "name": "banner",
+            "display_name": "Banner",
+            "fields": [
+                {"name": "title", "kind": "string"},
+                {
+                    "name": "page",
+                    "kind": "relation",
+                    "kind_meta": {"target": "homepage", "cardinality": "many_to_one"}
+                }
+            ]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 201, "{}", r.text().await.unwrap());
+
+    // Proof: the schema rebuilt WITH `banner`, and the relation field `page`
+    // (now a UUID scalar) is selectable. Before the fix the rebuild errored and
+    // froze the old schema → `banners` would be an unknown field.
+    let body = gql(
+        &app,
+        "{ banners(page:1,pageSize:5){ meta{ total } data{ title page } } }",
+        json!({}),
+    )
+    .await;
+    assert!(
+        body["errors"].is_null(),
+        "schema froze / page not selectable: {body}"
+    );
+    assert_eq!(body["data"]["banners"]["meta"]["total"], 0, "{body}");
+    assert!(body["data"]["banners"]["data"].is_array(), "{body}");
+}
+
+#[tokio::test]
 async fn mutation_denied_for_read_only_token() {
     let app = TestApp::spawn().await;
     make_article(&app).await;
