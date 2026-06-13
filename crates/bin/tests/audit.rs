@@ -86,3 +86,57 @@ async fn prune_removes_old_rows() {
     let removed = rustapi_sql::audit::prune_audit(&app.pool, 90).await.unwrap();
     assert!(removed >= 1);
 }
+
+#[tokio::test]
+async fn list_endpoint_filters_by_category() {
+    let app = TestApp::spawn().await;
+    wait_for_audit(&app.pool, "auth.login").await;
+    let resp = app
+        .admin(app.client.get(app.url("/api/admin/audit?category=auth")))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(body["total"].as_i64().unwrap() >= 1);
+    for r in body["rows"].as_array().unwrap() {
+        assert_eq!(r["category"], "auth");
+    }
+}
+
+#[tokio::test]
+async fn stats_endpoint_returns_counts() {
+    let app = TestApp::spawn().await;
+    wait_for_audit(&app.pool, "auth.login").await;
+    let resp = app
+        .admin(app.client.get(app.url("/api/admin/audit/stats")))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(body["sign_ins"].as_i64().unwrap() >= 1);
+}
+
+#[tokio::test]
+async fn audit_list_requires_admin() {
+    let app = TestApp::spawn().await;
+    let resp = app.client.get(app.url("/api/admin/audit")).send().await.unwrap();
+    assert!(resp.status() == 401 || resp.status() == 403, "got {}", resp.status());
+}
+
+#[tokio::test]
+async fn export_returns_csv() {
+    let app = TestApp::spawn().await;
+    wait_for_audit(&app.pool, "auth.login").await;
+    let resp = app
+        .admin(app.client.get(app.url("/api/admin/audit/export")))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let ct = resp.headers().get("content-type").unwrap().to_str().unwrap().to_string();
+    assert!(ct.contains("text/csv"), "content-type was {ct}");
+    let text = resp.text().await.unwrap();
+    assert!(text.starts_with("time,actor,action"));
+}

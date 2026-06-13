@@ -7,6 +7,7 @@ use axum::Router;
 use std::path::Path;
 
 pub mod api_tokens;
+pub mod audit;
 pub mod components;
 pub mod content;
 pub mod health;
@@ -34,6 +35,7 @@ pub fn build_router(state: AppState, extra: Vec<Router<AppState>>) -> Router {
         .merge(media::router())
         .merge(components::router())
         .merge(api_tokens::router())
+        .merge(audit::router())
         .merge(webhooks::router())
         .merge(roles::router())
         .merge(auth::protected_router());
