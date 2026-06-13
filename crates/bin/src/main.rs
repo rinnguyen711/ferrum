@@ -4,7 +4,7 @@ use rustapi::config::Config;
 use rustapi::seed;
 use rustapi_http::{
     build_router, mount_studio, resolve_provider, secret_key_from_env, AppConfig, AppState,
-    NoopAuditSink, NoopHook, RoleAuthz, RoleRegistry,
+    NoopHook, RoleAuthz, RoleRegistry,
 };
 use rustapi_schema::{
     ComponentRegistry, ComponentService, SchemaRegistry, SchemaService, MIGRATOR,
@@ -95,7 +95,7 @@ async fn main() -> Result<()> {
         roles,
         gql: rustapi_http::graphql::GqlRegistry::new(),
         events: Arc::new(rustapi::webhook_worker::DbEventSink::new(pool.clone())),
-        audit: Arc::new(NoopAuditSink), // TODO(task9): swap to DbAuditSink
+        audit: Arc::new(rustapi::audit_sink::DbAuditSink::new(pool.clone())),
         hooks: Arc::new(NoopHook),
         config: AppConfig {
             jwt_secret: cfg.jwt_secret.clone(),
@@ -121,6 +121,12 @@ async fn main() -> Result<()> {
     }
 
     rustapi::webhook_worker::spawn_worker(pool.clone());
+
+    let audit_retention_days = std::env::var("AUDIT_RETENTION_DAYS")
+        .ok()
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(90);
+    rustapi::audit_sink::spawn_prune_worker(pool.clone(), audit_retention_days);
 
     let mut app = build_router(state, vec![]);
     tracing::info!(

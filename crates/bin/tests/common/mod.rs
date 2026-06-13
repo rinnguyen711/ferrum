@@ -1,9 +1,10 @@
 //! Shared integration-test plumbing. Spins a real Postgres via testcontainers
 //! and the rustapi router in-process, hitting it via reqwest.
 
+use rustapi::audit_sink::DbAuditSink;
 use rustapi_http::{
-    build_router, resolve_provider, secret_key_from_env, AppConfig, AppState, EventSink,
-    NoopAuditSink, NoopHook, NoopSink, RoleAuthz, RoleRegistry, WriteHook,
+    build_router, resolve_provider, secret_key_from_env, AppConfig, AppState, EventSink, NoopHook,
+    NoopSink, RoleAuthz, RoleRegistry, WriteHook,
 };
 use rustapi_schema::{
     ComponentRegistry, ComponentService, SchemaRegistry, SchemaService, MIGRATOR,
@@ -123,7 +124,7 @@ impl TestApp {
             roles,
             gql: rustapi_http::graphql::GqlRegistry::new(),
             events: sink,
-            audit: Arc::new(NoopAuditSink),
+            audit: Arc::new(DbAuditSink::new(pool.clone())),
             hooks: hook,
             config: AppConfig {
                 jwt_secret: JWT_SECRET.into(),
@@ -199,4 +200,23 @@ impl TestApp {
     pub fn admin(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
         builder.header("authorization", format!("Bearer {}", self.token))
     }
+}
+
+/// Poll `_audit_log` until a row matching `action` exists. Panics after ~1s.
+#[allow(dead_code)]
+pub async fn wait_for_audit(pool: &sqlx::PgPool, action: &str) -> sqlx::postgres::PgRow {
+    for _ in 0..50 {
+        let row = sqlx::query(
+            "SELECT * FROM _audit_log WHERE action = $1 ORDER BY created_at DESC LIMIT 1",
+        )
+        .bind(action)
+        .fetch_optional(pool)
+        .await
+        .expect("query audit");
+        if let Some(r) = row {
+            return r;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    panic!("no audit row for action {action} after 1s");
 }
