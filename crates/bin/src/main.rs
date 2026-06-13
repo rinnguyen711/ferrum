@@ -93,6 +93,7 @@ async fn main() -> Result<()> {
         components,
         authz: Arc::new(RoleAuthz::new(Arc::new(roles.clone()))),
         roles,
+        gql: rustapi_http::graphql::GqlRegistry::new(),
         events: Arc::new(rustapi::webhook_worker::DbEventSink::new(pool.clone())),
         hooks: Arc::new(NoopHook),
         config: AppConfig {
@@ -106,6 +107,17 @@ async fn main() -> Result<()> {
         storage,
         secret_key,
     };
+
+    // Build the initial GraphQL schema from the hydrated content-type
+    // registry. Rebuilt on content-type CRUD (see routes/schema.rs).
+    {
+        let types = state.schemas.registry().list().await;
+        state
+            .gql
+            .rebuild(&types)
+            .await
+            .context("build initial GraphQL schema")?;
+    }
 
     rustapi::webhook_worker::spawn_worker(pool.clone());
 

@@ -164,6 +164,7 @@ pub struct AppState {
     pub components: ComponentService,
     pub authz: Arc<dyn Authz>,
     pub roles: crate::roles::RoleRegistry,
+    pub gql: crate::graphql::GqlRegistry,
     pub events: Arc<dyn EventSink>,
     pub hooks: Arc<dyn WriteHook>,
     pub config: AppConfig,

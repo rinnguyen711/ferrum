@@ -107,6 +107,7 @@ mod tests {
             components,
             authz: Arc::new(AlwaysAllow),
             roles: crate::RoleRegistry::new(),
+            gql: crate::graphql::GqlRegistry::new(),
             events: Arc::new(NoopSink),
             hooks: Arc::new(NoopHook),
             config: AppConfig {

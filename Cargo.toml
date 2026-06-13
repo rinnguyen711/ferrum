@@ -11,7 +11,7 @@ members = [
 
 [workspace.package]
 edition = "2021"
-rust-version = "1.88"
+rust-version = "1.89"
 license = "MIT OR Apache-2.0"
 authors = ["rustapi contributors"]
 
@@ -27,6 +27,12 @@ axum = { version = "0.7", features = ["macros", "multipart"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["trace", "fs"] }
 hyper = "1.4"
+
+# GraphQL
+async-graphql = { version = "7", features = ["dynamic-schema", "chrono"] }
+# Pinned to the last 7.x that targets axum 0.7 (>=7.0.14 jumped to axum 0.8,
+# which conflicts with this workspace's axum 0.7 router).
+async-graphql-axum = "=7.0.13"
 
 # Database
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "macros", "migrate", "uuid", "chrono", "json"] }
