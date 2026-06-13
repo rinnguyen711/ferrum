@@ -43,14 +43,20 @@ impl Actor {
             Principal::ApiToken { id, .. } => Actor {
                 kind: ActorKind::ApiToken,
                 id: Some(*id),
-                label: token_label.map(str::to_string).unwrap_or_else(|| id.to_string()),
+                label: token_label
+                    .map(str::to_string)
+                    .unwrap_or_else(|| id.to_string()),
             },
         }
     }
 
     /// A non-authenticated actor (e.g. a failed login with an unknown user).
     pub fn system(label: impl Into<String>) -> Self {
-        Actor { kind: ActorKind::System, id: None, label: label.into() }
+        Actor {
+            kind: ActorKind::System,
+            id: None,
+            label: label.into(),
+        }
     }
 }
 
@@ -102,7 +108,12 @@ impl AuditEntry {
         }
     }
 
-    pub fn target(mut self, ty: impl Into<String>, id: impl Into<String>, label: impl Into<String>) -> Self {
+    pub fn target(
+        mut self,
+        ty: impl Into<String>,
+        id: impl Into<String>,
+        label: impl Into<String>,
+    ) -> Self {
         self.target_type = Some(ty.into());
         self.target_id = Some(id.into());
         self.target_label = Some(label.into());
@@ -173,7 +184,10 @@ mod tests {
 
     #[test]
     fn token_principal_uses_supplied_label() {
-        let p = Principal::ApiToken { id: Uuid::nil(), scopes: vec![] };
+        let p = Principal::ApiToken {
+            id: Uuid::nil(),
+            scopes: vec![],
+        };
         let a = Actor::from_principal(&p, Some("Website ISR"));
         assert_eq!(a.kind, ActorKind::ApiToken);
         assert_eq!(a.label, "Website ISR");

@@ -83,7 +83,9 @@ async fn prune_removes_old_rows() {
     .execute(&app.pool)
     .await
     .unwrap();
-    let removed = rustapi_sql::audit::prune_audit(&app.pool, 90).await.unwrap();
+    let removed = rustapi_sql::audit::prune_audit(&app.pool, 90)
+        .await
+        .unwrap();
     assert!(removed >= 1);
 }
 
@@ -121,8 +123,17 @@ async fn stats_endpoint_returns_counts() {
 #[tokio::test]
 async fn audit_list_requires_admin() {
     let app = TestApp::spawn().await;
-    let resp = app.client.get(app.url("/api/admin/audit")).send().await.unwrap();
-    assert!(resp.status() == 401 || resp.status() == 403, "got {}", resp.status());
+    let resp = app
+        .client
+        .get(app.url("/api/admin/audit"))
+        .send()
+        .await
+        .unwrap();
+    assert!(
+        resp.status() == 401 || resp.status() == 403,
+        "got {}",
+        resp.status()
+    );
 }
 
 #[tokio::test]
@@ -135,7 +146,13 @@ async fn export_returns_csv() {
         .await
         .unwrap();
     assert_eq!(resp.status(), 200);
-    let ct = resp.headers().get("content-type").unwrap().to_str().unwrap().to_string();
+    let ct = resp
+        .headers()
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
     assert!(ct.contains("text/csv"), "content-type was {ct}");
     let text = resp.text().await.unwrap();
     assert!(text.starts_with("time,actor,action"));

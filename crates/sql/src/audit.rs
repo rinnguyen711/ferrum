@@ -106,14 +106,32 @@ fn row_to_audit(r: &sqlx::postgres::PgRow) -> AuditRow {
 
 /// Returns `(rows, total_matching)`. `total` ignores limit/offset so the UI can
 /// page. Built with positional binds in a fixed order to stay injection-safe.
-pub async fn query_audit(pool: &PgPool, q: &AuditQuery) -> Result<(Vec<AuditRow>, i64), sqlx::Error> {
+pub async fn query_audit(
+    pool: &PgPool,
+    q: &AuditQuery,
+) -> Result<(Vec<AuditRow>, i64), sqlx::Error> {
     let mut where_sql = String::from(" WHERE 1=1");
     let mut n = 0;
-    if q.category.is_some() { n += 1; where_sql.push_str(&format!(" AND category = ${n}")); }
-    if q.status.is_some()   { n += 1; where_sql.push_str(&format!(" AND status = ${n}")); }
-    if q.actor_id.is_some() { n += 1; where_sql.push_str(&format!(" AND actor_id = ${n}")); }
-    if q.target_type.is_some() { n += 1; where_sql.push_str(&format!(" AND target_type = ${n}")); }
-    if q.target_id.is_some()   { n += 1; where_sql.push_str(&format!(" AND target_id = ${n}")); }
+    if q.category.is_some() {
+        n += 1;
+        where_sql.push_str(&format!(" AND category = ${n}"));
+    }
+    if q.status.is_some() {
+        n += 1;
+        where_sql.push_str(&format!(" AND status = ${n}"));
+    }
+    if q.actor_id.is_some() {
+        n += 1;
+        where_sql.push_str(&format!(" AND actor_id = ${n}"));
+    }
+    if q.target_type.is_some() {
+        n += 1;
+        where_sql.push_str(&format!(" AND target_type = ${n}"));
+    }
+    if q.target_id.is_some() {
+        n += 1;
+        where_sql.push_str(&format!(" AND target_id = ${n}"));
+    }
     if q.q.is_some() {
         n += 1;
         where_sql.push_str(&format!(
@@ -124,18 +142,31 @@ pub async fn query_audit(pool: &PgPool, q: &AuditQuery) -> Result<(Vec<AuditRow>
     let count_sql = format!("SELECT count(*) AS c FROM _audit_log{where_sql}");
     let list_sql = format!(
         "SELECT * FROM _audit_log{where_sql} ORDER BY created_at DESC LIMIT ${} OFFSET ${}",
-        n + 1, n + 2
+        n + 1,
+        n + 2
     );
 
     macro_rules! bind_where {
         ($query:expr) => {{
             let mut query = $query;
-            if let Some(v) = &q.category { query = query.bind(v); }
-            if let Some(v) = &q.status { query = query.bind(v); }
-            if let Some(v) = &q.actor_id { query = query.bind(v); }
-            if let Some(v) = &q.target_type { query = query.bind(v); }
-            if let Some(v) = &q.target_id { query = query.bind(v); }
-            if let Some(v) = &q.q { query = query.bind(format!("%{v}%")); }
+            if let Some(v) = &q.category {
+                query = query.bind(v);
+            }
+            if let Some(v) = &q.status {
+                query = query.bind(v);
+            }
+            if let Some(v) = &q.actor_id {
+                query = query.bind(v);
+            }
+            if let Some(v) = &q.target_type {
+                query = query.bind(v);
+            }
+            if let Some(v) = &q.target_id {
+                query = query.bind(v);
+            }
+            if let Some(v) = &q.q {
+                query = query.bind(format!("%{v}%"));
+            }
             query
         }};
     }
@@ -146,8 +177,15 @@ pub async fn query_audit(pool: &PgPool, q: &AuditQuery) -> Result<(Vec<AuditRow>
     };
 
     let rows = {
-        let query = bind_where!(sqlx::query(&list_sql)).bind(q.limit).bind(q.offset);
-        query.fetch_all(pool).await?.iter().map(row_to_audit).collect()
+        let query = bind_where!(sqlx::query(&list_sql))
+            .bind(q.limit)
+            .bind(q.offset);
+        query
+            .fetch_all(pool)
+            .await?
+            .iter()
+            .map(row_to_audit)
+            .collect()
     };
 
     Ok((rows, total))
@@ -158,7 +196,10 @@ pub async fn audit_category_counts(pool: &PgPool) -> Result<Vec<(String, i64)>, 
     let rows = sqlx::query("SELECT category, count(*) AS c FROM _audit_log GROUP BY category")
         .fetch_all(pool)
         .await?;
-    Ok(rows.iter().map(|r| (r.get::<String, _>("category"), r.get::<i64, _>("c"))).collect())
+    Ok(rows
+        .iter()
+        .map(|r| (r.get::<String, _>("category"), r.get::<i64, _>("c")))
+        .collect())
 }
 
 /// The four stat-card numbers, all over the last 90 days.
