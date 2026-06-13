@@ -2,8 +2,8 @@
 //! and the rustapi router in-process, hitting it via reqwest.
 
 use rustapi_http::{
-    build_router, resolve_provider, secret_key_from_env, AppConfig, AppState, AuditSink,
-    EventSink, NoopAuditSink, NoopHook, NoopSink, RoleAuthz, RoleRegistry, WriteHook,
+    build_router, resolve_provider, secret_key_from_env, AppConfig, AppState, EventSink,
+    NoopAuditSink, NoopHook, NoopSink, RoleAuthz, RoleRegistry, WriteHook,
 };
 use rustapi_schema::{
     ComponentRegistry, ComponentService, SchemaRegistry, SchemaService, MIGRATOR,

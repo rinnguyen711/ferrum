@@ -349,7 +349,7 @@ pub fn update_field(ct_name: String) -> impl Fn(ResolverContext) -> FieldFuture 
             let pr = pr?;
             let id = id?;
             let body = body?;
-            let entry = content::update_entry(&st, &pr, &ct_name, id, body)
+            let (entry, _changes) = content::update_entry(&st, &pr, &ct_name, id, body)
                 .await
                 .map_err(gql_err)?;
             Ok(Some(FieldValue::value(json_to_gql(entry))))

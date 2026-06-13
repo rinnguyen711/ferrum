@@ -270,8 +270,12 @@ pub(crate) async fn update_entry(
     ct_name: &str,
     id: Uuid,
     body: Map<String, Value>,
-) -> Result<Value, Error> {
+) -> Result<(Value, Vec<rustapi_core::FieldChange>), Error> {
     let ct = authorize_collection(state, principal, Action::ContentWrite, ct_name).await?;
+
+    // Snapshot the prior record (best-effort) so the handler can build a
+    // field-level audit diff. Populate is omitted to keep the diff scalar.
+    let prior = get_entry(state, principal, ct_name, id, None).await.ok();
 
     let ctx = WriteContext {
         content_type: &ct.name,
@@ -352,7 +356,8 @@ pub(crate) async fn update_entry(
             id,
         })
         .await;
-    Ok(record)
+    let changes = diff_records(prior.as_ref(), &record);
+    Ok((record, changes))
 }
 
 pub(crate) async fn delete_entry(
@@ -410,11 +415,30 @@ async fn create(
     State(state): State<AppState>,
     Path(ct_name): Path<String>,
     axum::extract::Extension(principal): axum::extract::Extension<Principal>,
+    axum::extract::Extension(ctx): axum::extract::Extension<rustapi_core::RequestContext>,
     Json(body): Json<Map<String, Value>>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     let record = create_entry(&state, &principal, &ct_name, body)
         .await
         .map_err(ApiError)?;
+    if let Some(id) = record
+        .get("id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok())
+    {
+        let label = entry_label(&record, &id);
+        audit_content(
+            &state,
+            &principal,
+            ctx,
+            "entry.create",
+            &ct_name,
+            &id,
+            label,
+            vec![],
+        )
+        .await;
+    }
     Ok((StatusCode::CREATED, Json(record)))
 }
 
@@ -435,23 +459,47 @@ async fn update(
     State(state): State<AppState>,
     Path((ct_name, id)): Path<(String, Uuid)>,
     axum::extract::Extension(principal): axum::extract::Extension<Principal>,
+    axum::extract::Extension(ctx): axum::extract::Extension<rustapi_core::RequestContext>,
     Json(body): Json<Map<String, Value>>,
 ) -> Result<Json<Value>, ApiError> {
-    Ok(Json(
-        update_entry(&state, &principal, &ct_name, id, body)
-            .await
-            .map_err(ApiError)?,
-    ))
+    let (record, changes) = update_entry(&state, &principal, &ct_name, id, body)
+        .await
+        .map_err(ApiError)?;
+    let label = entry_label(&record, &id);
+    audit_content(
+        &state,
+        &principal,
+        ctx,
+        "entry.update",
+        &ct_name,
+        &id,
+        label,
+        changes,
+    )
+    .await;
+    Ok(Json(record))
 }
 
 async fn delete_one(
     State(state): State<AppState>,
     Path((ct_name, id)): Path<(String, Uuid)>,
     axum::extract::Extension(principal): axum::extract::Extension<Principal>,
+    axum::extract::Extension(ctx): axum::extract::Extension<rustapi_core::RequestContext>,
 ) -> Result<StatusCode, ApiError> {
     delete_entry(&state, &principal, &ct_name, id)
         .await
         .map_err(ApiError)?;
+    audit_content(
+        &state,
+        &principal,
+        ctx,
+        "entry.delete",
+        &ct_name,
+        &id,
+        id.to_string(),
+        vec![],
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -475,6 +523,75 @@ pub(crate) fn db(e: sqlx::Error) -> ApiError {
         )));
     }
     ApiError(Error::Internal(anyhow::anyhow!(e)))
+}
+
+/// Best-effort human label for an entry, from its JSON body; falls back to id.
+fn entry_label(record: &serde_json::Value, id: &uuid::Uuid) -> String {
+    for key in ["title", "name", "label", "slug"] {
+        if let Some(s) = record.get(key).and_then(|v| v.as_str()) {
+            if !s.is_empty() {
+                return s.to_string();
+            }
+        }
+    }
+    id.to_string()
+}
+
+/// Field-level diff between two entry JSON objects: any top-level key whose
+/// stringified value changed. Skips internal/system keys.
+fn diff_records(
+    before: Option<&serde_json::Value>,
+    after: &serde_json::Value,
+) -> Vec<rustapi_core::FieldChange> {
+    use serde_json::Value;
+    fn show(v: Option<&Value>) -> String {
+        match v {
+            None | Some(Value::Null) => "—".to_string(),
+            Some(Value::String(s)) => s.clone(),
+            Some(other) => other.to_string(),
+        }
+    }
+    let skip = ["id", "created_at", "updated_at", "published_at"];
+    let after_obj = match after.as_object() {
+        Some(o) => o,
+        None => return Vec::new(),
+    };
+    let before_obj = before.and_then(|b| b.as_object());
+    let mut out = Vec::new();
+    for (k, av) in after_obj {
+        if skip.contains(&k.as_str()) {
+            continue;
+        }
+        let bv = before_obj.and_then(|o| o.get(k));
+        if bv.map(|x| show(Some(x))) != Some(show(Some(av))) {
+            out.push(rustapi_core::FieldChange {
+                field: k.clone(),
+                from: show(bv),
+                to: show(Some(av)),
+            });
+        }
+    }
+    out
+}
+
+/// Fire an audit record for a content action (best-effort).
+#[allow(clippy::too_many_arguments)]
+async fn audit_content(
+    state: &AppState,
+    principal: &Principal,
+    ctx: rustapi_core::RequestContext,
+    action: &str,
+    content_type: &str,
+    id: &uuid::Uuid,
+    label: String,
+    changes: Vec<rustapi_core::FieldChange>,
+) {
+    let actor = rustapi_core::Actor::from_principal(principal, None);
+    let entry = rustapi_core::AuditEntry::new(action, actor)
+        .target(content_type, id.to_string(), label)
+        .changes(changes)
+        .ctx(ctx);
+    state.audit.record(entry).await;
 }
 
 /// Parse `?populate=` and apply each forward/inverse pass in payload order.
@@ -795,16 +912,18 @@ async fn publish_entry(
     State(state): State<AppState>,
     Path((ct_name, id)): Path<(String, Uuid)>,
     axum::extract::Extension(principal): axum::extract::Extension<Principal>,
+    axum::extract::Extension(ctx): axum::extract::Extension<rustapi_core::RequestContext>,
 ) -> Result<Json<Value>, ApiError> {
-    set_publish_state(state, ct_name, id, principal, true).await
+    set_publish_state(state, ct_name, id, principal, ctx, true).await
 }
 
 async fn unpublish_entry(
     State(state): State<AppState>,
     Path((ct_name, id)): Path<(String, Uuid)>,
     axum::extract::Extension(principal): axum::extract::Extension<Principal>,
+    axum::extract::Extension(ctx): axum::extract::Extension<rustapi_core::RequestContext>,
 ) -> Result<Json<Value>, ApiError> {
-    set_publish_state(state, ct_name, id, principal, false).await
+    set_publish_state(state, ct_name, id, principal, ctx, false).await
 }
 
 async fn set_publish_state(
@@ -812,6 +931,7 @@ async fn set_publish_state(
     ct_name: String,
     id: Uuid,
     principal: Principal,
+    ctx: rustapi_core::RequestContext,
     publish: bool,
 ) -> Result<Json<Value>, ApiError> {
     ensure(&state, &principal, Action::ContentWrite, &ct_name).await?;
@@ -854,7 +974,39 @@ async fn set_publish_state(
         }
     };
     state.events.emit(ev).await;
-    Ok(Json(row_to_json(&ct, &row)?))
+    let record = row_to_json(&ct, &row)?;
+    let label = entry_label(&record, &id);
+    let (action, change) = if publish {
+        (
+            "entry.publish",
+            rustapi_core::FieldChange {
+                field: "status".into(),
+                from: "—".into(),
+                to: "Published".into(),
+            },
+        )
+    } else {
+        (
+            "entry.unpublish",
+            rustapi_core::FieldChange {
+                field: "status".into(),
+                from: "—".into(),
+                to: "Draft".into(),
+            },
+        )
+    };
+    audit_content(
+        &state,
+        &principal,
+        ctx,
+        action,
+        &ct.name,
+        &id,
+        label,
+        vec![change],
+    )
+    .await;
+    Ok(Json(record))
 }
 
 /// Apply each multiple-media replace-set inside the txn: clear the gallery, then
