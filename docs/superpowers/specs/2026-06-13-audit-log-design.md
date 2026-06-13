@@ -14,7 +14,7 @@ is the source-of-truth mockup) plus a read API.
 
 | Question | Choice |
 |---|---|
-| Actor capture | Enrich the existing `EventSink` flow; a DB-backed audit consumer runs alongside webhook fan-out. Actor + request-context travel in an envelope around `Event`. |
+| Actor capture | Dedicated `AuditSink` (DB-backed) in `AppState`, called alongside the existing `events.emit` at each write handler and directly from the login handler. The webhook `EventSink` is left untouched. Actor + request-context + changes are gathered at the handler (all already in scope). |
 | Actor shape | Typed actor + denormalized label (`actor_type`, `actor_id` nullable, `actor_label` snapshot) — survives deletion. |
 | Scope | Everything stateful: content + schema + users + roles + webhooks + tokens + settings + auth (login/login_failed). |
 | Diff detail | Changed-fields diff: `[{field, from, to}]`. Create = new values; delete = note/prior; update = changed fields only. |
@@ -23,21 +23,26 @@ is the source-of-truth mockup) plus a read API.
 | 2FA action | Dropped — no 2FA exists in codebase, nothing to emit. |
 | UI | Full screen ported from `audit.jsx`: stat cards, category tabs, search/actor/status filters, expandable rows, CSV export. |
 
-## Approach (chosen: A)
+## Approach (chosen: A, refined)
 
-Add an `Actor` + `RequestContext` envelope to emitted events and register a
-DB-backed `AuditSink` consumer alongside the existing webhook fan-out. Content
-and schema events flow through the path that already exists for webhooks; admin
-and auth actions get new emit calls at their handlers.
+Add a dedicated `AuditSink` (DB-backed) to `AppState`, mirroring the existing
+`EventSink` wiring. Each write handler calls `state.audit.record(entry)`
+alongside its existing `events.emit(...)`; the login handler calls it directly.
+`Actor`, `RequestContext`, and the changed-fields diff are gathered at the
+handler, where `principal` (or attempted email) and before/after state are
+already in scope.
+
+**Why dedicated `AuditSink` over wrapping `Event`:** the login path has no
+`Event`/`EventSink` at all, and the webhook `EventSink::emit` signature would
+otherwise have to change at every call site. A separate sink keeps webhooks
+untouched and gives one clear capture call per handler.
 
 Rejected:
 - **B (Tower middleware recording method/path/status):** loses domain semantics
   (can't distinguish publish from edit), can't produce a field diff, can't
   express login outcomes cleanly.
-- **C (explicit `audit.record(...)` in every handler):** duplicates call sites,
-  drifts from the event flow already maintained for webhooks.
-
-A matches every locked decision and gives webhooks actor attribution for free.
+- **Wrapping `Event` in an envelope through `EventSink`:** more invasive (touches
+  the webhook sink + every emit signature) and login still needs a side path.
 
 ## Section 1 — Data model & migration
 
@@ -79,15 +84,20 @@ Prune: `DELETE WHERE created_at < now() - INTERVAL '90 days'` (interval from env
 - `Actor { kind: ActorKind, id: Option<Uuid>, label: String }` — built from
   `Principal`. `User` → email label; `ApiToken` → token-name label; unknown
   failed login → `system`.
-- `RequestContext { ip, user_agent, request_id }`.
-- `AuditEnvelope { actor, ctx, status, target_label, changes, note, event }`
-  wrapping `Event`. Webhook sink reads `.event` (behavior unchanged); audit sink
-  reads the whole envelope.
+- `ActorKind` enum: `User`, `ApiToken`, `System`.
+- `RequestContext { ip: Option<String>, user_agent: Option<String>, request_id: Option<String> }`.
+- `FieldChange { field: String, from: String, to: String }`.
+- `AuditEntry { action: String, category: String, status: String, actor: Actor,
+  target_type: Option<String>, target_id: Option<String>, target_label:
+  Option<String>, changes: Vec<FieldChange>, note: Option<String>, ctx:
+  RequestContext }` — the rich record a handler hands to the sink.
 
 **`AuditSink` trait + DB impl** (`crates/http` state, mirrors `EventSink`):
+- `pub trait AuditSink { async fn record(&self, entry: AuditEntry); }`
 - `Arc<dyn AuditSink>` in `AppState`, default `NoopAuditSink`.
 - DB impl inserts one `_audit_log` row, **fire-and-forget** (spawn + log on
   error) — an audit write never blocks or fails the user action.
+- Webhook `EventSink` is untouched.
 
 **Request context middleware** (Tower layer): sets `request_id` (uuid), reads
 `X-Forwarded-For`/peer IP and `User-Agent`, stores them in a request extension.
