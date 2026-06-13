@@ -526,7 +526,7 @@ pub(crate) fn db(e: sqlx::Error) -> ApiError {
 }
 
 /// Best-effort human label for an entry, from its JSON body; falls back to id.
-fn entry_label(record: &serde_json::Value, id: &uuid::Uuid) -> String {
+pub(crate) fn entry_label(record: &serde_json::Value, id: &uuid::Uuid) -> String {
     for key in ["title", "name", "label", "slug"] {
         if let Some(s) = record.get(key).and_then(|v| v.as_str()) {
             if !s.is_empty() {
@@ -576,7 +576,7 @@ fn diff_records(
 
 /// Fire an audit record for a content action (best-effort).
 #[allow(clippy::too_many_arguments)]
-async fn audit_content(
+pub(crate) async fn audit_content(
     state: &AppState,
     principal: &Principal,
     ctx: rustapi_core::RequestContext,

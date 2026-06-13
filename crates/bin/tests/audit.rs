@@ -157,3 +157,47 @@ async fn export_returns_csv() {
     let text = resp.text().await.unwrap();
     assert!(text.starts_with("time,actor,action"));
 }
+
+#[tokio::test]
+async fn graphql_content_write_is_audited() {
+    let app = TestApp::spawn().await;
+
+    // Register the `article` content type (also wires GraphQL create/update).
+    let r = app
+        .admin(app.client.post(app.url("/admin/content-types")))
+        .json(&json!({
+            "name": "article", "display_name": "Article",
+            "fields": [
+                {"name": "title", "kind": "string", "required": true},
+                {"name": "views", "kind": "integer"}
+            ]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 201, "{}", r.text().await.unwrap());
+
+    // Create an entry via GraphQL (not REST) — this is the path that was a
+    // blind spot before the fix.
+    let resp = app
+        .admin(app.client.post(app.url("/api/graphql")))
+        .json(&json!({
+            "query": "mutation($d: ArticleInput!){ createArticle(data:$d){ id title } }",
+            "variables": {"d": {"title": "Via GraphQL", "views": 1}}
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["data"]["createArticle"]["title"], "Via GraphQL",
+        "{body}"
+    );
+
+    // A GraphQL create must now leave an audit row.
+    let row = wait_for_audit(&app.pool, "entry.create").await;
+    assert_eq!(row.get::<String, _>("category"), "content");
+    assert_eq!(row.get::<String, _>("target_type"), "article");
+    assert_eq!(row.get::<String, _>("target_label"), "Via GraphQL");
+}

@@ -31,6 +31,17 @@ fn internal<E: std::fmt::Display>(e: E) -> ApiError {
     ApiError(Error::Internal(anyhow::anyhow!(e.to_string())))
 }
 
+/// Neutralize spreadsheet formula injection: a leading `= + - @` (or a control
+/// char some tools strip to one) makes a cell execute as a formula on open.
+/// Prefixing a single quote forces it to be treated as text.
+fn csv_safe(s: &str) -> String {
+    if s.starts_with(['=', '+', '-', '@', '\t', '\r']) {
+        format!("'{s}")
+    } else {
+        s.to_string()
+    }
+}
+
 #[derive(Deserialize)]
 struct ListParams {
     category: Option<String>,
@@ -100,19 +111,35 @@ async fn export(
     ensure_admin(&state, &principal).await?;
     let q = p.to_query(10_000, 0);
     let (rows, _) = query_audit(&state.pool, &q).await.map_err(internal)?;
-    let mut csv = String::from("time,actor,action,target_type,target,status,ip\n");
+
+    // The `csv` crate handles RFC-4180 quoting/escaping (commas, quotes,
+    // newlines). `csv_safe` additionally neutralizes spreadsheet formula
+    // injection on the attacker-influenced text fields (titles, emails).
+    let mut wtr = csv::WriterBuilder::new().from_writer(Vec::new());
+    wtr.write_record([
+        "time",
+        "actor",
+        "action",
+        "target_type",
+        "target",
+        "status",
+        "ip",
+    ])
+    .map_err(internal)?;
     for r in rows {
-        csv.push_str(&format!(
-            "{},{},{},{},{},{},{}\n",
+        wtr.write_record([
             r.created_at.to_rfc3339(),
-            r.actor_label.replace(',', " "),
-            r.action,
-            r.target_type.unwrap_or_default(),
-            r.target_label.unwrap_or_default().replace(',', " "),
+            csv_safe(&r.actor_label),
+            csv_safe(&r.action),
+            csv_safe(&r.target_type.unwrap_or_default()),
+            csv_safe(&r.target_label.unwrap_or_default()),
             r.status,
             r.ip.unwrap_or_default(),
-        ));
+        ])
+        .map_err(internal)?;
     }
+    let csv = String::from_utf8(wtr.into_inner().map_err(internal)?).map_err(internal)?;
+
     Ok((
         [
             (axum::http::header::CONTENT_TYPE, "text/csv"),
