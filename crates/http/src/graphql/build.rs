@@ -156,7 +156,10 @@ pub fn build_schema(types: &[ContentType]) -> Result<Schema, SchemaError> {
         .register(Scalar::new(scalars::JSON_SCALAR));
 
     // Shared Media object. Media fields embed a media object into the row JSON
-    // (see media_embed), so children read id/url/etc. from the parent value.
+    // (see media_embed), so children read the AssetView keys from the parent
+    // value. `size_bytes` is i64 in AssetView; async-graphql's Int is i32, so it
+    // would overflow above 2GB — expose it via the JSON scalar to pass the raw
+    // number through without coercion.
     let media = Object::new("Media")
         .field(Field::new(
             "id",
@@ -164,9 +167,44 @@ pub fn build_schema(types: &[ContentType]) -> Result<Schema, SchemaError> {
             resolve::json_field_resolver("id"),
         ))
         .field(Field::new(
-            "url",
+            "file_name",
+            TypeRef::named_nn(TypeRef::STRING),
+            resolve::json_field_resolver("file_name"),
+        ))
+        .field(Field::new(
+            "original_filename",
+            TypeRef::named_nn(TypeRef::STRING),
+            resolve::json_field_resolver("original_filename"),
+        ))
+        .field(Field::new(
+            "mime_type",
+            TypeRef::named_nn(TypeRef::STRING),
+            resolve::json_field_resolver("mime_type"),
+        ))
+        .field(Field::new(
+            "size_bytes",
+            TypeRef::named_nn(scalars::JSON_SCALAR),
+            resolve::json_field_resolver("size_bytes"),
+        ))
+        .field(Field::new(
+            "width",
+            TypeRef::named(TypeRef::INT),
+            resolve::json_field_resolver("width"),
+        ))
+        .field(Field::new(
+            "height",
+            TypeRef::named(TypeRef::INT),
+            resolve::json_field_resolver("height"),
+        ))
+        .field(Field::new(
+            "alt_text",
             TypeRef::named(TypeRef::STRING),
-            resolve::json_field_resolver("url"),
+            resolve::json_field_resolver("alt_text"),
+        ))
+        .field(Field::new(
+            "caption",
+            TypeRef::named(TypeRef::STRING),
+            resolve::json_field_resolver("caption"),
         ));
     builder = builder.register(media);
 
