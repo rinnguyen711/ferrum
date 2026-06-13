@@ -9,14 +9,16 @@
 //! and read back here through `ctx.data::<T>()` (ResolverContext derefs to the
 //! async-graphql `Context`).
 //!
-//! v1 limitation: list/get are called with `populate = None`, so relation/media
-//! sub-objects only resolve when already embedded in the row JSON. Selection-set
-//! driven populate is deferred — `json_field_resolver` returns `None` for absent
-//! keys, which renders as GraphQL `null`.
+//! Populate: list/get derive which first-level relation/media fields the client
+//! selected via the selection set (`selected_field_names` + `populate_arg`) and
+//! pass them as the batched `populate` arg to `content::list_entries`/`get_entry`,
+//! which embeds the related object(s) into each row's JSON before child resolvers
+//! run. Deeper sub-relations are not populated and resolve to GraphQL `null`
+//! (`json_field_resolver` returns `None` for absent keys).
 
 use async_graphql::dynamic::{FieldFuture, FieldValue, ResolverContext};
 use async_graphql::{Error as GqlError, ErrorExtensions, Value as GqlValue};
-use rustapi_core::{Error, Principal};
+use rustapi_core::{ContentType, Error, FieldKind, Principal};
 use serde_json::{Map, Value as JsonValue};
 use uuid::Uuid;
 
@@ -190,6 +192,38 @@ fn filters_to_raw_query(v: JsonValue) -> String {
     parts.join("&")
 }
 
+// --- selection-set populate ------------------------------------------------
+
+/// Sync: collect the names selected under the entry object. The `Lookahead`
+/// borrows the resolver context, so the owned `Vec<String>` must be extracted
+/// here (before the `FieldFuture`'s `async move`), then moved into the future.
+fn selected_field_names(entry: async_graphql::Lookahead<'_>) -> Vec<String> {
+    entry
+        .selection_fields()
+        .iter()
+        .map(|sf| sf.name().to_string())
+        .collect()
+}
+
+/// Filter selected names down to relation/media fields of `ct`, joined for the
+/// REST-style `populate` arg. `None` when nothing to populate.
+fn populate_arg(selected: &[String], ct: &ContentType) -> Option<String> {
+    let mut out: Vec<&str> = Vec::new();
+    for f in &ct.fields {
+        if matches!(f.kind, FieldKind::Relation | FieldKind::Media)
+            && selected.iter().any(|s| s == &f.name)
+            && !out.contains(&f.name.as_str())
+        {
+            out.push(&f.name);
+        }
+    }
+    if out.is_empty() {
+        None
+    } else {
+        Some(out.join(","))
+    }
+}
+
 // --- root resolvers --------------------------------------------------------
 
 /// Query list resolver: page / pageSize / sort / filters -> envelope.
@@ -207,9 +241,21 @@ pub fn list_field(ct_name: String) -> impl Fn(ResolverContext) -> FieldFuture + 
             .and_then(|v| v.deserialize::<JsonValue>().ok())
             .map(filters_to_raw_query)
             .unwrap_or_default();
+        // Entry fields live under `data` in the list envelope. Collect the
+        // selected names synchronously (the Lookahead borrows ctx); filter
+        // against the ContentType inside the async block.
+        let selected = selected_field_names(ctx.look_ahead().field("data"));
         FieldFuture::new(async move {
             let st = st?;
             let pr = pr?;
+            let populate = st
+                .schemas
+                .registry()
+                .get(&ct_name)
+                .await
+                .and_then(|ct| populate_arg(&selected, &ct));
+            // `populate` is a separate arg to `content::list_entries`; the
+            // `ListParams.populate` field stays `None`.
             let params = ListParams {
                 page,
                 page_size,
@@ -217,9 +263,10 @@ pub fn list_field(ct_name: String) -> impl Fn(ResolverContext) -> FieldFuture + 
                 populate: None,
                 status: None,
             };
-            let env = content::list_entries(&st, &pr, &ct_name, params, None, &raw_query)
-                .await
-                .map_err(gql_err)?;
+            let env =
+                content::list_entries(&st, &pr, &ct_name, params, populate.as_deref(), &raw_query)
+                    .await
+                    .map_err(gql_err)?;
             Ok(Some(FieldValue::value(json_to_gql(env))))
         })
     }
@@ -232,11 +279,19 @@ pub fn get_field(ct_name: String) -> impl Fn(ResolverContext) -> FieldFuture + C
         let st = app_state(&ctx);
         let pr = principal(&ctx);
         let id = id_arg(&ctx);
+        // For get-one the entry fields are directly under the field (no `data`).
+        let selected = selected_field_names(ctx.look_ahead());
         FieldFuture::new(async move {
             let st = st?;
             let pr = pr?;
             let id = id?;
-            match content::get_entry(&st, &pr, &ct_name, id, None).await {
+            let populate = st
+                .schemas
+                .registry()
+                .get(&ct_name)
+                .await
+                .and_then(|ct| populate_arg(&selected, &ct));
+            match content::get_entry(&st, &pr, &ct_name, id, populate.as_deref()).await {
                 Ok(entry) => Ok(Some(FieldValue::value(json_to_gql(entry)))),
                 Err(Error::NotFound) => Ok(None),
                 Err(e) => Err(gql_err(e)),
