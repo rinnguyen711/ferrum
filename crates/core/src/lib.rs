@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+pub mod audit;
 pub mod content_type;
 pub mod error;
 pub mod event;
@@ -19,5 +20,6 @@ pub use field::{
     BoundValue, Cardinality, CoerceError, ComponentMeta, EnumMeta, Field, FieldError, FieldKind,
     RelationMeta,
 };
+pub use audit::{Actor, ActorKind, AuditEntry, FieldChange, RequestContext, category_for};
 pub use principal::{action_to_scope, role_allows, verb_to_action, Action, Principal, PERM_VERBS};
 pub use system::{is_system_column, SystemColumn, SYSTEM_COLUMNS};
