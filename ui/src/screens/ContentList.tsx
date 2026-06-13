@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { Icons } from "../components/icons";
 import { getToken } from "../auth";
 import { Avatar, StatusBadge } from "../components/shell";
-import { Checkbox, LoadingState, EmptyState } from "../components/ui";
+import { Checkbox, EmptyState, ConfirmDialog, TableSkeleton } from "../components/ui";
 import { FieldsMenu, type ColumnDef } from "./FieldsMenu";
 import {
   FiltersMenu,
@@ -127,6 +127,7 @@ export function ContentList() {
   }, [entries.data, page, pageSize]);
 
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
   const [bulkNotice, setBulkNotice] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
@@ -134,6 +135,7 @@ export function ContentList() {
     const ids = [...selected];
     setBulkBusy(true);
     setBulkNotice(null);
+    setBulkProgress({ done: 0, total: ids.length });
     let failed = 0;
     for (const id of ids) {
       try {
@@ -143,8 +145,10 @@ export function ContentList() {
       } catch {
         failed += 1;
       }
+      setBulkProgress((p) => (p ? { ...p, done: p.done + 1 } : p));
     }
     setBulkBusy(false);
+    setBulkProgress(null);
     setConfirmingDelete(false);
     setSelected([]);
     if (failed > 0) setBulkNotice(`${verb} failed for ${failed} of ${ids.length} entries.`);
@@ -197,7 +201,10 @@ export function ContentList() {
         `/admin/content-types/${type}/entries/export?${params}`,
         { headers: token ? { Authorization: `Bearer ${token}` } : {} }
       );
-      if (!resp.ok) return; // silent on error — export is best-effort
+      if (!resp.ok) {
+        setBulkNotice(`Export failed (HTTP ${resp.status}).`);
+        return;
+      }
       const blob = await resp.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -208,7 +215,7 @@ export function ContentList() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch {
-      // network error — ignore
+      setBulkNotice("Export failed — couldn't reach the API.");
     }
   };
 
@@ -235,7 +242,7 @@ export function ContentList() {
 
   // Filter refetches flip entries.loading; keep the table (and the open
   // filters popover) mounted — full-page loader only before first data.
-  if (schema.loading || (entries.loading && !entries.data)) return <LoadingState />;
+  if (schema.loading || (entries.loading && !entries.data)) return <TableSkeleton />;
   if (schema.error)
     return (
       <EmptyState>
@@ -319,11 +326,17 @@ export function ContentList() {
     <div className="rs-cm">
       {flash && (
         <div className="rs-cm-flash">
-          Object{" "}
-          <Link className="rs-cm-flash-link" to={`/content/${type}/${flash.id}`}>
-            #{shortId(flash.id)}
-          </Link>{" "}
-          has been {flash.verb} successfully.
+          {flash.verb === "deleted" ? (
+            <>Entry #{shortId(flash.id)} has been deleted successfully.</>
+          ) : (
+            <>
+              Entry{" "}
+              <Link className="rs-cm-flash-link" to={`/content/${type}/${flash.id}`}>
+                #{shortId(flash.id)}
+              </Link>{" "}
+              has been {flash.verb} successfully.
+            </>
+          )}
         </div>
       )}
       <div className="rs-cm-head">
@@ -474,7 +487,11 @@ export function ContentList() {
 
       {selected.length > 0 && (
         <div className="rs-bulkbar">
-          <span><strong>{selected.length}</strong> selected</span>
+          <span>
+            {bulkProgress
+              ? `Working… ${bulkProgress.done}/${bulkProgress.total}`
+              : <><strong>{selected.length}</strong> selected</>}
+          </span>
           <div className="rs-bulkbar-actions">
             <button className="rs-btn rs-btn--ghost rs-btn--sm" onClick={handleExport} disabled={bulkBusy}>
               <Icons.doc size={14} /> Export CSV
@@ -532,7 +549,20 @@ export function ContentList() {
             ))}
           </tbody>
         </table>
-        {rows.length === 0 && <div className="rs-empty">No entries match.</div>}
+        {rows.length === 0 && (
+          <div className="rs-empty">
+            {query || activeFilterCount > 0 || statusFilter !== "all" ? (
+              "No entries match."
+            ) : (
+              <>
+                No entries yet.{" "}
+                <button className="rs-link-btn" onClick={() => navigate(`/content/${type}/new`)}>
+                  Create your first {ct.display_name.toLowerCase()}
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="rs-pager">
@@ -566,46 +596,14 @@ export function ContentList() {
       </div>
 
       {confirmingDelete && (
-        <div className="rs-modal-backdrop" onClick={() => { if (!bulkBusy) setConfirmingDelete(false); }}>
-          <div
-            className="rs-modal"
-            role="dialog"
-            aria-modal="true"
-            onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: 420 }}
-          >
-            <div className="rs-modal-head">
-              <div className="rs-modal-ico" style={{ background: "var(--danger-soft, var(--surface-3))", color: "var(--danger)" }}>
-                <Icons.trash size={18} />
-              </div>
-              <div className="rs-modal-titles">
-                <span className="rs-modal-eyebrow">Destructive action</span>
-                <h2>Delete {selected.length} {selected.length === 1 ? "entry" : "entries"}?</h2>
-              </div>
-              <button className="rs-modal-x" onClick={() => setConfirmingDelete(false)} disabled={bulkBusy} aria-label="Close">
-                <Icons.x size={18} />
-              </button>
-            </div>
-            <div className="rs-modal-body">
-              <p style={{ fontSize: 14, color: "var(--text-muted)", margin: 0 }}>
-                This permanently deletes the selected entries. This cannot be undone.
-              </p>
-            </div>
-            <div className="rs-modal-foot" style={{ justifyContent: "space-between" }}>
-              <button className="rs-btn rs-btn--ghost" onClick={() => setConfirmingDelete(false)} disabled={bulkBusy}>
-                Cancel
-              </button>
-              <button
-                className="rs-btn rs-btn--primary"
-                onClick={() => void runBulk("delete")}
-                disabled={bulkBusy}
-                style={{ background: "var(--danger)", borderColor: "var(--danger)", color: "#fff" }}
-              >
-                {bulkBusy ? "Deleting…" : "Delete entries"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          title={`Delete ${selected.length} ${selected.length === 1 ? "entry" : "entries"}?`}
+          body="This permanently deletes the selected entries. This cannot be undone."
+          confirmLabel={bulkProgress ? `Deleting… ${bulkProgress.done}/${bulkProgress.total}` : "Delete entries"}
+          busy={bulkBusy}
+          onConfirm={() => void runBulk("delete")}
+          onCancel={() => setConfirmingDelete(false)}
+        />
       )}
     </div>
   );

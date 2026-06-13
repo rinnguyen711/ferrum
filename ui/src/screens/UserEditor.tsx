@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Icons } from "../components/icons";
 import { Avatar } from "../components/shell";
-import { Notice, EditorBar } from "../components/ui";
+import { Notice, EditorBar, ConfirmDialog } from "../components/ui";
 import { useResource } from "../hooks/useResource";
 import { listUsers, listRoles, createUser, updateUser, deleteUser } from "../api/endpoints";
 import { ApiError } from "../api/client";
@@ -30,6 +30,7 @@ export function UserEditor() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
 
   // Hydrate form once the user loads (edit mode).
   if (!isNew && existing && !hydrated) {
@@ -83,7 +84,6 @@ export function UserEditor() {
 
   const remove = async () => {
     if (isNew || !id) return;
-    if (!window.confirm("Delete this user? This cannot be undone.")) return;
     setBusy(true);
     setError(null);
     try {
@@ -92,6 +92,7 @@ export function UserEditor() {
     } catch (e) {
       if (e instanceof ApiError) setError(e.message);
       else setError("Something went wrong.");
+      setConfirmDel(false);
     } finally {
       setBusy(false);
     }
@@ -124,7 +125,7 @@ export function UserEditor() {
               <button
                 className="rs-btn rs-btn--ghost rs-danger"
                 disabled={busy}
-                onClick={remove}
+                onClick={() => setConfirmDel(true)}
               >
                 <Icons.trash size={15} /> Delete
               </button>
@@ -337,6 +338,16 @@ export function UserEditor() {
           )}
         </aside>
       </div>
+      {confirmDel && (
+        <ConfirmDialog
+          title="Delete this user?"
+          body="This cannot be undone."
+          confirmLabel="Delete user"
+          busy={busy}
+          onConfirm={remove}
+          onCancel={() => setConfirmDel(false)}
+        />
+      )}
     </div>
   );
 }

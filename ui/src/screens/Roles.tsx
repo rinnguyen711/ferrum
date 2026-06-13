@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Icons } from "../components/icons";
 import { Avatar } from "../components/shell";
-import { LoadingState } from "../components/ui";
+import { LoadingState, ConfirmDialog } from "../components/ui";
 import { useResource } from "../hooks/useResource";
 import { listRoles, listUsers, deleteRole } from "../api/endpoints";
 import { initials, AVATAR_NEUTRAL } from "../util";
@@ -13,6 +13,7 @@ export function Roles() {
   const users = useResource(() => listUsers(), []);
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirmDel, setConfirmDel] = useState<{ key: string; name: string } | null>(null);
 
   const allRoles = roles.data ?? [];
   const allUsers = users.data ?? [];
@@ -27,12 +28,13 @@ export function Roles() {
 
   const membersOf = (key: string) => allUsers.filter((u) => u.roles.includes(key));
 
-  const onDelete = async (key: string, name: string) => {
-    if (!window.confirm(`Delete role "${name}"? This cannot be undone.`)) return;
+  const onDelete = async () => {
+    if (!confirmDel) return;
     setBusy(true);
     try {
-      await deleteRole(key);
+      await deleteRole(confirmDel.key);
       roles.refetch();
+      setConfirmDel(null);
     } finally {
       setBusy(false);
     }
@@ -127,7 +129,7 @@ export function Roles() {
                         className={"rs-row-btn" + (r.is_system ? "" : " rs-danger")}
                         disabled={r.is_system || busy}
                         title={r.is_system ? "System roles can't be deleted" : "Delete"}
-                        onClick={() => onDelete(r.key, r.name)}
+                        onClick={() => setConfirmDel({ key: r.key, name: r.name })}
                       >
                         <Icons.trash size={16} />
                       </button>
@@ -139,6 +141,16 @@ export function Roles() {
           </table>
           {rows.length === 0 && <div className="rs-empty">No roles match your search.</div>}
         </div>
+      )}
+      {confirmDel && (
+        <ConfirmDialog
+          title={`Delete role "${confirmDel.name}"?`}
+          body="This cannot be undone."
+          confirmLabel="Delete role"
+          busy={busy}
+          onConfirm={onDelete}
+          onCancel={() => setConfirmDel(null)}
+        />
       )}
     </div>
   );

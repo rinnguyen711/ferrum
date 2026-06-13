@@ -156,7 +156,6 @@ h1, h2 { margin: 0; }
 .rs-topbar-right { display: flex; align-items: center; gap: 12px; }
 .rs-icon-btn { width: 36px; height: 36px; border: none; background: none; color: var(--text-muted); border-radius: var(--r-md); display: grid; place-items: center; transition: .14s; position: relative; }
 .rs-icon-btn:hover { background: var(--surface-3); color: var(--text); }
-.rs-bell-dot { position: absolute; top: 8px; right: 9px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); border: 1.5px solid var(--surface); }
 .rs-topbar-user { display: flex; align-items: center; gap: 9px; padding: 5px 8px 5px 6px; border-radius: var(--r-md); transition: .14s; cursor: pointer; }
 .rs-topbar-user:hover { background: var(--surface-3); }
 .rs-topbar-user-meta { display: flex; flex-direction: column; line-height: 1.2; }
@@ -195,6 +194,9 @@ h1, h2 { margin: 0; }
 .rs-btn--sm { padding: 6px 10px; font-size: 12.5px; }
 .rs-btn:disabled { opacity: .5; cursor: not-allowed; }
 .rs-danger:hover { color: var(--danger) !important; border-color: color-mix(in srgb, var(--danger) 40%, var(--border)) !important; }
+.rs-btn--danger { background: var(--danger); color: #fff; box-shadow: var(--shadow-sm); }
+.rs-btn--danger:hover { filter: brightness(1.07); box-shadow: var(--shadow-md); }
+.rs-modal-ico--danger { background: var(--danger-bg); color: var(--danger); }
 .rs-spacer { flex: 1; }
 
 /* ============ Content Manager ============ */
