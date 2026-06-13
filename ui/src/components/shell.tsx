@@ -195,7 +195,7 @@ function SettingsPanel() {
       items: [
         { label: "Users" },
         { label: "Roles" },
-        { label: "Audit logs" },
+        { label: "Audit logs", to: "/settings/audit" },
         { label: "Single sign-on" },
       ],
     },
