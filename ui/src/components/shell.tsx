@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Icons, type IconKey } from "./icons";
 import { getHealth, listContentTypes, listComponents } from "../api/endpoints";
@@ -319,6 +319,7 @@ function TypePanel({
   const [createComponentOpen, setCreateComponentOpen] = useState(false);
   const [compRefetchKey, setCompRefetchKey] = useState(0);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [typeQuery, setTypeQuery] = useState("");
   const toggleCategory = (cat: string) =>
     setCollapsed((prev) => {
       const next = new Set(prev);
@@ -332,8 +333,11 @@ function TypePanel({
     () => listContentTypes(),
     [base, builder.saveNonce],
   );
-  const collectionTypes = types?.filter((t) => t.kind === "collection") ?? [];
-  const singleTypes = types?.filter((t) => t.kind === "single") ?? [];
+  const q = typeQuery.trim().toLowerCase();
+  const matchesQuery = (t: { name: string; display_name: string }) =>
+    !q || t.display_name.toLowerCase().includes(q) || t.name.toLowerCase().includes(q);
+  const collectionTypes = (types?.filter((t) => t.kind === "collection") ?? []).filter(matchesQuery);
+  const singleTypes = (types?.filter((t) => t.kind === "single") ?? []).filter(matchesQuery);
   const { data: components, loading: compLoading, error: compError } = useResource(
     () => listComponents(),
     [base, builder.saveNonce, compRefetchKey],
@@ -347,19 +351,17 @@ function TypePanel({
       <div className="rs-panel-scroll">
         <div className="rs-panel-search">
           <Icons.search size={15} />
-          <input placeholder="Search types" disabled />
+          <input
+            placeholder="Search types"
+            value={typeQuery}
+            onChange={(e) => setTypeQuery(e.target.value)}
+          />
         </div>
         <PanelGroup
           label="Collection types"
           count={collectionTypes.length}
           action={isBuilder}
-          onAction={() => {
-            if (builder.dirty) {
-              if (!window.confirm("You have unsaved changes. Discard them and create a new type?")) return;
-              builder.reset();
-            }
-            setModalOpen(true);
-          }}
+          onAction={() => builder.confirmDiscard(() => { builder.reset(); setModalOpen(true); })}
         >
           {loading && !types &&
             [72, 56, 64, 48].map((w, i) => (
@@ -380,13 +382,7 @@ function TypePanel({
           label="Single types"
           count={singleTypes.length}
           action={isBuilder}
-          onAction={() => {
-            if (builder.dirty) {
-              if (!window.confirm("You have unsaved changes. Discard them and create a new type?")) return;
-              builder.reset();
-            }
-            setSingleModalOpen(true);
-          }}
+          onAction={() => builder.confirmDiscard(() => { builder.reset(); setSingleModalOpen(true); })}
         >
           {loading && !types &&
             [60, 44].map((w, i) => (
@@ -409,13 +405,7 @@ function TypePanel({
             label="Components"
             count={components?.length ?? 0}
             action
-            onAction={() => {
-              if (builder.dirty) {
-                if (!window.confirm("You have unsaved changes. Discard them?")) return;
-                builder.reset();
-              }
-              setCreateComponentOpen(true);
-            }}
+            onAction={() => builder.confirmDiscard(() => { builder.reset(); setCreateComponentOpen(true); })}
           >
             {compLoading && !components &&
               [60, 44, 52].map((w, i) => (
@@ -424,7 +414,9 @@ function TypePanel({
             {compError && !components && (
               <div className="rs-panel-item rs-danger">Failed to load</div>
             )}
-            {components && groupComponentsByCategory(components).map(({ category, items }) => (
+            {components && groupComponentsByCategory(
+              components.filter((c) => !q || c.display_name.toLowerCase().includes(q) || c.uid.toLowerCase().includes(q)),
+            ).map(({ category, items }) => (
               <div key={category}>
                 <button
                   className="rs-panel-grouphead"
@@ -542,10 +534,10 @@ export function Topbar({
       <div className="rs-crumbs">
         {crumbs &&
           crumbs.map((c, i) => (
-            <span key={i} className="rs-crumb-wrap" style={{ display: "contents" }}>
+            <Fragment key={i}>
               {i > 0 && <Icons.chevRight size={14} className="rs-crumb-sep" />}
               <span className={"rs-crumb" + (i === crumbs.length - 1 ? " is-last" : "")}>{c}</span>
-            </span>
+            </Fragment>
           ))}
         {!crumbs && <span className="rs-crumb is-last">{title}</span>}
       </div>
@@ -559,10 +551,6 @@ export function Topbar({
           aria-label="Toggle dark mode"
         >
           {dark ? <Icons.sun size={18} /> : <Icons.moon size={18} />}
-        </button>
-        <button className="rs-icon-btn" data-tip="Notifications">
-          <Icons.bell size={18} />
-          <span className="rs-bell-dot" />
         </button>
         <div className="rs-topbar-user">
           <Avatar
@@ -581,7 +569,7 @@ export function Topbar({
             onClick={onLogout}
             aria-label="Sign out"
           >
-            <Icons.arrowLeft size={18} />
+            <Icons.external size={18} />
           </button>
         </div>
       </div>

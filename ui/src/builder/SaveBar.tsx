@@ -5,6 +5,7 @@ import type { PatchContentType } from "../api/types";
 import { useBuilderDraft } from "./BuilderDraftContext";
 import { diffToPatch } from "./draftModel";
 import { SaveConfirmModal } from "./SaveConfirmModal";
+import { ConfirmDialog } from "../components/ui";
 
 /** Floating dirty-state save bar — the single save point for the Builder
  *  section. Renders nothing while the draft matches the server. */
@@ -12,6 +13,7 @@ export function SaveBar() {
   const { draft, dirty, saving, save, discard, reset } = useBuilderDraft();
   const navigate = useNavigate();
   const [confirmPatch, setConfirmPatch] = useState<PatchContentType | null>(null);
+  const [confirmDiscardNew, setConfirmDiscardNew] = useState(false);
 
   if (!draft || (!dirty && !saving)) return null;
 
@@ -28,9 +30,7 @@ export function SaveBar() {
 
   const onDiscard = () => {
     if (draft.mode === "new") {
-      if (!window.confirm("Discard this unsaved type?")) return;
-      reset();
-      navigate("/builder");
+      setConfirmDiscardNew(true);
       return;
     }
     discard();
@@ -64,6 +64,19 @@ export function SaveBar() {
             setConfirmPatch(null);
           }}
           onCancel={() => setConfirmPatch(null)}
+        />
+      )}
+      {confirmDiscardNew && (
+        <ConfirmDialog
+          title="Discard this unsaved type?"
+          body="This type hasn't been created yet. Discarding loses your work."
+          confirmLabel="Discard type"
+          onConfirm={() => {
+            setConfirmDiscardNew(false);
+            reset();
+            navigate("/builder");
+          }}
+          onCancel={() => setConfirmDiscardNew(false)}
         />
       )}
     </>

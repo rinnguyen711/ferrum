@@ -4,6 +4,7 @@ import {
 } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError } from "../api/client";
+import { ConfirmDialog } from "../components/ui";
 import { createContentType, patchContentType, updateComponent } from "../api/endpoints";
 import type { Component, ContentType, ContentTypeKind } from "../api/types";
 import {
@@ -28,6 +29,9 @@ interface BuilderDraftCtx {
   discard(): void;
   reset(): void;
   guardedNavigate(to: string): void;
+  /** If the draft is dirty, confirm via the design dialog before running
+   *  `onProceed` (which should discard/reset as needed). Clean → run now. */
+  confirmDiscard(onProceed: () => void): void;
   bumpNonce(): void;
 }
 
@@ -46,6 +50,8 @@ export function BuilderDraftProvider({ children }: { children: ReactNode }) {
   const [banner, setBanner] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [saveNonce, setSaveNonce] = useState(0);
+  // Deferred discard confirm: holds the action to run if the user accepts.
+  const [pendingDiscard, setPendingDiscard] = useState<(() => void) | null>(null);
 
   const dirty = isDirty(draft);
 
@@ -168,14 +174,29 @@ export function BuilderDraftProvider({ children }: { children: ReactNode }) {
     }
   }, [draft, navigate, applyApiError]);
 
+  const confirmDiscard = useCallback(
+    (onProceed: () => void) => {
+      if (dirtyRef.current) {
+        // Store the action; the dialog resolves it on confirm.
+        setPendingDiscard(() => onProceed);
+      } else {
+        onProceed();
+      }
+    },
+    [],
+  );
+
   const guardedNavigate = useCallback(
     (to: string) => {
+      // Match prior behaviour: only reset when there were unsaved changes.
       if (dirtyRef.current) {
-        const ok = window.confirm("You have unsaved changes. Leave anyway?");
-        if (!ok) return;
-        reset();
+        setPendingDiscard(() => () => {
+          reset();
+          navigate(to);
+        });
+      } else {
+        navigate(to);
       }
-      navigate(to);
     },
     [navigate, reset],
   );
@@ -186,12 +207,29 @@ export function BuilderDraftProvider({ children }: { children: ReactNode }) {
     () => ({
       draft, dirty, saving, banner, fieldErrors, saveNonce,
       startNew, loadExisting, loadExistingComponent, setDraft, clearBanner,
-      save, discard, reset, guardedNavigate, bumpNonce,
+      save, discard, reset, guardedNavigate, confirmDiscard, bumpNonce,
     }),
     [draft, dirty, saving, banner, fieldErrors, saveNonce, startNew, loadExisting,
      loadExistingComponent, setDraft, clearBanner, save, discard, reset,
-     guardedNavigate, bumpNonce],
+     guardedNavigate, confirmDiscard, bumpNonce],
   );
 
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+  return (
+    <Ctx.Provider value={value}>
+      {children}
+      {pendingDiscard && (
+        <ConfirmDialog
+          title="Discard unsaved changes?"
+          body="You have unsaved changes. Leaving will discard them."
+          confirmLabel="Discard changes"
+          onConfirm={() => {
+            const run = pendingDiscard;
+            setPendingDiscard(null);
+            run();
+          }}
+          onCancel={() => setPendingDiscard(null)}
+        />
+      )}
+    </Ctx.Provider>
+  );
 }
