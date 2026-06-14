@@ -3,5 +3,4 @@
 pub mod audit_sink;
 pub mod config;
 pub mod migrate;
-pub mod seed;
 pub mod webhook_worker;

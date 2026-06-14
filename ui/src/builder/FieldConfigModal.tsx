@@ -15,6 +15,7 @@ export function FieldConfigModal({
   initial,
   isNew,
   typeNames,
+  existingNames,
   components,
   lockedEnumValues,
   onSave,
@@ -24,6 +25,8 @@ export function FieldConfigModal({
   initial: DraftField;
   isNew: boolean;
   typeNames: string[];
+  /** Names of other fields already on this type/component — used to block duplicates. */
+  existingNames: string[];
   components: Component[];
   lockedEnumValues: string[];
   onSave: (field: DraftField) => void;
@@ -50,13 +53,21 @@ export function FieldConfigModal({
     (field.kind === "relation" && field.cardinality === "many_to_many") ||
     field.kind === "media";
 
+  const taken = new Set(existingNames.map((n) => n.trim().toLowerCase()));
+
   const save = () => {
-    if (!field.name.trim()) { setErr("A field name is required."); setTab("basic"); return; }
+    const name = field.name.trim();
+    if (!name) { setErr("A field name is required."); setTab("basic"); return; }
+    if (taken.has(name.toLowerCase())) {
+      setErr(`A field named "${name}" already exists on this type.`);
+      setTab("basic");
+      return;
+    }
     if (field.kind === "component" && !field.componentUid.trim()) {
       setErr("A component uid is required (e.g. shared.hero_block).");
       return;
     }
-    const out = { ...field, name: field.name.trim() };
+    const out = { ...field, name };
     if (requiredBlocked) out.required = false;
     onSave(out);
   };

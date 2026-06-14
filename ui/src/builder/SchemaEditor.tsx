@@ -224,6 +224,8 @@ export function SchemaEditor() {
         </Notice>
       )}
 
+      <SaveBar />
+
       <div className="rs-setting-row" style={{ marginBottom: 16 }}>
         <div className="rs-setting-meta">
           <strong>Enable Draft &amp; Publish</strong>
@@ -259,8 +261,6 @@ export function SchemaEditor() {
         </button>
       </div>
 
-      <SaveBar />
-
       {confirming && type && (
         <DeleteTypeModal
           typeName={type}
@@ -283,6 +283,7 @@ export function SchemaEditor() {
           initial={modal.field}
           isNew={modal.isNew}
           typeNames={allTypes.data?.map((t) => t.name) ?? []}
+          existingNames={draft.fields.filter((f) => f.id !== modal.field.id).map((f) => f.name)}
           components={allComponents.data ?? []}
           lockedEnumValues={lockedEnum(modal.field)}
           onSave={saveField}

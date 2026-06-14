@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use rustapi::config::Config;
-use rustapi::seed;
 use rustapi_http::{
     build_router, mount_studio, resolve_provider, secret_key_from_env, AppConfig, AppState,
     NoopHook, RoleAuthz, RoleRegistry,
@@ -80,9 +79,16 @@ async fn main() -> Result<()> {
         .await
         .context("hydrate role registry")?;
 
-    seed::seed_if_empty(&pool, &schemas, cfg.seed)
-        .await
-        .context("seed default content")?;
+    if let Some(path) = &cfg.schema_path {
+        rustapi_schema::sync::sync_from_path(&schemas, path, cfg.schema_sync_mode)
+            .await
+            .context("schema sync")?;
+        registry
+            .reload_from_db(&pool)
+            .await
+            .context("reload schema registry after sync")?;
+        tracing::info!(schemas = registry.list().await.len(), "schema sync applied");
+    }
 
     let secret_key = secret_key_from_env();
     let storage = Arc::new(RwLock::new(resolve_provider(&pool, secret_key).await));

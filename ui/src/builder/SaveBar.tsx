@@ -45,10 +45,10 @@ export function SaveBar() {
           <span className="rs-dot" /> Unsaved {noun} changes
         </span>
         <div className="rs-savebar-actions">
-          <button className="rs-btn rs-btn--ghost rs-btn--sm" onClick={onDiscard} disabled={saving}>
+          <button className="rs-btn rs-btn--ghost" onClick={onDiscard} disabled={saving}>
             Discard
           </button>
-          <button className="rs-btn rs-btn--primary rs-btn--sm" onClick={onSave} disabled={saving}>
+          <button className="rs-btn rs-btn--primary" onClick={onSave} disabled={saving}>
             {saving
               ? <><Icons.spinner size={14} className="rs-spin" /> Saving…</>
               : <><Icons.save size={14} /> Save</>}

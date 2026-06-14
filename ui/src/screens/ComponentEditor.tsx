@@ -182,6 +182,8 @@ export function ComponentEditor() {
 
       {banner && <Notice>{banner}</Notice>}
 
+      <SaveBar />
+
       <div className="rs-schema">
         <div className="rs-schema-head"><span>Field</span><span>Type</span><span></span></div>
         {draft.fields.map((f) => (
@@ -196,8 +198,6 @@ export function ComponentEditor() {
           <Icons.plus size={16} /> Add another field to this component
         </button>
       </div>
-
-      <SaveBar />
 
       {confirming && uid && (
         <DeleteComponentModal
@@ -221,6 +221,7 @@ export function ComponentEditor() {
           initial={modal.field}
           isNew={modal.isNew}
           typeNames={allTypes.data?.map((t) => t.name) ?? []}
+          existingNames={draft.fields.filter((f) => f.id !== modal.field.id).map((f) => f.name)}
           components={allComponents.data ?? []}
           lockedEnumValues={[]}
           onSave={saveField}
