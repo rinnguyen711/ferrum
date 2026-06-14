@@ -13,9 +13,11 @@ pub struct Config {
     /// When set, the built admin UI in this directory is served at /studio.
     /// Unset → no UI route is mounted (API-only server).
     pub studio_dir: Option<String>,
-    /// When true (default), an empty DB is seeded with default content types
-    /// and sample data at startup. Set RUSTAPI_SEED=false to disable.
-    pub seed: bool,
+    /// Path to a schema TOML file or a directory of `*.toml`. Unset = sync off.
+    /// `RUSTAPI_SCHEMA_DIR` wins over `RUSTAPI_SCHEMA_FILE` if both are set.
+    pub schema_path: Option<String>,
+    /// Reconcile aggressiveness. `RUSTAPI_SCHEMA_SYNC`: additive (default) | full.
+    pub schema_sync_mode: rustapi_schema::SyncMode,
     /// When false, /openapi.json and /docs are not mounted.
     pub docs_enabled: bool,
     /// Reported as OpenAPI info.version.
@@ -45,11 +47,18 @@ impl Config {
         let studio_dir = std::env::var("RUSTAPI_STUDIO_DIR")
             .ok()
             .filter(|s| !s.is_empty());
-        let seed = std::env::var("RUSTAPI_SEED")
+        let schema_path = std::env::var("RUSTAPI_SCHEMA_DIR")
             .ok()
             .filter(|s| !s.is_empty())
-            .map(|s| !matches!(s.as_str(), "0" | "false" | "no"))
-            .unwrap_or(true);
+            .or_else(|| {
+                std::env::var("RUSTAPI_SCHEMA_FILE")
+                    .ok()
+                    .filter(|s| !s.is_empty())
+            });
+        let schema_sync_mode = std::env::var("RUSTAPI_SCHEMA_SYNC")
+            .ok()
+            .map(|s| rustapi_schema::SyncMode::from_env_str(&s))
+            .unwrap_or_default();
         let docs_enabled = std::env::var("RUSTAPI_DOCS_ENABLED")
             .ok()
             .filter(|s| !s.is_empty())
@@ -65,7 +74,8 @@ impl Config {
             log,
             page_size_max,
             studio_dir,
-            seed,
+            schema_path,
+            schema_sync_mode,
             docs_enabled,
             api_version,
             public_base_url,
