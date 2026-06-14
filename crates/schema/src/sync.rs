@@ -2,6 +2,8 @@
 //! the database to match on startup. See
 //! docs/superpowers/specs/2026-06-14-schema-as-code-toml-sync-design.md.
 
+use std::path::Path;
+
 use rustapi_core::{ContentType, Error, Field, NewContentType, ValidationErrors};
 use serde::Deserialize;
 
@@ -26,8 +28,6 @@ impl SyncMode {
 }
 
 /// One TOML file's worth of content types.
-// consumed by load_desired in a later task
-#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct SchemaFile {
     #[serde(default, rename = "content_type")]
@@ -36,8 +36,6 @@ struct SchemaFile {
 
 /// A content type as declared in TOML. Maps onto `NewContentType`; `field` is
 /// renamed so the TOML key is `[[content_type.field]]`.
-// consumed by parse_toml/plan_sync in a later task
-#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct TomlContentType {
     name: String,
@@ -50,8 +48,6 @@ struct TomlContentType {
     fields: Vec<Field>,
 }
 
-// consumed by parse_toml in a later task
-#[allow(dead_code)]
 impl From<TomlContentType> for NewContentType {
     fn from(t: TomlContentType) -> Self {
         NewContentType {
@@ -65,8 +61,6 @@ impl From<TomlContentType> for NewContentType {
 }
 
 /// One reconciliation step computed by `plan_sync`.
-// wired into sync_from_path in Task 5
-#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum SyncAction {
     /// Type in TOML, absent from DB.
@@ -87,8 +81,6 @@ pub(crate) enum SyncAction {
 /// Compute the reconciliation plan. Pure: no DB. `desired` is the TOML set,
 /// `current` the live registry list. Returns actions in no particular order;
 /// the apply loop orders creates by relation dependency.
-// wired into sync_from_path in Task 5
-#[allow(dead_code)]
 pub(crate) fn plan_sync(
     desired: &[NewContentType],
     current: &[ContentType],
@@ -167,8 +159,6 @@ pub(crate) fn plan_sync(
 }
 
 /// Merge `managed = true` into a type's declared options.
-// wired into sync_from_path in Task 5
-#[allow(dead_code)]
 fn managed_options(declared: &serde_json::Value) -> serde_json::Value {
     let mut obj = declared.as_object().cloned().unwrap_or_default();
     obj.insert("managed".into(), serde_json::Value::Bool(true));
@@ -176,12 +166,171 @@ fn managed_options(declared: &serde_json::Value) -> serde_json::Value {
 }
 
 /// Parse a single TOML document into content types.
-// consumed by load_desired/plan_sync in a later task
-#[allow(dead_code)]
 pub(crate) fn parse_toml(doc: &str) -> Result<Vec<NewContentType>, Error> {
     let parsed: SchemaFile = toml::from_str(doc)
         .map_err(|e| Error::Validation(ValidationErrors::single(format!("schema TOML parse: {e}"))))?;
     Ok(parsed.content_types.into_iter().map(Into::into).collect())
+}
+
+/// Load + merge all content types from a path. If `path` is a directory, every
+/// `*.toml` file in it (non-recursive) is parsed and merged. If a file, that one
+/// file is parsed. Duplicate type names across files are rejected.
+pub(crate) fn load_desired(path: &Path) -> Result<Vec<NewContentType>, Error> {
+    let mut docs: Vec<(String, String)> = Vec::new();
+    if path.is_dir() {
+        let mut entries: Vec<_> = std::fs::read_dir(path)
+            .map_err(|e| Error::Internal(anyhow::anyhow!("read schema dir {path:?}: {e}")))?
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.extension().map(|x| x == "toml").unwrap_or(false))
+            .collect();
+        entries.sort();
+        for p in entries {
+            let body = std::fs::read_to_string(&p)
+                .map_err(|e| Error::Internal(anyhow::anyhow!("read {p:?}: {e}")))?;
+            docs.push((p.display().to_string(), body));
+        }
+    } else {
+        let body = std::fs::read_to_string(path)
+            .map_err(|e| Error::Internal(anyhow::anyhow!("read {path:?}: {e}")))?;
+        docs.push((path.display().to_string(), body));
+    }
+
+    let mut merged: Vec<NewContentType> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for (label, body) in docs {
+        for ct in parse_toml(&body)? {
+            if !seen.insert(ct.name.clone()) {
+                return Err(Error::Validation(ValidationErrors::single(format!(
+                    "duplicate content type `{}` (in {label})",
+                    ct.name
+                ))));
+            }
+            merged.push(ct);
+        }
+    }
+    Ok(merged)
+}
+
+/// Order creates so a relation's target is created before the dependent type.
+/// Stable topological sort by relation targets; self-references and cycles fall
+/// back to declaration order (DB-level checks still apply at apply time).
+fn order_creates(mut creates: Vec<NewContentType>) -> Vec<NewContentType> {
+    use std::collections::HashSet;
+    let names: HashSet<String> = creates.iter().map(|c| c.name.clone()).collect();
+    let mut ordered: Vec<NewContentType> = Vec::with_capacity(creates.len());
+    let mut placed: HashSet<String> = HashSet::new();
+
+    while !creates.is_empty() {
+        let idx = creates.iter().position(|c| {
+            c.fields.iter().all(|f| match f.relation_meta() {
+                Some(m) => {
+                    m.target == c.name
+                        || !names.contains(&m.target)
+                        || placed.contains(&m.target)
+                }
+                None => true,
+            })
+        });
+        match idx {
+            Some(i) => {
+                let c = creates.remove(i);
+                placed.insert(c.name.clone());
+                ordered.push(c);
+            }
+            None => {
+                ordered.append(&mut creates);
+                break;
+            }
+        }
+    }
+    ordered
+}
+
+/// Entry point called at boot. Loads TOML from `path`, diffs against the live
+/// registry, and applies the plan through `SchemaService`. Fail-fast: the first
+/// error aborts (and propagates so the server refuses to boot).
+pub async fn sync_from_path(
+    schemas: &crate::SchemaService,
+    path: &str,
+    mode: SyncMode,
+) -> Result<(), Error> {
+    let path = Path::new(path);
+    let desired = load_desired(path)?;
+    for ct in &desired {
+        ct.validate().map_err(Error::from)?;
+    }
+
+    let current = schemas.registry().list().await;
+    let actions = plan_sync(&desired, &current, mode)?;
+
+    let (creates, others): (Vec<_>, Vec<_>) = actions
+        .into_iter()
+        .partition(|a| matches!(a, SyncAction::Create(_)));
+    let create_cts: Vec<NewContentType> = creates
+        .into_iter()
+        .map(|a| match a {
+            SyncAction::Create(c) => c,
+            _ => unreachable!(),
+        })
+        .collect();
+
+    let mut created = 0usize;
+    let mut patched = 0usize;
+    let mut dropped = 0usize;
+    let mut unmanaged = 0usize;
+
+    for mut nct in order_creates(create_cts) {
+        nct.options = managed_options(&nct.options);
+        schemas.create(nct).await?;
+        created += 1;
+    }
+
+    for action in others {
+        match action {
+            SyncAction::Patch { name, add_fields, drop_fields, options } => {
+                let existing = schemas.registry().get(&name).await;
+                let options_changed = existing
+                    .as_ref()
+                    .map(|e| e.options != options)
+                    .unwrap_or(true);
+                if add_fields.is_empty() && drop_fields.is_empty() && !options_changed {
+                    continue;
+                }
+                let patch = rustapi_core::PatchContentType {
+                    display_name: None,
+                    add_fields,
+                    drop_fields,
+                    extend_enum_values: vec![],
+                    options: Some(options),
+                };
+                schemas.patch(&name, patch).await?;
+                patched += 1;
+            }
+            SyncAction::DropType(name) => {
+                schemas.delete(&name).await?;
+                dropped += 1;
+            }
+            SyncAction::Unmanage(name) => {
+                if let Some(existing) = schemas.registry().get(&name).await {
+                    let mut obj = existing.options.as_object().cloned().unwrap_or_default();
+                    obj.remove("managed");
+                    let patch = rustapi_core::PatchContentType {
+                        display_name: None,
+                        add_fields: vec![],
+                        drop_fields: vec![],
+                        extend_enum_values: vec![],
+                        options: Some(serde_json::Value::Object(obj)),
+                    };
+                    schemas.patch(&name, patch).await?;
+                    unmanaged += 1;
+                }
+            }
+            SyncAction::Create(_) => unreachable!("creates handled above"),
+        }
+    }
+
+    tracing::info!(created, patched, dropped, unmanaged, ?mode, "schema sync complete");
+    Ok(())
 }
 
 #[cfg(test)]
@@ -337,5 +486,20 @@ options = { draft_publish = true }
         assert_eq!(SyncMode::from_env_str("FULL"), SyncMode::Full);
         assert_eq!(SyncMode::from_env_str("additive"), SyncMode::Additive);
         assert_eq!(SyncMode::from_env_str("garbage"), SyncMode::Additive);
+    }
+
+    #[test]
+    fn order_creates_places_target_before_dependent() {
+        let mut post = nct("post", vec![fld("title")]);
+        let mut rel = fld("author");
+        rel.kind = FieldKind::Relation;
+        rel.kind_meta = json!({"target": "author", "cardinality": "many_to_one"});
+        post.fields.push(rel);
+        let author = nct("author", vec![fld("name")]);
+
+        // Declared post-first; ordering must move author ahead.
+        let ordered = super::order_creates(vec![post, author]);
+        assert_eq!(ordered[0].name, "author");
+        assert_eq!(ordered[1].name, "post");
     }
 }
