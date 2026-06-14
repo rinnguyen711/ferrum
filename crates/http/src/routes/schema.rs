@@ -87,6 +87,13 @@ async fn patch_one(
     Path(name): Path<String>,
     Json(payload): Json<PatchContentType>,
 ) -> Result<Json<ContentType>, ApiError> {
+    if let Some(existing) = state.schemas.registry().get(&name).await {
+        if existing.managed() {
+            return Err(ApiError(Error::Conflict(format!(
+                "content type `{name}` is managed by a schema file; edit the TOML instead"
+            ))));
+        }
+    }
     let ct = state.schemas.patch(&name, payload).await?;
     rebuild_gql(&state).await;
     state
@@ -122,6 +129,13 @@ async fn delete_one(
         return Err(ApiError(Error::Validation(
             rustapi_core::ValidationErrors::single("confirm_required: pass ?confirm=true"),
         )));
+    }
+    if let Some(existing) = state.schemas.registry().get(&name).await {
+        if existing.managed() {
+            return Err(ApiError(Error::Conflict(format!(
+                "content type `{name}` is managed by a schema file; edit the TOML instead"
+            ))));
+        }
     }
     state.schemas.delete(&name).await?;
     rebuild_gql(&state).await;
