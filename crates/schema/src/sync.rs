@@ -27,6 +27,8 @@ impl SyncMode {
 }
 
 /// One TOML file's worth of content types.
+// consumed by load_desired in a later task
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct SchemaFile {
     #[serde(default, rename = "content_type")]
@@ -35,6 +37,8 @@ struct SchemaFile {
 
 /// A content type as declared in TOML. Maps onto `NewContentType`; `field` is
 /// renamed so the TOML key is `[[content_type.field]]`.
+// consumed by parse_toml/plan_sync in a later task
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct TomlContentType {
     name: String,
@@ -47,6 +51,8 @@ struct TomlContentType {
     fields: Vec<Field>,
 }
 
+// consumed by parse_toml in a later task
+#[allow(dead_code)]
 impl From<TomlContentType> for NewContentType {
     fn from(t: TomlContentType) -> Self {
         NewContentType {
@@ -60,6 +66,8 @@ impl From<TomlContentType> for NewContentType {
 }
 
 /// Parse a single TOML document into content types.
+// consumed by load_desired/plan_sync in a later task
+#[allow(dead_code)]
 pub(crate) fn parse_toml(doc: &str) -> Result<Vec<NewContentType>, Error> {
     let parsed: SchemaFile = toml::from_str(doc)
         .map_err(|e| Error::Validation(ValidationErrors::single(format!("schema TOML parse: {e}"))))?;
