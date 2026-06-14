@@ -67,6 +67,15 @@ impl ContentType {
             .and_then(|v| v.as_bool())
             .unwrap_or(false)
     }
+
+    /// Whether this type is managed by a schema file (TOML sync). Absent/invalid
+    /// `options` → false. Managed types are read-only in the UI/API.
+    pub fn managed(&self) -> bool {
+        self.options
+            .get("managed")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    }
 }
 
 impl NewContentType {
@@ -262,6 +271,24 @@ mod tests {
         assert!(nct("post", vec![field("title"), relation])
             .validate()
             .is_ok());
+    }
+
+    #[test]
+    fn managed_defaults_and_reads() {
+        use serde_json::json;
+        let mut ct = ContentType {
+            id: Uuid::nil(),
+            name: "post".into(),
+            display_name: "Post".into(),
+            fields: vec![field("title")],
+            options: json!({}),
+            kind: ContentTypeKind::Collection,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        assert!(!ct.managed());
+        ct.options = json!({ "managed": true });
+        assert!(ct.managed());
     }
 
     #[test]
