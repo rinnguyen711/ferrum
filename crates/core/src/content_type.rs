@@ -80,14 +80,21 @@ impl ContentType {
 
 impl NewContentType {
     /// Resolve effective options for create: `draft_publish` defaults to false
-    /// when the client omitted it. Returns a normalized jsonb object.
+    /// when the client omitted it. Returns the caller's options object with
+    /// `draft_publish` filled in, preserving any extra keys (e.g. `managed`).
     pub fn resolved_options(&self) -> serde_json::Value {
         let dp = self
             .options
             .get("draft_publish")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
-        serde_json::json!({ "draft_publish": dp })
+        let mut obj = self
+            .options
+            .as_object()
+            .cloned()
+            .unwrap_or_default();
+        obj.insert("draft_publish".into(), serde_json::Value::Bool(dp));
+        serde_json::Value::Object(obj)
     }
 
     pub fn validate(&self) -> Result<(), ContentTypeError> {
