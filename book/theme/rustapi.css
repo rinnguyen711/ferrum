@@ -1,0 +1,154 @@
+/* Rustapi docs theme — maps mdBook theme variables onto the DESIGN.md token set.
+   Source of truth for these values: /DESIGN.md. Use tokens, never re-enter a hex
+   a token already covers. Only `.light` (rustapi light) and `.navy` (rustapi dark)
+   are themed; coal/rust/ayu fall back to mdBook defaults. */
+
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap");
+
+/* ---- DESIGN.md tokens, per theme ---- */
+
+.light {
+  --rs-accent: #d14d2b;
+  --rs-bg: #f6f6f7;
+  --rs-surface: #ffffff;
+  --rs-surface-2: #fbfbfc;
+  --rs-surface-3: #f2f2f4;
+  --rs-border: #e7e7ea;
+  --rs-border-strong: #dadade;
+  --rs-text: #1b1b1f;
+  --rs-text-muted: #6a6a73;
+  --rs-text-subtle: #9b9ba4;
+  --rs-accent-soft: color-mix(in srgb, var(--rs-accent) 12%, var(--rs-surface));
+}
+
+.navy {
+  --rs-accent: #e9663f; /* brightened accent for dark, per DESIGN accent-text rule */
+  --rs-bg: #0d0d10;
+  --rs-surface: #17171b;
+  --rs-surface-2: #1c1c21;
+  --rs-surface-3: #232329;
+  --rs-border: #2a2a31;
+  --rs-border-strong: #34343c;
+  --rs-text: #ececf0;
+  --rs-text-muted: #a7a7b0;
+  --rs-text-subtle: #6a6a73;
+  --rs-accent-soft: color-mix(in srgb, var(--rs-accent) 16%, var(--rs-surface));
+}
+
+/* ---- mdBook variable overrides (shared mapping, both themes) ---- */
+
+.light,
+.navy {
+  --mono-font: "IBM Plex Mono", ui-monospace, monospace;
+
+  --bg: var(--rs-bg);
+  --fg: var(--rs-text);
+
+  --sidebar-bg: var(--rs-surface);
+  --sidebar-fg: var(--rs-text-muted);
+  --sidebar-non-existant: var(--rs-text-subtle);
+  --sidebar-active: var(--rs-accent);
+  --sidebar-spacer: var(--rs-border);
+  --sidebar-header-border-color: var(--rs-border);
+
+  --scrollbar: var(--rs-border-strong);
+
+  --icons: var(--rs-text-subtle);
+  --icons-hover: var(--rs-text);
+
+  --links: var(--rs-accent);
+  --inline-code-color: var(--rs-accent);
+
+  --theme-popup-bg: var(--rs-surface);
+  --theme-popup-border: var(--rs-border-strong);
+  --theme-hover: var(--rs-surface-3);
+
+  --quote-bg: var(--rs-surface-2);
+  --quote-border: var(--rs-border);
+
+  --table-border-color: var(--rs-border);
+  --table-header-bg: var(--rs-surface-2);
+  --table-alternate-bg: var(--rs-surface-2);
+
+  --searchbar-bg: var(--rs-surface-3);
+  --searchbar-fg: var(--rs-text);
+  --searchbar-border-color: var(--rs-border-strong);
+  --searchresults-li-bg: var(--rs-surface-2);
+  --searchresults-border-color: var(--rs-border);
+  --search-mark-bg: var(--rs-accent-soft);
+}
+
+/* ---- Typography: IBM Plex, DESIGN.md scale ---- */
+
+html {
+  font-family: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.content {
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.content h1,
+.content h2,
+.content h3,
+.content h4 {
+  font-weight: 680;
+  letter-spacing: -0.02em;
+  color: var(--rs-text);
+}
+
+.content h1 {
+  letter-spacing: -0.025em;
+}
+
+/* ---- Code: mono font + tinted surface, DESIGN radii ---- */
+
+code {
+  font-family: var(--mono-font);
+  font-feature-settings: "ss01";
+}
+
+.content pre,
+.content pre > code {
+  background: var(--rs-surface-2);
+  border: 1px solid var(--rs-border);
+  border-radius: 9px; /* --r-md */
+}
+
+.content code:not(pre code) {
+  background: var(--rs-surface-3);
+  border-radius: 6px; /* --r-sm */
+  padding: 0.1em 0.35em;
+}
+
+/* ---- Accent: one point of energy. Focus ring + active nav. ---- */
+
+a.active,
+.chapter li.chapter-item a.active {
+  color: var(--rs-accent);
+  font-weight: 600;
+}
+
+:focus-visible {
+  outline: 2px solid var(--rs-accent);
+  outline-offset: 2px;
+}
+
+/* ---- Tables: DESIGN radii + subtle header ---- */
+
+.content table {
+  border-radius: 13px; /* --r-lg */
+  overflow: hidden;
+  border: 1px solid var(--rs-border);
+}
+
+.content table thead th {
+  text-transform: uppercase;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--rs-text-subtle);
+}

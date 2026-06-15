@@ -9,3 +9,4 @@ src = "src"
 git-repository-url = "https://github.com/rinnguyen711/rustapi"
 default-theme = "light"
 preferred-dark-theme = "navy"
+additional-css = ["theme/rustapi.css"]
