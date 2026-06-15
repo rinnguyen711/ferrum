@@ -9,6 +9,8 @@ pub struct Component {
     pub uid: String,
     pub display_name: String,
     pub fields: Vec<Field>,
+    #[serde(default)]
+    pub managed: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -23,7 +25,7 @@ impl ComponentStore {
 
     pub async fn list(&self) -> Result<Vec<Component>, sqlx::Error> {
         let rows = sqlx::query_as::<_, RawComponent>(
-            "SELECT uid, display_name, fields FROM _components ORDER BY uid",
+            "SELECT uid, display_name, fields, managed FROM _components ORDER BY uid",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -32,7 +34,7 @@ impl ComponentStore {
 
     pub async fn get(&self, uid: &str) -> Result<Option<Component>, sqlx::Error> {
         let row = sqlx::query_as::<_, RawComponent>(
-            "SELECT uid, display_name, fields FROM _components WHERE uid = $1",
+            "SELECT uid, display_name, fields, managed FROM _components WHERE uid = $1",
         )
         .bind(uid)
         .fetch_optional(&self.pool)
@@ -45,17 +47,22 @@ impl ComponentStore {
         uid: &str,
         display_name: &str,
         fields: &[Field],
+        managed: bool,
     ) -> Result<Component, sqlx::Error> {
-        sqlx::query("INSERT INTO _components (uid, display_name, fields) VALUES ($1, $2, $3)")
-            .bind(uid)
-            .bind(display_name)
-            .bind(sqlx::types::Json(fields))
-            .execute(&self.pool)
-            .await?;
+        sqlx::query(
+            "INSERT INTO _components (uid, display_name, fields, managed) VALUES ($1, $2, $3, $4)",
+        )
+        .bind(uid)
+        .bind(display_name)
+        .bind(sqlx::types::Json(fields))
+        .bind(managed)
+        .execute(&self.pool)
+        .await?;
         Ok(Component {
             uid: uid.to_string(),
             display_name: display_name.to_string(),
             fields: fields.to_vec(),
+            managed,
         })
     }
 
@@ -64,14 +71,17 @@ impl ComponentStore {
         uid: &str,
         display_name: &str,
         fields: &[Field],
+        managed: bool,
     ) -> Result<Option<Component>, sqlx::Error> {
-        let result =
-            sqlx::query("UPDATE _components SET display_name = $1, fields = $2 WHERE uid = $3")
-                .bind(display_name)
-                .bind(sqlx::types::Json(fields))
-                .bind(uid)
-                .execute(&self.pool)
-                .await?;
+        let result = sqlx::query(
+            "UPDATE _components SET display_name = $1, fields = $2, managed = $3 WHERE uid = $4",
+        )
+        .bind(display_name)
+        .bind(sqlx::types::Json(fields))
+        .bind(managed)
+        .bind(uid)
+        .execute(&self.pool)
+        .await?;
         if result.rows_affected() == 0 {
             return Ok(None);
         }
@@ -79,6 +89,7 @@ impl ComponentStore {
             uid: uid.to_string(),
             display_name: display_name.to_string(),
             fields: fields.to_vec(),
+            managed,
         }))
     }
 
@@ -96,6 +107,7 @@ struct RawComponent {
     uid: String,
     display_name: String,
     fields: sqlx::types::Json<Vec<Field>>,
+    managed: bool,
 }
 
 impl RawComponent {
@@ -104,6 +116,7 @@ impl RawComponent {
             uid: self.uid,
             display_name: self.display_name,
             fields: self.fields.0,
+            managed: self.managed,
         }
     }
 }
