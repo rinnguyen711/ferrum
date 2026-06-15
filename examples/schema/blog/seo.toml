@@ -6,7 +6,23 @@ display_name = "SEO"
   [[component.field]]
   name = "meta_title"
   kind = "string"
+  max_length = 60
 
   [[component.field]]
   name = "meta_description"
   kind = "text"
+  max_length = 160
+
+  [[component.field]]
+  name = "canonical_url"
+  kind = "url"
+
+  [[component.field]]
+  name = "og_image"
+  kind = "media"
+  kind_meta = { multiple = false }
+
+  [[component.field]]
+  name = "no_index"
+  kind = "boolean"
+  default = false

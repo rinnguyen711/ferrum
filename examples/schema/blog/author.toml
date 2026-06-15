@@ -10,5 +10,20 @@ kind = "collection"
   required = true
 
   [[content_type.field]]
+  name = "slug"
+  kind = "slug"
+  required = true
+  unique = true
+
+  [[content_type.field]]
+  name = "email"
+  kind = "email"
+
+  [[content_type.field]]
   name = "bio"
   kind = "text"
+
+  [[content_type.field]]
+  name = "avatar"
+  kind = "media"
+  kind_meta = { multiple = false }
