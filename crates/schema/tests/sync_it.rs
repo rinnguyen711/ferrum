@@ -1,8 +1,8 @@
 //! End-to-end TOML sync against an ephemeral Postgres (testcontainers).
 
 use rustapi_core::{Field, FieldKind, PatchContentType};
-use rustapi_schema::{SchemaRegistry, SchemaService, SyncMode};
 use rustapi_schema::sync::sync_from_path;
+use rustapi_schema::{SchemaRegistry, SchemaService, SyncMode};
 use sqlx::PgPool;
 use std::io::Write;
 use testcontainers::runners::AsyncRunner;
@@ -102,7 +102,9 @@ async fn additive_ignores_db_only_field_full_drops_it() {
     let svc = service(&pool).await;
     let dir = write_blog_dir();
     let path = dir.path().to_str().unwrap();
-    sync_from_path(&svc, path, SyncMode::Additive).await.unwrap();
+    sync_from_path(&svc, path, SyncMode::Additive)
+        .await
+        .unwrap();
 
     let patch = PatchContentType {
         display_name: None,
@@ -121,7 +123,9 @@ async fn additive_ignores_db_only_field_full_drops_it() {
     };
     svc.patch("author", patch).await.unwrap();
 
-    sync_from_path(&svc, path, SyncMode::Additive).await.unwrap();
+    sync_from_path(&svc, path, SyncMode::Additive)
+        .await
+        .unwrap();
     assert!(svc
         .registry()
         .get("author")

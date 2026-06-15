@@ -88,11 +88,7 @@ impl NewContentType {
             .get("draft_publish")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
-        let mut obj = self
-            .options
-            .as_object()
-            .cloned()
-            .unwrap_or_default();
+        let mut obj = self.options.as_object().cloned().unwrap_or_default();
         obj.insert("draft_publish".into(), serde_json::Value::Bool(dp));
         serde_json::Value::Object(obj)
     }

@@ -97,8 +97,11 @@ pub(crate) fn plan_sync(
         match cur.get(d.name.as_str()) {
             None => actions.push(SyncAction::Create(d.clone())),
             Some(existing) => {
-                let cur_fields: HashMap<&str, &Field> =
-                    existing.fields.iter().map(|f| (f.name.as_str(), f)).collect();
+                let cur_fields: HashMap<&str, &Field> = existing
+                    .fields
+                    .iter()
+                    .map(|f| (f.name.as_str(), f))
+                    .collect();
                 let des_fields: HashMap<&str, &Field> =
                     d.fields.iter().map(|f| (f.name.as_str(), f)).collect();
 
@@ -167,8 +170,9 @@ fn managed_options(declared: &serde_json::Value) -> serde_json::Value {
 
 /// Parse a single TOML document into content types.
 pub(crate) fn parse_toml(doc: &str) -> Result<Vec<NewContentType>, Error> {
-    let parsed: SchemaFile = toml::from_str(doc)
-        .map_err(|e| Error::Validation(ValidationErrors::single(format!("schema TOML parse: {e}"))))?;
+    let parsed: SchemaFile = toml::from_str(doc).map_err(|e| {
+        Error::Validation(ValidationErrors::single(format!("schema TOML parse: {e}")))
+    })?;
     Ok(parsed.content_types.into_iter().map(Into::into).collect())
 }
 
@@ -224,9 +228,7 @@ fn order_creates(mut creates: Vec<NewContentType>) -> Vec<NewContentType> {
         let idx = creates.iter().position(|c| {
             c.fields.iter().all(|f| match f.relation_meta() {
                 Some(m) => {
-                    m.target == c.name
-                        || !names.contains(&m.target)
-                        || placed.contains(&m.target)
+                    m.target == c.name || !names.contains(&m.target) || placed.contains(&m.target)
                 }
                 None => true,
             })
@@ -287,7 +289,12 @@ pub async fn sync_from_path(
 
     for action in others {
         match action {
-            SyncAction::Patch { name, add_fields, drop_fields, options } => {
+            SyncAction::Patch {
+                name,
+                add_fields,
+                drop_fields,
+                options,
+            } => {
                 let existing = schemas.registry().get(&name).await;
                 let options_changed = existing
                     .as_ref()
@@ -329,15 +336,22 @@ pub async fn sync_from_path(
         }
     }
 
-    tracing::info!(created, patched, dropped, unmanaged, ?mode, "schema sync complete");
+    tracing::info!(
+        created,
+        patched,
+        dropped,
+        unmanaged,
+        ?mode,
+        "schema sync complete"
+    );
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustapi_core::FieldKind;
     use chrono::Utc;
+    use rustapi_core::FieldKind;
     use serde_json::json;
     use uuid::Uuid;
 
@@ -369,7 +383,11 @@ mod tests {
             name: name.into(),
             display_name: name.into(),
             fields,
-            options: if managed { json!({ "managed": true }) } else { json!({}) },
+            options: if managed {
+                json!({ "managed": true })
+            } else {
+                json!({})
+            },
             kind: rustapi_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
@@ -390,7 +408,11 @@ mod tests {
         let current = vec![ct("post", vec![fld("title")], true)];
         let actions = plan_sync(&desired, &current, SyncMode::Additive).unwrap();
         match &actions[0] {
-            SyncAction::Patch { add_fields, drop_fields, .. } => {
+            SyncAction::Patch {
+                add_fields,
+                drop_fields,
+                ..
+            } => {
                 assert_eq!(add_fields.len(), 1);
                 assert_eq!(add_fields[0].name, "body");
                 assert!(drop_fields.is_empty());
@@ -412,7 +434,9 @@ mod tests {
 
         let full = plan_sync(&desired, &current, SyncMode::Full).unwrap();
         match &full[0] {
-            SyncAction::Patch { drop_fields, .. } => assert_eq!(drop_fields, &vec!["body".to_string()]),
+            SyncAction::Patch { drop_fields, .. } => {
+                assert_eq!(drop_fields, &vec!["body".to_string()])
+            }
             other => panic!("expected Patch, got {other:?}"),
         }
     }
@@ -490,8 +514,8 @@ options = { draft_publish = true }
 
     #[test]
     fn blog_preset_parses_and_orders() {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../examples/schema/blog");
+        let dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/schema/blog");
         let desired = super::load_desired(&dir).expect("load blog preset");
         let names: Vec<&str> = desired.iter().map(|c| c.name.as_str()).collect();
         assert!(names.contains(&"author"));
@@ -501,7 +525,10 @@ options = { draft_publish = true }
         }
         let ordered = super::order_creates(desired);
         let pos = |n: &str| ordered.iter().position(|c| c.name == n).unwrap();
-        assert!(pos("author") < pos("post"), "author must be created before post");
+        assert!(
+            pos("author") < pos("post"),
+            "author must be created before post"
+        );
     }
 
     #[test]
