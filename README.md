@@ -27,8 +27,7 @@ export RUSTAPI_JWT_SECRET=$(openssl rand -hex 32)
 docker compose up --build
 ```
 
-The demo seeds default **Article**, **Author**, and **Category** types with
-sample data on first boot (empty DB only). Disable with `RUSTAPI_SEED=false`.
+To ship pre-defined content types, set `RUSTAPI_SCHEMA_DIR` (see [Schema as code](#schema-as-code) below).
 
 ### Media storage
 
@@ -87,7 +86,8 @@ cargo test --workspace
 # Run the server against an external Postgres
 export DATABASE_URL=postgres://postgres:postgres@localhost:5432/rustapi
 export RUSTAPI_JWT_SECRET=$(openssl rand -hex 32)
-export RUSTAPI_STUDIO_DIR=$PWD/ui/dist   # optional: serve admin UI at /studio
+export RUSTAPI_STUDIO_DIR=$PWD/ui/dist        # optional: serve admin UI at /studio
+export RUSTAPI_SCHEMA_DIR=examples/schema/blog # optional: load TOML schema files on startup
 cargo run -p rustapi
 ```
 
@@ -140,3 +140,55 @@ export RUSTAPI_DOCS_ENABLED=false        # default true; false → /openapi.json
 export RUSTAPI_API_VERSION=1.2.3         # default 0.1.0; reported as OpenAPI info.version
 export RUSTAPI_PUBLIC_URL=https://api.example.com   # default "/"; reported as OpenAPI servers[0].url
 ```
+
+## Schema as code
+
+Define content types declaratively in TOML files and let the server sync the database to match on startup — no manual API calls or UI clicks required.
+
+Point `RUSTAPI_SCHEMA_DIR` at a directory of `*.toml` files; all are loaded and merged:
+
+```sh
+export RUSTAPI_SCHEMA_DIR=examples/schema/blog
+```
+
+A working blog preset ships in `examples/schema/blog/` (`author.toml`, `post.toml`). Trimmed example:
+
+```toml
+# post.toml
+[[content_type]]
+name = "post"
+display_name = "Post"
+kind = "collection"
+options = { draft_publish = true }
+
+  [[content_type.field]]
+  name = "title"
+  kind = "string"
+  required = true
+
+  [[content_type.field]]
+  name = "author"
+  kind = "relation"
+  kind_meta = { target = "author", cardinality = "many_to_one", inverse = "posts" }
+```
+
+Alternatively, point `RUSTAPI_SCHEMA_FILE` at a single `.toml` file (used when `RUSTAPI_SCHEMA_DIR` is not set).
+
+### Sync modes
+
+```sh
+export RUSTAPI_SCHEMA_SYNC=additive   # default — creates types, adds new fields, never drops
+export RUSTAPI_SCHEMA_SYNC=full       # also drops types and fields absent from the TOML
+```
+
+### Managed types are read-only
+
+Types defined in TOML are locked in the admin UI and API. Attempts to edit or delete them via the API return **409 Conflict**. To change a managed type, edit the TOML and restart the server.
+
+### Rename limitation
+
+Field and type **rename is not supported**. A name change is treated as add-new + (in `full` mode) drop-old, which loses the old column's data. To rename safely, use the admin UI for unmanaged types, or accept the data loss in `full` mode.
+
+### Fail-fast on errors
+
+If any TOML file is invalid or a sync step fails, the server aborts startup. Treat schema files like DB migrations — fix the error before the server will start.
