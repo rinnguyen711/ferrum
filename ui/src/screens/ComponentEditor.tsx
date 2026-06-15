@@ -204,9 +204,11 @@ export function ComponentEditor() {
             onRemove={() => { if (!isManaged) removeField(f); }}
           />
         ))}
-        <button className="rs-schema-add" onClick={addField} disabled={isManaged}>
-          <Icons.plus size={16} /> Add another field to this component
-        </button>
+        {!isManaged && (
+          <button className="rs-schema-add" onClick={addField}>
+            <Icons.plus size={16} /> Add another field to this component
+          </button>
+        )}
       </div>
 
       {confirming && uid && (

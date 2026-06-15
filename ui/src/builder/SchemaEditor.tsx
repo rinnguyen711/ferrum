@@ -267,9 +267,11 @@ export function SchemaEditor() {
             onRemove={() => { if (!isManaged) removeField(f); }}
           />
         ))}
-        <button className="rs-schema-add" onClick={addField} disabled={isManaged}>
-          <Icons.plus size={16} /> Add another field to this collection type
-        </button>
+        {!isManaged && (
+          <button className="rs-schema-add" onClick={addField}>
+            <Icons.plus size={16} /> Add another field to this collection type
+          </button>
+        )}
       </div>
 
       {confirming && type && (
