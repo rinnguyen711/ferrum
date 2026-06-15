@@ -66,6 +66,13 @@ async fn update_one(
     Path(uid): Path<String>,
     Json(payload): Json<UpdatePayload>,
 ) -> Result<Json<Component>, ApiError> {
+    if let Some(existing) = state.components.get(&uid).await {
+        if existing.managed {
+            return Err(ApiError(Error::Conflict(format!(
+                "component `{uid}` is managed by a schema file; edit the TOML instead"
+            ))));
+        }
+    }
     let c = state
         .components
         .update(&uid, &payload.display_name, payload.fields, false)
@@ -87,6 +94,13 @@ async fn delete_one(
         return Err(ApiError(Error::Validation(
             rustapi_core::ValidationErrors::single("confirm_required: pass ?confirm=true"),
         )));
+    }
+    if let Some(existing) = state.components.get(&uid).await {
+        if existing.managed {
+            return Err(ApiError(Error::Conflict(format!(
+                "component `{uid}` is managed by a schema file; edit the TOML instead"
+            ))));
+        }
     }
     let referencing: Vec<String> = state
         .schemas
