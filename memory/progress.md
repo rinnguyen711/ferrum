@@ -140,3 +140,13 @@ GeoIP location (shows "—"), 2FA events (no 2FA in codebase), per-entry History
 ### Not done
 - Browser verification still pending (no dev admin creds; won't seed user's dev DB).
 - main not pushed to remote; branch feat/custom-roles not deleted.
+
+## Schema-as-code: TOML sync on startup (2026-06-15, branch feat/schema-as-code-toml)
+Declarative content-type + component definitions in TOML, synced to DB at boot. Specs/plans under docs/superpowers/.
+- **Config:** `RUSTAPI_SCHEMA_DIR` (dir of *.toml, merged) or `RUSTAPI_SCHEMA_FILE`; `RUSTAPI_SCHEMA_SYNC=additive`(default)|`full`. `RUSTAPI_SEED` + demo seed (bin/seed.rs, author/article/category) REMOVED — ships empty.
+- **Engine:** `crates/schema/src/sync.rs` — `parse_schema`/`load_desired`→`ParsedSchema{content_types, components}`; pure `plan_sync`/`plan_components` diffs; `order_creates` (rel deps) / `order_drops` (reverse, FK-safe); `sync_from_path(&SchemaService, &ComponentService, path, mode)` applies **components before content types**. Fail-fast: any error aborts boot.
+- **Managed lock:** synced types get `options.managed=true` (`ContentType::managed()`); components get a `managed` bool column (migration `0013_component_managed.sql`, `ComponentStore`/`ComponentService` create/update gained `managed` param). HTTP rejects edit/delete on managed (409) in routes/schema.rs + routes/components.rs. UI greys them out: SchemaEditor + ComponentEditor (badge + disabled save/delete/fields; D&P toggle + display_name also locked). `managedType`/`managedComponent` in ui/src/api/types.ts.
+- **Modes:** additive = create + add fields, never drop; un-manages DB types dropped from TOML. full = also drops absent types/fields (FK-ordered) + components (aborts if component still referenced — two-pass needed).
+- **Rename unsupported** (documented). Draft & Publish settable from TOML via `options={draft_publish=true}`.
+- Fixtures: `examples/schema/blog/` (author.toml, post.toml, seo.toml component). Integration: `crates/schema/tests/sync_it.rs`.
+- 34 commits ahead of main; branch NOT merged/pushed (left as-is per user).

@@ -116,3 +116,21 @@ Not in sql/http crates. `sql`/`http` have only pure-logic `#[cfg(test)]` units.
 DB-touching tests use the shared `crates/bin/tests/common/mod.rs` `TestApp` harness
 (real Postgres + in-process router over reqwest, seeds an admin). `common/mod.rs`
 constructs `AppState` — any new AppState field/authz-ctor change must update it too.
+
+## NewContentType::resolved_options() must preserve extra options keys (2026-06-15)
+`SchemaService::create` stores `payload.resolved_options()`, NOT the raw options. Original impl rebuilt
+`{draft_publish: bool}` and DISCARDED every other key — silently dropped `managed:true` set by schema sync,
+breaking the managed lock entirely. Fix: start from the caller's options object, only fill in `draft_publish`
+default, keep the rest. Any code adding an options key on the create path must verify resolved_options keeps it.
+Caught only by end-to-end integration test, not unit tests.
+
+## Schema sync idempotency: plan must match what create persists (2026-06-15)
+`plan_sync` Patch options use `managed_options(&d.resolved_options())` (NOT `&d.options`) so the planned
+options shape equals what `create` stores (`{...,draft_publish:false,managed:true}`). Otherwise a 2nd boot
+sees stored != planned → fires a redundant options-only PATCH every restart. Re-run-is-no-op depends on this.
+
+## Background subagents can't commit + wander off-scope (2026-06-15)
+Subagents run via Agent tool with run_in_background can't get git-commit permission prompts (they stall asking).
+Two parallel agents this session also made stray out-of-scope edits (junk field in author.toml, savebar CSS in
+styles.css, docker-compose schema wiring) — none requested. Always diff the full working tree after a background
+agent and revert anything outside the task's named files before committing.
