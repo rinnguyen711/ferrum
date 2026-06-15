@@ -1,4 +1,4 @@
-# Blog preset — Post (relates to Author).
+# Blog preset — Post (relates to Author, Category, Tags + SEO component).
 [[content_type]]
 name = "post"
 display_name = "Post"
@@ -9,20 +9,54 @@ options = { draft_publish = true }
   name = "title"
   kind = "string"
   required = true
+  max_length = 200
 
   [[content_type.field]]
   name = "slug"
   kind = "slug"
   required = true
+  unique = true
+
+  [[content_type.field]]
+  name = "excerpt"
+  kind = "text"
+  max_length = 320
 
   [[content_type.field]]
   name = "body"
-  kind = "text"
+  kind = "rich_text"
+  required = true
+
+  [[content_type.field]]
+  name = "cover_image"
+  kind = "media"
+  kind_meta = { multiple = false }
+
+  [[content_type.field]]
+  name = "status"
+  kind = "enum"
+  default = "draft"
+  kind_meta = { values = ["draft", "in_review", "published", "archived"] }
+
+  [[content_type.field]]
+  name = "featured"
+  kind = "boolean"
+  default = false
 
   [[content_type.field]]
   name = "author"
   kind = "relation"
   kind_meta = { target = "author", cardinality = "many_to_one", inverse = "posts" }
+
+  [[content_type.field]]
+  name = "category"
+  kind = "relation"
+  kind_meta = { target = "category", cardinality = "many_to_one", inverse = "posts" }
+
+  [[content_type.field]]
+  name = "tags"
+  kind = "relation"
+  kind_meta = { target = "tag", cardinality = "many_to_many", inverse = "posts" }
 
   [[content_type.field]]
   name = "seo"

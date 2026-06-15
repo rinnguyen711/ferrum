@@ -149,4 +149,4 @@ Declarative content-type + component definitions in TOML, synced to DB at boot. 
 - **Modes:** additive = create + add fields, never drop; un-manages DB types dropped from TOML. full = also drops absent types/fields (FK-ordered) + components (aborts if component still referenced — two-pass needed).
 - **Rename unsupported** (documented). Draft & Publish settable from TOML via `options={draft_publish=true}`.
 - Fixtures: `examples/schema/blog/` (author.toml, post.toml, seo.toml component). Integration: `crates/schema/tests/sync_it.rs`.
-- 34 commits ahead of main; branch NOT merged/pushed (left as-is per user).
+- MERGED to main (HEAD eec1ba8 as of 2026-06-15); branch feat/schema-as-code-toml fully in main, not pushed to remote.

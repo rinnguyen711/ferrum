@@ -1,0 +1,16 @@
+# Blog preset — Tag.
+[[content_type]]
+name = "tag"
+display_name = "Tag"
+kind = "collection"
+
+  [[content_type.field]]
+  name = "name"
+  kind = "string"
+  required = true
+
+  [[content_type.field]]
+  name = "slug"
+  kind = "slug"
+  required = true
+  unique = true

@@ -1,0 +1,20 @@
+# Blog preset — Category.
+[[content_type]]
+name = "category"
+display_name = "Category"
+kind = "collection"
+
+  [[content_type.field]]
+  name = "name"
+  kind = "string"
+  required = true
+
+  [[content_type.field]]
+  name = "slug"
+  kind = "slug"
+  required = true
+  unique = true
+
+  [[content_type.field]]
+  name = "description"
+  kind = "text"
