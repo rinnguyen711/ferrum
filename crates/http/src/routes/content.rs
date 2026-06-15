@@ -200,6 +200,7 @@ pub(crate) async fn get_entry(
 pub(crate) async fn create_entry(
     state: &AppState,
     principal: &Principal,
+    req_ctx: &rustapi_core::RequestContext,
     ct_name: &str,
     body: Map<String, Value>,
 ) -> Result<Value, Error> {
@@ -261,16 +262,29 @@ pub(crate) async fn create_entry(
             id: new_id,
         })
         .await;
+    let label = entry_label(&record, &new_id);
+    audit_content(
+        state,
+        principal,
+        req_ctx.clone(),
+        "entry.create",
+        &ct.name,
+        &new_id,
+        label,
+        vec![],
+    )
+    .await;
     Ok(record)
 }
 
 pub(crate) async fn update_entry(
     state: &AppState,
     principal: &Principal,
+    req_ctx: &rustapi_core::RequestContext,
     ct_name: &str,
     id: Uuid,
     body: Map<String, Value>,
-) -> Result<(Value, Vec<rustapi_core::FieldChange>), Error> {
+) -> Result<Value, Error> {
     let ct = authorize_collection(state, principal, Action::ContentWrite, ct_name).await?;
 
     // Snapshot the prior record (best-effort) so the handler can build a
@@ -357,12 +371,25 @@ pub(crate) async fn update_entry(
         })
         .await;
     let changes = diff_records(prior.as_ref(), &record);
-    Ok((record, changes))
+    let label = entry_label(&record, &id);
+    audit_content(
+        state,
+        principal,
+        req_ctx.clone(),
+        "entry.update",
+        &ct.name,
+        &id,
+        label,
+        changes,
+    )
+    .await;
+    Ok(record)
 }
 
 pub(crate) async fn delete_entry(
     state: &AppState,
     principal: &Principal,
+    req_ctx: &rustapi_core::RequestContext,
     ct_name: &str,
     id: Uuid,
 ) -> Result<(), Error> {
@@ -381,6 +408,17 @@ pub(crate) async fn delete_entry(
             id,
         })
         .await;
+    audit_content(
+        state,
+        principal,
+        req_ctx.clone(),
+        "entry.delete",
+        ct_name,
+        &id,
+        id.to_string(),
+        vec![],
+    )
+    .await;
     Ok(())
 }
 
@@ -418,27 +456,9 @@ async fn create(
     axum::extract::Extension(ctx): axum::extract::Extension<rustapi_core::RequestContext>,
     Json(body): Json<Map<String, Value>>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
-    let record = create_entry(&state, &principal, &ct_name, body)
+    let record = create_entry(&state, &principal, &ctx, &ct_name, body)
         .await
         .map_err(ApiError)?;
-    if let Some(id) = record
-        .get("id")
-        .and_then(|v| v.as_str())
-        .and_then(|s| Uuid::parse_str(s).ok())
-    {
-        let label = entry_label(&record, &id);
-        audit_content(
-            &state,
-            &principal,
-            ctx,
-            "entry.create",
-            &ct_name,
-            &id,
-            label,
-            vec![],
-        )
-        .await;
-    }
     Ok((StatusCode::CREATED, Json(record)))
 }
 
@@ -462,21 +482,9 @@ async fn update(
     axum::extract::Extension(ctx): axum::extract::Extension<rustapi_core::RequestContext>,
     Json(body): Json<Map<String, Value>>,
 ) -> Result<Json<Value>, ApiError> {
-    let (record, changes) = update_entry(&state, &principal, &ct_name, id, body)
+    let record = update_entry(&state, &principal, &ctx, &ct_name, id, body)
         .await
         .map_err(ApiError)?;
-    let label = entry_label(&record, &id);
-    audit_content(
-        &state,
-        &principal,
-        ctx,
-        "entry.update",
-        &ct_name,
-        &id,
-        label,
-        changes,
-    )
-    .await;
     Ok(Json(record))
 }
 
@@ -486,20 +494,9 @@ async fn delete_one(
     axum::extract::Extension(principal): axum::extract::Extension<Principal>,
     axum::extract::Extension(ctx): axum::extract::Extension<rustapi_core::RequestContext>,
 ) -> Result<StatusCode, ApiError> {
-    delete_entry(&state, &principal, &ct_name, id)
+    delete_entry(&state, &principal, &ctx, &ct_name, id)
         .await
         .map_err(ApiError)?;
-    audit_content(
-        &state,
-        &principal,
-        ctx,
-        "entry.delete",
-        &ct_name,
-        &id,
-        id.to_string(),
-        vec![],
-    )
-    .await;
     Ok(StatusCode::NO_CONTENT)
 }
 
