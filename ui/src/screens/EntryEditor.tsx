@@ -12,7 +12,7 @@ import {
   unpublishEntry,
   updateEntry,
 } from "../api/endpoints";
-import { draftPublishEnabled } from "../api/types";
+import { draftPublishEnabled, coerceFieldValue } from "../api/types";
 import { ApiError } from "../api/client";
 
 export function EntryEditor() {
@@ -101,6 +101,9 @@ export function EntryEditor() {
           setSaving(false);
           return;
         }
+      } else if (f.kind === "component") {
+        // coerce nested number sub-fields (inputs emit strings) before sending
+        body[f.name] = coerceFieldValue(f, v);
       } else {
         body[f.name] = v;
       }
@@ -120,6 +123,14 @@ export function EntryEditor() {
           const map: Record<string, string> = {};
           for (const fe of e.fieldErrors) map[fe.field] = fe.message ?? "Invalid";
           setFieldErrors(map);
+          // Safety net: surface a banner too so the failure is never silent,
+          // even if a field key (e.g. a nested component path) doesn't map to
+          // a rendered input.
+          setBanner(
+            e.fieldErrors
+              .map((fe) => `${fe.field}: ${fe.message ?? "invalid"}`)
+              .join("; "),
+          );
         } else {
           setBanner(e.message);
         }
@@ -175,6 +186,7 @@ export function EntryEditor() {
                 field={f}
                 value={form[f.name]}
                 error={fieldErrors[f.name]}
+                errors={fieldErrors}
                 onChange={(v) => set(f.name, v)}
                 type={type}
               />

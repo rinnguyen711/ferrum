@@ -29,14 +29,22 @@ export function FieldRow({
   error,
   onChange,
   type,
+  errors,
+  path,
 }: {
   field: Field;
   value: unknown;
   error?: string;
   onChange: (v: unknown) => void;
   type: string;
+  /** Full error map keyed by dotted path; forwarded to component sub-fields. */
+  errors?: Record<string, string>;
+  /** Dotted path of this field (defaults to field.name); sub-fields nest under it. */
+  path?: string;
 }) {
   const wide = WIDE_KINDS.has(field.kind);
+  const self = path ?? field.name;
+  const ownError = error ?? errors?.[self];
   return (
     <div className="rs-field" data-wide={wide ? "true" : undefined}>
       <div className="rs-field-label">
@@ -46,8 +54,8 @@ export function FieldRow({
         </label>
         <span className="rs-field-hint">{field.kind}</span>
       </div>
-      <FieldInput field={field} value={value} onChange={onChange} type={type} />
-      {error && <Notice>{error}</Notice>}
+      <FieldInput field={field} value={value} onChange={onChange} type={type} errors={errors} path={self} />
+      {ownError && <Notice>{ownError}</Notice>}
     </div>
   );
 }
@@ -59,11 +67,15 @@ export function FieldInput({
   value,
   onChange,
   type: _type,
+  errors,
+  path,
 }: {
   field: Field;
   value: unknown;
   onChange: (v: unknown) => void;
   type: string;
+  errors?: Record<string, string>;
+  path?: string;
 }) {
   const str = typeof value === "string" ? value : value == null ? "" : String(value);
   switch (field.kind) {
@@ -124,7 +136,7 @@ export function FieldInput({
     case "rich_text":
       return <RichTextEditor value={value} onChange={onChange} />;
     case "component":
-      return <ComponentField field={field} value={value} onChange={onChange} />;
+      return <ComponentField field={field} value={value} onChange={onChange} errors={errors} path={path ?? field.name} />;
     default:
       return (
         <input className="rs-input" value={str} onChange={(e) => onChange(e.target.value)} />
@@ -310,13 +322,18 @@ function ComponentField({
   field,
   value,
   onChange,
+  errors,
+  path,
 }: {
   field: Field;
   value: unknown;
   onChange: (v: unknown) => void;
+  errors?: Record<string, string>;
+  path?: string;
 }) {
   const meta = componentMeta(field);
   const innerFields = (field.kind_meta._component_fields as Field[] | undefined) ?? field._component_fields ?? [];
+  const base = path ?? field.name;
 
   if (!meta) return null;
 
@@ -346,6 +363,8 @@ function ComponentField({
                 value={item[f.name]}
                 onChange={(v) => setItem(i, { [f.name]: v })}
                 type=""
+                errors={errors}
+                path={`${base}[${i}].${f.name}`}
               />
             ))}
           </div>
@@ -371,6 +390,8 @@ function ComponentField({
           value={obj[f.name]}
           onChange={(v) => setField(f.name, v)}
           type=""
+          errors={errors}
+          path={`${base}.${f.name}`}
         />
       ))}
     </div>
