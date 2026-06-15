@@ -192,3 +192,5 @@ Field and type **rename is not supported**. A name change is treated as add-new 
 ### Fail-fast on errors
 
 If any TOML file is invalid or a sync step fails, the server aborts startup. Treat schema files like DB migrations — fix the error before the server will start.
+
+Each type is created/updated in its own transaction and they are applied in sequence, so a mid-sync failure can leave earlier types already applied. Fix the offending file and restart; sync is idempotent, so the already-applied types are skipped on the next boot.
