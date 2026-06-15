@@ -174,6 +174,31 @@ options = { draft_publish = true }
 
 Alternatively, point `RUSTAPI_SCHEMA_FILE` at a single `.toml` file (used when `RUSTAPI_SCHEMA_DIR` is not set).
 
+### Components
+
+Reusable field groups (components) can be declared with `[[component]]` blocks and referenced from a `component` field:
+
+```toml
+[[component]]
+uid = "shared.seo"
+display_name = "SEO"
+
+  [[component.field]]
+  name = "meta_title"
+  kind = "string"
+
+[[content_type]]
+name = "post"
+display_name = "Post"
+
+  [[content_type.field]]
+  name = "seo"
+  kind = "component"
+  kind_meta = { component = "shared.seo", multiple = false }
+```
+
+Components are synced **before** content types, so a `component` field can reference a component the same files define. Managed components are read-only in the UI/API (edits return **409**). In `full` mode, sync will **not** drop a component still referenced by a content type — it aborts startup so you remove the reference first.
+
 ### Sync modes
 
 ```sh
