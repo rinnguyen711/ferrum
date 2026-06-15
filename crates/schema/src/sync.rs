@@ -47,6 +47,7 @@ pub(crate) struct TomlComponent {
 }
 
 /// Parsed content of one or more TOML schema documents.
+#[derive(Debug)]
 pub(crate) struct ParsedSchema {
     pub content_types: Vec<NewContentType>,
     pub components: Vec<TomlComponent>,
@@ -889,6 +890,27 @@ options = { draft_publish = true }
             }
             other => panic!("expected Patch, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn load_desired_rejects_duplicate_component_uid() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let mut a = std::fs::File::create(dir.path().join("a.toml")).unwrap();
+        write!(a, "[[component]]\nuid = \"shared.seo\"\ndisplay_name = \"SEO\"\n").unwrap();
+        let mut b = std::fs::File::create(dir.path().join("b.toml")).unwrap();
+        write!(b, "[[component]]\nuid = \"shared.seo\"\ndisplay_name = \"SEO 2\"\n").unwrap();
+        let err = super::load_desired(dir.path()).unwrap_err();
+        assert!(format!("{err:?}").contains("duplicate component"), "got: {err:?}");
+    }
+
+    #[test]
+    fn plan_components_update_on_display_name_change() {
+        let desired = vec![tcomp("shared.seo", vec![fld("title")])]; // display_name = "shared.seo"
+        let mut existing = comp("shared.seo", vec![fld("title")], true);
+        existing.display_name = "Old Name".into(); // differs from tcomp's default uid-as-name
+        let acts = plan_components(&desired, &[existing], SyncMode::Additive).unwrap();
+        assert!(matches!(&acts[0], ComponentAction::Update(_)), "display_name change must yield Update");
     }
 
     #[test]

@@ -197,7 +197,7 @@ display_name = "Post"
   kind_meta = { component = "shared.seo", multiple = false }
 ```
 
-Components are synced **before** content types, so a `component` field can reference a component the same files define. Managed components are read-only in the UI/API (edits return **409**). In `full` mode, sync will **not** drop a component still referenced by a content type — it aborts startup so you remove the reference first.
+Components are synced **before** content types, so a `component` field can reference a component the same files define. Managed components are read-only in the UI/API (edits return **409**). In `full` mode, sync will **not** drop a component still referenced by a content type — it aborts startup so you remove the reference first. This also means you cannot drop a component and its last referencing content type in a single `full` sync — remove the referencing field or type first, then drop the component on a subsequent sync.
 
 ### Sync modes
 
