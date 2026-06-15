@@ -38,9 +38,7 @@ struct SchemaFile {
 
 /// A component as declared in TOML. `field` is renamed so the TOML key is
 /// `[[component.field]]`.
-// Fields consumed by plan_components in Task 4.
-#[allow(dead_code)]
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 pub(crate) struct TomlComponent {
     pub uid: String,
     pub display_name: String,
@@ -51,7 +49,7 @@ pub(crate) struct TomlComponent {
 /// Parsed content of one or more TOML schema documents.
 pub(crate) struct ParsedSchema {
     pub content_types: Vec<NewContentType>,
-    // consumed by plan_components in Task 4
+    // consumed by sync_from_path in Task 5
     #[allow(dead_code)]
     pub components: Vec<TomlComponent>,
 }
@@ -447,6 +445,57 @@ pub async fn sync_from_path(
     Ok(())
 }
 
+use rustapi_sql::Component;
+
+/// One reconciliation step for components.
+// wired into sync_from_path in Task 5
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum ComponentAction {
+    Create(TomlComponent),
+    Update(TomlComponent),
+    Delete(String),
+    Unmanage(String),
+}
+
+/// Pure diff for components. `desired` is the TOML set, `current` the live
+/// component registry list.
+// wired into sync_from_path in Task 5
+#[allow(dead_code)]
+pub(crate) fn plan_components(
+    desired: &[TomlComponent],
+    current: &[Component],
+    mode: SyncMode,
+) -> Result<Vec<ComponentAction>, Error> {
+    use std::collections::HashMap;
+    let cur: HashMap<&str, &Component> = current.iter().map(|c| (c.uid.as_str(), c)).collect();
+    let des: HashMap<&str, &TomlComponent> = desired.iter().map(|c| (c.uid.as_str(), c)).collect();
+    let mut actions = Vec::new();
+    for d in desired {
+        match cur.get(d.uid.as_str()) {
+            None => actions.push(ComponentAction::Create(d.clone())),
+            Some(existing) => {
+                if existing.display_name != d.display_name || existing.fields != d.fields {
+                    actions.push(ComponentAction::Update(d.clone()));
+                }
+            }
+        }
+    }
+    for c in current {
+        if !des.contains_key(c.uid.as_str()) {
+            match mode {
+                SyncMode::Full => actions.push(ComponentAction::Delete(c.uid.clone())),
+                SyncMode::Additive => {
+                    if c.managed {
+                        actions.push(ComponentAction::Unmanage(c.uid.clone()));
+                    }
+                }
+            }
+        }
+    }
+    Ok(actions)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -492,6 +541,44 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
+    }
+
+    fn comp(uid: &str, fields: Vec<Field>, managed: bool) -> rustapi_sql::Component {
+        rustapi_sql::Component { uid: uid.into(), display_name: uid.into(), fields, managed }
+    }
+    fn tcomp(uid: &str, fields: Vec<Field>) -> super::TomlComponent {
+        super::TomlComponent { uid: uid.into(), display_name: uid.into(), fields }
+    }
+
+    #[test]
+    fn plan_components_create_update_skip() {
+        let desired = vec![tcomp("shared.seo", vec![fld("title")])];
+        let acts = plan_components(&desired, &[], SyncMode::Additive).unwrap();
+        assert!(matches!(&acts[0], ComponentAction::Create(c) if c.uid == "shared.seo"));
+
+        let cur = vec![comp("shared.seo", vec![fld("title")], true)];
+        let acts = plan_components(&desired, &cur, SyncMode::Additive).unwrap();
+        assert!(acts.is_empty(), "equal component must produce no action");
+
+        let desired2 = vec![tcomp("shared.seo", vec![fld("title"), fld("body")])];
+        let acts = plan_components(&desired2, &cur, SyncMode::Additive).unwrap();
+        assert!(matches!(&acts[0], ComponentAction::Update(c) if c.fields.len() == 2));
+    }
+
+    #[test]
+    fn plan_components_delete_full_unmanage_additive() {
+        let cur = vec![comp("shared.seo", vec![fld("title")], true)];
+        let full = plan_components(&[], &cur, SyncMode::Full).unwrap();
+        assert_eq!(full, vec![ComponentAction::Delete("shared.seo".into())]);
+        let add = plan_components(&[], &cur, SyncMode::Additive).unwrap();
+        assert_eq!(add, vec![ComponentAction::Unmanage("shared.seo".into())]);
+    }
+
+    #[test]
+    fn plan_components_unmanaged_db_only_left_alone_additive() {
+        let cur = vec![comp("ui.only", vec![fld("title")], false)];
+        let add = plan_components(&[], &cur, SyncMode::Additive).unwrap();
+        assert!(add.is_empty());
     }
 
     #[test]
