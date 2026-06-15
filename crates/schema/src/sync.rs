@@ -139,7 +139,7 @@ pub(crate) fn plan_sync(
                     name: d.name.clone(),
                     add_fields,
                     drop_fields,
-                    options: managed_options(&d.options),
+                    options: managed_options(&d.resolved_options()),
                 });
             }
         }
@@ -248,6 +248,55 @@ fn order_creates(mut creates: Vec<NewContentType>) -> Vec<NewContentType> {
     ordered
 }
 
+/// Order type drops so a type that holds a relation to another to-be-dropped
+/// type is deleted before its target (reverse of create ordering). Prevents
+/// FK-RESTRICT violations when dropping related types in full mode.
+fn order_drops(mut names: Vec<String>, current: &[ContentType]) -> Vec<String> {
+    use std::collections::{HashMap, HashSet};
+    let by_name: HashMap<&str, &ContentType> =
+        current.iter().map(|c| (c.name.as_str(), c)).collect();
+    let drop_set: HashSet<String> = names.iter().cloned().collect();
+    let mut ordered: Vec<String> = Vec::with_capacity(names.len());
+    let mut placed: HashSet<String> = HashSet::new();
+
+    while !names.is_empty() {
+        // Pick a type none of whose still-unplaced relation targets (within the
+        // drop set) remain — i.e. a leaf in the "depends on" graph: a type that
+        // is not depended-upon by any remaining type. We drop dependents first,
+        // so a type is droppable when no OTHER remaining type relates to it.
+        let idx = names.iter().position(|n| {
+            !names.iter().any(|other| {
+                if other == n || placed.contains(other) {
+                    return false;
+                }
+                by_name
+                    .get(other.as_str())
+                    .map(|ct| {
+                        ct.fields.iter().any(|f| {
+                            f.relation_meta()
+                                .map(|m| m.target == *n && drop_set.contains(&m.target))
+                                .unwrap_or(false)
+                        })
+                    })
+                    .unwrap_or(false)
+            })
+        });
+        match idx {
+            Some(i) => {
+                let n = names.remove(i);
+                placed.insert(n.clone());
+                ordered.push(n);
+            }
+            None => {
+                // Cycle (e.g. mutual relations): fall back to declaration order.
+                ordered.append(&mut names);
+                break;
+            }
+        }
+    }
+    ordered
+}
+
 /// Entry point called at boot. Loads TOML from `path`, diffs against the live
 /// registry, and applies the plan through `SchemaService`. Fail-fast: the first
 /// error aborts (and propagates so the server refuses to boot).
@@ -287,7 +336,21 @@ pub async fn sync_from_path(
         created += 1;
     }
 
+    // Collect drop names first so they can be ordered before execution.
+    let mut drop_names: Vec<String> = Vec::new();
+    let mut patch_actions: Vec<SyncAction> = Vec::new();
+    let mut unmanage_actions: Vec<SyncAction> = Vec::new();
+
     for action in others {
+        match action {
+            SyncAction::DropType(name) => drop_names.push(name),
+            SyncAction::Patch { .. } => patch_actions.push(action),
+            SyncAction::Unmanage(_) => unmanage_actions.push(action),
+            SyncAction::Create(_) => unreachable!("creates handled above"),
+        }
+    }
+
+    for action in patch_actions {
         match action {
             SyncAction::Patch {
                 name,
@@ -313,10 +376,17 @@ pub async fn sync_from_path(
                 schemas.patch(&name, patch).await?;
                 patched += 1;
             }
-            SyncAction::DropType(name) => {
-                schemas.delete(&name).await?;
-                dropped += 1;
-            }
+            _ => unreachable!(),
+        }
+    }
+
+    for name in order_drops(drop_names, &current) {
+        schemas.delete(&name).await?;
+        dropped += 1;
+    }
+
+    for action in unmanage_actions {
+        match action {
             SyncAction::Unmanage(name) => {
                 if let Some(existing) = schemas.registry().get(&name).await {
                     let mut obj = existing.options.as_object().cloned().unwrap_or_default();
@@ -332,7 +402,7 @@ pub async fn sync_from_path(
                     unmanaged += 1;
                 }
             }
-            SyncAction::Create(_) => unreachable!("creates handled above"),
+            _ => unreachable!(),
         }
     }
 
@@ -529,6 +599,53 @@ options = { draft_publish = true }
             pos("author") < pos("post"),
             "author must be created before post"
         );
+    }
+
+    #[test]
+    fn order_drops_removes_dependent_before_target() {
+        // author (no rels) + post (relation -> author). Both dropped in full mode.
+        // post must be deleted before author.
+        let author = ct("author", vec![fld("name")], true);
+        let mut rel = fld("author");
+        rel.kind = FieldKind::Relation;
+        rel.kind_meta = json!({"target": "author", "cardinality": "many_to_one"});
+        let post = ct("post", vec![fld("title"), rel], true);
+        let ordered = super::order_drops(
+            vec!["author".to_string(), "post".to_string()],
+            &[author, post],
+        );
+        let pos = |n: &str| ordered.iter().position(|x| x == n).unwrap();
+        assert!(
+            pos("post") < pos("author"),
+            "post (dependent) must drop before author (target)"
+        );
+    }
+
+    #[test]
+    fn diff_idempotent_when_options_match_resolved() {
+        // Existing type already stored with resolved+managed options. A re-plan must
+        // produce a Patch whose options EQUAL the stored options (so apply skips it).
+        let desired = vec![nct("post", vec![fld("title")])];
+        // Simulate stored state after first sync: resolved_options + managed.
+        let stored_opts = serde_json::json!({ "draft_publish": false, "managed": true });
+        let mut existing = ct("post", vec![fld("title")], true);
+        existing.options = stored_opts.clone();
+        let actions = plan_sync(&desired, &[existing], SyncMode::Additive).unwrap();
+        match &actions[0] {
+            SyncAction::Patch {
+                options,
+                add_fields,
+                drop_fields,
+                ..
+            } => {
+                assert!(add_fields.is_empty() && drop_fields.is_empty());
+                assert_eq!(
+                    options, &stored_opts,
+                    "planned options must equal stored so apply is a no-op"
+                );
+            }
+            other => panic!("expected Patch, got {other:?}"),
+        }
     }
 
     #[test]
