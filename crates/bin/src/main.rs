@@ -80,7 +80,7 @@ async fn main() -> Result<()> {
         .context("hydrate role registry")?;
 
     if let Some(path) = &cfg.schema_path {
-        rustapi_schema::sync::sync_from_path(&schemas, path, cfg.schema_sync_mode)
+        rustapi_schema::sync::sync_from_path(&schemas, &components, path, cfg.schema_sync_mode)
             .await
             .context("schema sync")?;
         registry

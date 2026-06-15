@@ -2,7 +2,7 @@
 
 use rustapi_core::{Field, FieldKind, PatchContentType};
 use rustapi_schema::sync::sync_from_path;
-use rustapi_schema::{SchemaRegistry, SchemaService, SyncMode};
+use rustapi_schema::{ComponentRegistry, ComponentService, SchemaRegistry, SchemaService, SyncMode};
 use sqlx::PgPool;
 use std::io::Write;
 use testcontainers::runners::AsyncRunner;
@@ -33,6 +33,12 @@ async fn service(pool: &PgPool) -> SchemaService {
     let registry = SchemaRegistry::new();
     registry.reload_from_db(pool).await.unwrap();
     SchemaService::new(pool.clone(), registry)
+}
+
+async fn comp_service(pool: &PgPool) -> ComponentService {
+    let reg = ComponentRegistry::new();
+    reg.reload_from_db(pool).await.unwrap();
+    ComponentService::new(pool.clone(), reg)
 }
 
 fn write_blog_dir() -> tempfile::TempDir {
@@ -79,7 +85,7 @@ async fn sync_creates_types_marked_managed_and_idempotent() {
     let dir = write_blog_dir();
     let path = dir.path().to_str().unwrap();
 
-    sync_from_path(&svc, path, SyncMode::Additive)
+    sync_from_path(&svc, &comp_service(&pool).await, path, SyncMode::Additive)
         .await
         .expect("first sync");
     let author = svc.registry().get("author").await.expect("author created");
@@ -90,7 +96,7 @@ async fn sync_creates_types_marked_managed_and_idempotent() {
         "relation field present"
     );
 
-    sync_from_path(&svc, path, SyncMode::Additive)
+    sync_from_path(&svc, &comp_service(&pool).await, path, SyncMode::Additive)
         .await
         .expect("second sync no-op");
     assert!(svc.registry().get("post").await.is_some());
@@ -102,7 +108,7 @@ async fn additive_ignores_db_only_field_full_drops_it() {
     let svc = service(&pool).await;
     let dir = write_blog_dir();
     let path = dir.path().to_str().unwrap();
-    sync_from_path(&svc, path, SyncMode::Additive)
+    sync_from_path(&svc, &comp_service(&pool).await, path, SyncMode::Additive)
         .await
         .unwrap();
 
@@ -123,7 +129,7 @@ async fn additive_ignores_db_only_field_full_drops_it() {
     };
     svc.patch("author", patch).await.unwrap();
 
-    sync_from_path(&svc, path, SyncMode::Additive)
+    sync_from_path(&svc, &comp_service(&pool).await, path, SyncMode::Additive)
         .await
         .unwrap();
     assert!(svc
@@ -135,7 +141,7 @@ async fn additive_ignores_db_only_field_full_drops_it() {
         .iter()
         .any(|f| f.name == "nickname"));
 
-    sync_from_path(&svc, path, SyncMode::Full).await.unwrap();
+    sync_from_path(&svc, &comp_service(&pool).await, path, SyncMode::Full).await.unwrap();
     assert!(!svc
         .registry()
         .get("author")
@@ -153,6 +159,6 @@ async fn bad_toml_returns_error() {
     let dir = tempfile::tempdir().unwrap();
     let mut f = std::fs::File::create(dir.path().join("bad.toml")).unwrap();
     write!(f, "[[content_type]]\nname = \"x\"\n").unwrap();
-    let err = sync_from_path(&svc, dir.path().to_str().unwrap(), SyncMode::Additive).await;
+    let err = sync_from_path(&svc, &comp_service(&pool).await, dir.path().to_str().unwrap(), SyncMode::Additive).await;
     assert!(err.is_err(), "invalid TOML must error (fail-fast on boot)");
 }

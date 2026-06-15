@@ -49,8 +49,6 @@ pub(crate) struct TomlComponent {
 /// Parsed content of one or more TOML schema documents.
 pub(crate) struct ParsedSchema {
     pub content_types: Vec<NewContentType>,
-    // consumed by sync_from_path in Task 5
-    #[allow(dead_code)]
     pub components: Vec<TomlComponent>,
 }
 
@@ -199,15 +197,11 @@ fn managed_options(declared: &serde_json::Value) -> serde_json::Value {
     serde_json::Value::Object(obj)
 }
 
-/// Parse a single TOML document into content types (components ignored).
-pub(crate) fn parse_toml(doc: &str) -> Result<Vec<NewContentType>, Error> {
-    Ok(parse_schema(doc)?.content_types)
-}
-
-/// Load + merge all content types from a path. If `path` is a directory, every
-/// `*.toml` file in it (non-recursive) is parsed and merged. If a file, that one
-/// file is parsed. Duplicate type names across files are rejected.
-pub(crate) fn load_desired(path: &Path) -> Result<Vec<NewContentType>, Error> {
+/// Load + merge all content types and components from a path. If `path` is a
+/// directory, every `*.toml` file in it (non-recursive) is parsed and merged.
+/// If a file, that one file is parsed. Duplicate type names or component uids
+/// across files are rejected.
+pub(crate) fn load_desired(path: &Path) -> Result<ParsedSchema, Error> {
     let mut docs: Vec<(String, String)> = Vec::new();
     if path.is_dir() {
         let mut entries: Vec<_> = std::fs::read_dir(path)
@@ -227,20 +221,32 @@ pub(crate) fn load_desired(path: &Path) -> Result<Vec<NewContentType>, Error> {
         docs.push((path.display().to_string(), body));
     }
 
-    let mut merged: Vec<NewContentType> = Vec::new();
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut content_types: Vec<NewContentType> = Vec::new();
+    let mut components: Vec<TomlComponent> = Vec::new();
+    let mut seen_ct: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut seen_comp: std::collections::HashSet<String> = std::collections::HashSet::new();
     for (label, body) in docs {
-        for ct in parse_toml(&body)? {
-            if !seen.insert(ct.name.clone()) {
+        let parsed = parse_schema(&body)?;
+        for ct in parsed.content_types {
+            if !seen_ct.insert(ct.name.clone()) {
                 return Err(Error::Validation(ValidationErrors::single(format!(
                     "duplicate content type `{}` (in {label})",
                     ct.name
                 ))));
             }
-            merged.push(ct);
+            content_types.push(ct);
+        }
+        for c in parsed.components {
+            if !seen_comp.insert(c.uid.clone()) {
+                return Err(Error::Validation(ValidationErrors::single(format!(
+                    "duplicate component `{}` (in {label})",
+                    c.uid
+                ))));
+            }
+            components.push(c);
         }
     }
-    Ok(merged)
+    Ok(ParsedSchema { content_types, components })
 }
 
 /// Order creates so a relation's target is created before the dependent type.
@@ -326,21 +332,30 @@ fn order_drops(mut names: Vec<String>, current: &[ContentType]) -> Vec<String> {
 }
 
 /// Entry point called at boot. Loads TOML from `path`, diffs against the live
-/// registry, and applies the plan through `SchemaService`. Fail-fast: the first
-/// error aborts (and propagates so the server refuses to boot).
+/// registry, and applies the plan through `SchemaService`. Components are synced
+/// first (a component field references a component), then content types.
+/// Fail-fast: the first error aborts (and propagates so the server refuses to boot).
 pub async fn sync_from_path(
     schemas: &crate::SchemaService,
+    components: &crate::ComponentService,
     path: &str,
     mode: SyncMode,
 ) -> Result<(), Error> {
     let path = Path::new(path);
     let desired = load_desired(path)?;
-    for ct in &desired {
+
+    // ---- components first (a component field references a component) ----
+    let cur_components = components.registry().list().await;
+    let comp_actions = plan_components(&desired.components, &cur_components, mode)?;
+    apply_components(components, schemas, &desired, comp_actions).await?;
+
+    // ---- then content types (existing logic) ----
+    for ct in &desired.content_types {
         ct.validate().map_err(Error::from)?;
     }
 
     let current = schemas.registry().list().await;
-    let actions = plan_sync(&desired, &current, mode)?;
+    let actions = plan_sync(&desired.content_types, &current, mode)?;
 
     let (creates, others): (Vec<_>, Vec<_>) = actions
         .into_iter()
@@ -445,11 +460,69 @@ pub async fn sync_from_path(
     Ok(())
 }
 
+/// Apply component actions: create/update with managed=true, delete (full) or
+/// unmanage (additive). Delete is blocked by ComponentService when the component
+/// is still referenced by a content type — surfaces as a fail-fast error.
+async fn apply_components(
+    components: &crate::ComponentService,
+    schemas: &crate::SchemaService,
+    desired: &ParsedSchema,
+    actions: Vec<ComponentAction>,
+) -> Result<(), Error> {
+    for action in actions {
+        match action {
+            ComponentAction::Create(c) => {
+                components.create(&c.uid, &c.display_name, c.fields, true).await?;
+            }
+            ComponentAction::Update(c) => {
+                components.update(&c.uid, &c.display_name, c.fields, true).await?;
+            }
+            ComponentAction::Delete(uid) => {
+                let referencing = referencing_types(&uid, desired, schemas).await;
+                components.delete(&uid, &referencing).await?;
+            }
+            ComponentAction::Unmanage(uid) => {
+                if let Some(existing) = components.registry().get(&uid).await {
+                    components
+                        .update(&existing.uid, &existing.display_name, existing.fields, false)
+                        .await?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Content-type names that reference component `uid`, from both desired TOML types
+/// and the live registry (a superset → conservative; the service check is backstop).
+async fn referencing_types(
+    uid: &str,
+    desired: &ParsedSchema,
+    schemas: &crate::SchemaService,
+) -> Vec<String> {
+    use std::collections::HashSet;
+    let refs = |fields: &[Field]| {
+        fields.iter().any(|f| {
+            f.component_meta().map(|m| m.component == uid).unwrap_or(false)
+        })
+    };
+    let mut names: HashSet<String> = HashSet::new();
+    for ct in &desired.content_types {
+        if refs(&ct.fields) {
+            names.insert(ct.name.clone());
+        }
+    }
+    for ct in schemas.registry().list().await {
+        if refs(&ct.fields) {
+            names.insert(ct.name.clone());
+        }
+    }
+    names.into_iter().collect()
+}
+
 use rustapi_sql::Component;
 
 /// One reconciliation step for components.
-// wired into sync_from_path in Task 5
-#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ComponentAction {
     Create(TomlComponent),
@@ -460,8 +533,6 @@ pub(crate) enum ComponentAction {
 
 /// Pure diff for components. `desired` is the TOML set, `current` the live
 /// component registry list.
-// wired into sync_from_path in Task 5
-#[allow(dead_code)]
 pub(crate) fn plan_components(
     desired: &[TomlComponent],
     current: &[Component],
@@ -706,7 +777,7 @@ options = { draft_publish = true }
   kind = "string"
   required = true
 "#;
-        let cts = parse_toml(doc).expect("parse");
+        let cts = parse_schema(doc).expect("parse").content_types;
         assert_eq!(cts.len(), 1);
         assert_eq!(cts[0].name, "post");
         assert_eq!(cts[0].fields.len(), 1);
@@ -728,13 +799,13 @@ options = { draft_publish = true }
         let dir =
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/schema/blog");
         let desired = super::load_desired(&dir).expect("load blog preset");
-        let names: Vec<&str> = desired.iter().map(|c| c.name.as_str()).collect();
+        let names: Vec<&str> = desired.content_types.iter().map(|c| c.name.as_str()).collect();
         assert!(names.contains(&"author"));
         assert!(names.contains(&"post"));
-        for c in &desired {
+        for c in &desired.content_types {
             c.validate().expect("preset type valid");
         }
-        let ordered = super::order_creates(desired);
+        let ordered = super::order_creates(desired.content_types);
         let pos = |n: &str| ordered.iter().position(|c| c.name == n).unwrap();
         assert!(
             pos("author") < pos("post"),
