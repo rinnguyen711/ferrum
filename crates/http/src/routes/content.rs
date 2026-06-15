@@ -163,7 +163,7 @@ pub(crate) async fn list_entries(
     }))
 }
 
-pub(crate) async fn get_entry(
+pub async fn get_entry(
     state: &AppState,
     principal: &Principal,
     ct_name: &str,
@@ -197,7 +197,7 @@ pub(crate) async fn get_entry(
     Ok(Value::Object(map))
 }
 
-pub(crate) async fn create_entry(
+pub async fn create_entry(
     state: &AppState,
     principal: &Principal,
     req_ctx: &rustapi_core::RequestContext,
@@ -277,7 +277,7 @@ pub(crate) async fn create_entry(
     Ok(record)
 }
 
-pub(crate) async fn update_entry(
+pub async fn update_entry(
     state: &AppState,
     principal: &Principal,
     req_ctx: &rustapi_core::RequestContext,
@@ -386,7 +386,7 @@ pub(crate) async fn update_entry(
     Ok(record)
 }
 
-pub(crate) async fn delete_entry(
+pub async fn delete_entry(
     state: &AppState,
     principal: &Principal,
     req_ctx: &rustapi_core::RequestContext,
