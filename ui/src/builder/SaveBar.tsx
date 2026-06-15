@@ -9,7 +9,7 @@ import { ConfirmDialog } from "../components/ui";
 
 /** Floating dirty-state save bar — the single save point for the Builder
  *  section. Renders nothing while the draft matches the server. */
-export function SaveBar() {
+export function SaveBar({ disabled = false }: { disabled?: boolean }) {
   const { draft, dirty, saving, save, discard, reset } = useBuilderDraft();
   const navigate = useNavigate();
   const [confirmPatch, setConfirmPatch] = useState<PatchContentType | null>(null);
@@ -45,10 +45,10 @@ export function SaveBar() {
           <span className="rs-dot" /> Unsaved {noun} changes
         </span>
         <div className="rs-savebar-actions">
-          <button className="rs-btn rs-btn--ghost" onClick={onDiscard} disabled={saving}>
+          <button className="rs-btn rs-btn--ghost" onClick={onDiscard} disabled={saving || disabled}>
             Discard
           </button>
-          <button className="rs-btn rs-btn--primary" onClick={onSave} disabled={saving}>
+          <button className="rs-btn rs-btn--primary" onClick={onSave} disabled={saving || disabled}>
             {saving
               ? <><Icons.spinner size={14} className="rs-spin" /> Saving…</>
               : <><Icons.save size={14} /> Save</>}

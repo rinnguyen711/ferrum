@@ -37,7 +37,7 @@ export interface ContentType {
   name: string;
   display_name: string;
   fields: Field[];
-  options?: { draft_publish?: boolean };
+  options?: { draft_publish?: boolean; managed?: boolean; [key: string]: unknown };
   kind: ContentTypeKind;
   created_at: string;
   updated_at: string;
@@ -98,6 +98,10 @@ export interface EnumMeta {
 
 export function draftPublishEnabled(ct: ContentType): boolean {
   return ct.options?.draft_publish === true;
+}
+
+export function managedType(ct: ContentType): boolean {
+  return ct.options?.["managed"] === true;
 }
 
 export function relationMeta(f: Field): RelationMeta | null {

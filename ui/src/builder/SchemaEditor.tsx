@@ -7,7 +7,7 @@ import {
   deleteContentType, getContentType, listContentTypes, listComponents,
 } from "../api/endpoints";
 import { ApiError } from "../api/client";
-import { draftPublishEnabled, enumValues } from "../api/types";
+import { draftPublishEnabled, enumValues, managedType } from "../api/types";
 import type { FieldKind } from "../api/types";
 import { useBuilderDraft } from "./BuilderDraftContext";
 import { blankField, type Draft, type DraftField } from "./draftModel";
@@ -147,6 +147,7 @@ export function SchemaEditor() {
     setDraft((d) => (d.mode === "component" ? d : fn(d)));
 
   const snapshot = draft.serverSnapshot;
+  const isManaged = snapshot ? managedType(snapshot) : false;
 
   // Warn: a new field reusing the name of a dropped existing field = rename (unsupported).
   const renameCollisions = (snapshot?.fields ?? [])
@@ -201,13 +202,22 @@ export function SchemaEditor() {
             <Icons.eye size={15} /> Preview API
           </button>
         {draft.mode === "existing" && (
-          <button className="rs-btn rs-btn--ghost rs-danger" onClick={() => setConfirming(true)}>
+          <button
+            className="rs-btn rs-btn--ghost rs-danger"
+            onClick={() => setConfirming(true)}
+            disabled={isManaged}
+          >
             Delete type
           </button>
         )}
         </div>
       </div>
 
+      {isManaged && (
+        <Notice tone="ok">
+          Managed by a schema file — edit the TOML and restart to change this type.
+        </Notice>
+      )}
       {banner && <Notice>{banner}</Notice>}
       {renameCollisions.length > 0 && (
         <Notice>
@@ -224,7 +234,7 @@ export function SchemaEditor() {
         </Notice>
       )}
 
-      <SaveBar />
+      <SaveBar disabled={isManaged} />
 
       <div className="rs-setting-row" style={{ marginBottom: 16 }}>
         <div className="rs-setting-meta">
@@ -252,11 +262,11 @@ export function SchemaEditor() {
           <FieldRow
             key={f.id}
             field={f}
-            onEdit={() => editField(f)}
-            onRemove={() => removeField(f)}
+            onEdit={() => { if (!isManaged) editField(f); }}
+            onRemove={() => { if (!isManaged) removeField(f); }}
           />
         ))}
-        <button className="rs-schema-add" onClick={addField}>
+        <button className="rs-schema-add" onClick={addField} disabled={isManaged}>
           <Icons.plus size={16} /> Add another field to this collection type
         </button>
       </div>
