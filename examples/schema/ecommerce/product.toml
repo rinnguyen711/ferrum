@@ -1,0 +1,63 @@
+# Ecommerce preset — Product (relates to Category; price/dimensions components).
+[[content_type]]
+name = "product"
+display_name = "Product"
+kind = "collection"
+options = { draft_publish = true }
+
+  [[content_type.field]]
+  name = "title"
+  kind = "string"
+  required = true
+  max_length = 200
+
+  [[content_type.field]]
+  name = "slug"
+  kind = "slug"
+  required = true
+  unique = true
+
+  [[content_type.field]]
+  name = "sku"
+  kind = "string"
+  required = true
+  unique = true
+
+  [[content_type.field]]
+  name = "description"
+  kind = "rich_text"
+
+  [[content_type.field]]
+  name = "price"
+  kind = "component"
+  kind_meta = { component = "shared.price", multiple = false }
+
+  [[content_type.field]]
+  name = "images"
+  kind = "media"
+  kind_meta = { multiple = true }
+
+  [[content_type.field]]
+  name = "dimensions"
+  kind = "component"
+  kind_meta = { component = "shared.dimensions", multiple = false }
+
+  [[content_type.field]]
+  name = "category"
+  kind = "relation"
+  kind_meta = { target = "category", cardinality = "many_to_one", inverse = "products" }
+
+  [[content_type.field]]
+  name = "in_stock"
+  kind = "boolean"
+  default = true
+
+  [[content_type.field]]
+  name = "stock_qty"
+  kind = "integer"
+  default = 0
+
+  [[content_type.field]]
+  name = "featured"
+  kind = "boolean"
+  default = false

@@ -1,0 +1,91 @@
+# Ecommerce preset — reusable components.
+# Synced via RUSTAPI_SCHEMA_DIR=examples/schema/ecommerce
+
+[[component]]
+uid = "shared.price"
+display_name = "Price"
+
+  [[component.field]]
+  name = "amount"
+  kind = "float"
+  required = true
+
+  [[component.field]]
+  name = "currency"
+  kind = "enum"
+  default = "usd"
+  kind_meta = { values = ["usd", "eur", "gbp", "jpy"] }
+
+  [[component.field]]
+  name = "compare_at"
+  kind = "float"
+
+[[component]]
+uid = "shared.dimensions"
+display_name = "Dimensions"
+
+  [[component.field]]
+  name = "length"
+  kind = "float"
+
+  [[component.field]]
+  name = "width"
+  kind = "float"
+
+  [[component.field]]
+  name = "height"
+  kind = "float"
+
+  [[component.field]]
+  name = "weight"
+  kind = "float"
+
+[[component]]
+uid = "shared.address"
+display_name = "Address"
+
+  [[component.field]]
+  name = "line1"
+  kind = "string"
+
+  [[component.field]]
+  name = "line2"
+  kind = "string"
+
+  [[component.field]]
+  name = "city"
+  kind = "string"
+
+  [[component.field]]
+  name = "region"
+  kind = "string"
+
+  [[component.field]]
+  name = "postal_code"
+  kind = "string"
+
+  [[component.field]]
+  name = "country"
+  kind = "string"
+
+[[component]]
+uid = "shared.order_line"
+display_name = "Order line"
+
+  [[component.field]]
+  name = "product_ref"
+  kind = "string"
+
+  [[component.field]]
+  name = "sku"
+  kind = "string"
+
+  [[component.field]]
+  name = "quantity"
+  kind = "integer"
+  required = true
+
+  [[component.field]]
+  name = "unit_price"
+  kind = "float"
+  required = true

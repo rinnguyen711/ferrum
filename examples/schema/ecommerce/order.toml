@@ -1,0 +1,56 @@
+# Ecommerce preset — Order (relates to Customer; line-item + address components).
+[[content_type]]
+name = "order"
+display_name = "Order"
+kind = "collection"
+
+  [[content_type.field]]
+  name = "order_number"
+  kind = "string"
+  required = true
+  unique = true
+
+  [[content_type.field]]
+  name = "customer"
+  kind = "relation"
+  kind_meta = { target = "customer", cardinality = "many_to_one", inverse = "orders" }
+
+  [[content_type.field]]
+  name = "items"
+  kind = "component"
+  kind_meta = { component = "shared.order_line", multiple = true }
+
+  [[content_type.field]]
+  name = "subtotal"
+  kind = "float"
+
+  [[content_type.field]]
+  name = "tax"
+  kind = "float"
+
+  [[content_type.field]]
+  name = "shipping"
+  kind = "float"
+
+  [[content_type.field]]
+  name = "total"
+  kind = "float"
+
+  [[content_type.field]]
+  name = "status"
+  kind = "enum"
+  default = "pending"
+  kind_meta = { values = ["pending", "paid", "fulfilled", "shipped", "delivered", "cancelled", "refunded"] }
+
+  [[content_type.field]]
+  name = "shipping_address"
+  kind = "component"
+  kind_meta = { component = "shared.address", multiple = false }
+
+  [[content_type.field]]
+  name = "placed_at"
+  kind = "datetime"
+
+  [[content_type.field]]
+  name = "notes"
+  kind = "text"
