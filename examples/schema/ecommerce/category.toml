@@ -1,0 +1,25 @@
+# Ecommerce preset — Category (self-nesting via parent).
+[[content_type]]
+name = "category"
+display_name = "Category"
+kind = "collection"
+
+  [[content_type.field]]
+  name = "name"
+  kind = "string"
+  required = true
+
+  [[content_type.field]]
+  name = "slug"
+  kind = "slug"
+  required = true
+  unique = true
+
+  [[content_type.field]]
+  name = "description"
+  kind = "text"
+
+  [[content_type.field]]
+  name = "parent"
+  kind = "relation"
+  kind_meta = { target = "category", cardinality = "many_to_one", inverse = "children" }

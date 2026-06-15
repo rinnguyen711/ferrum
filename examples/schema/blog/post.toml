@@ -33,12 +33,6 @@ options = { draft_publish = true }
   kind_meta = { multiple = false }
 
   [[content_type.field]]
-  name = "status"
-  kind = "enum"
-  default = "draft"
-  kind_meta = { values = ["draft", "in_review", "published", "archived"] }
-
-  [[content_type.field]]
   name = "featured"
   kind = "boolean"
   default = false

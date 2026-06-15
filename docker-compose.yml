@@ -18,12 +18,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      - ./examples/schema/ecommerce:/schema:ro
     environment:
       DATABASE_URL: postgres://rustapi:rustapi@postgres:5432/rustapi
       # Override before `docker compose up` for non-demo use:
       #   export RUSTAPI_JWT_SECRET=$(openssl rand -hex 32)
       RUSTAPI_JWT_SECRET: ${RUSTAPI_JWT_SECRET:-demo-secret-please-rotate-min-32-chars-aaa}
-      # RUSTAPI_SEED: "false"   # disable first-boot sample data
+      RUSTAPI_SCHEMA_DIR: /schema
+      RUSTAPI_SCHEMA_SYNC: full
       # First boot: create the initial admin via POST /auth/setup (see README).
     ports:
       - "8080:8080"

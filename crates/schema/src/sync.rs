@@ -847,6 +847,47 @@ options = { draft_publish = true }
     }
 
     #[test]
+    fn ecommerce_preset_parses_and_orders() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/schema/ecommerce");
+        let desired = super::load_desired(&dir).expect("load ecommerce preset");
+        let names: Vec<&str> = desired
+            .content_types
+            .iter()
+            .map(|c| c.name.as_str())
+            .collect();
+        for n in ["category", "customer", "product", "order"] {
+            assert!(names.contains(&n), "ecommerce preset must include {n}");
+        }
+        for c in &desired.content_types {
+            c.validate().expect("preset type valid");
+        }
+        for uid in [
+            "shared.price",
+            "shared.dimensions",
+            "shared.address",
+            "shared.order_line",
+        ] {
+            assert!(
+                desired.components.iter().any(|c| c.uid == uid),
+                "ecommerce preset must include {uid}"
+            );
+        }
+        // each component inner field must pass core Field::validate
+        for c in &desired.components {
+            for f in &c.fields {
+                f.validate()
+                    .unwrap_or_else(|e| panic!("component {} field {}: {e:?}", c.uid, f.name));
+            }
+        }
+        let ordered = super::order_creates(desired.content_types);
+        let pos = |n: &str| ordered.iter().position(|c| c.name == n).unwrap();
+        // product relates to category; order relates to customer.
+        assert!(pos("category") < pos("product"), "category before product");
+        assert!(pos("customer") < pos("order"), "customer before order");
+    }
+
+    #[test]
     fn order_drops_removes_dependent_before_target() {
         // author (no rels) + post (relation -> author). Both dropped in full mode.
         // post must be deleted before author.

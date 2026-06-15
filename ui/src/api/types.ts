@@ -143,6 +143,40 @@ export function componentMeta(f: Field): ComponentMeta | null {
     : null;
 }
 
+/** Inner field definitions of a component field (resolved server-side). */
+export function componentInnerFields(f: Field): Field[] {
+  const fromMeta = (f.kind_meta as { _component_fields?: Field[] })._component_fields;
+  return fromMeta ?? f._component_fields ?? [];
+}
+
+/**
+ * Coerce one form value to its wire shape for a given field kind, mirroring
+ * the server's expected JSON type. Numbers from <input type=number> arrive as
+ * strings; component objects/arrays are coerced recursively so nested number
+ * sub-fields are sent as numbers, not strings.
+ */
+export function coerceFieldValue(f: Field, v: unknown): unknown {
+  if (f.kind === "integer" || f.kind === "float") {
+    return v === "" || v == null ? v : Number(v);
+  }
+  if (f.kind === "component") {
+    const inner = componentInnerFields(f);
+    const coerceObj = (o: Record<string, unknown>) => {
+      const out: Record<string, unknown> = {};
+      for (const sf of inner) {
+        if (sf.name in o) out[sf.name] = coerceFieldValue(sf, o[sf.name]);
+      }
+      // preserve any keys not described by inner fields, verbatim
+      for (const k of Object.keys(o)) if (!(k in out)) out[k] = o[k];
+      return out;
+    };
+    if (Array.isArray(v)) return v.map((it) => coerceObj((it ?? {}) as Record<string, unknown>));
+    if (v && typeof v === "object") return coerceObj(v as Record<string, unknown>);
+    return v;
+  }
+  return v;
+}
+
 export interface LoginResponse {
   token: string;
   expires_at: number;

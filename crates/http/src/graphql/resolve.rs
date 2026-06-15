@@ -328,29 +328,12 @@ pub fn create_field(ct_name: String) -> impl Fn(ResolverContext) -> FieldFuture 
             let st = st?;
             let pr = pr?;
             let body = body?;
-            let entry = content::create_entry(&st, &pr, &ct_name, body)
+            // GraphQL writes carry no RequestContext (no IP/UA middleware), so
+            // pass a default ctx — IP/UA/request_id render as "—" in the UI.
+            // The core emits the audit entry.
+            let entry = content::create_entry(&st, &pr, &RequestContext::default(), &ct_name, body)
                 .await
                 .map_err(gql_err)?;
-            // GraphQL writes carry no RequestContext (no IP/UA middleware), so
-            // use a default ctx — IP/UA/request_id render as "—" in the UI.
-            if let Some(id) = entry
-                .get("id")
-                .and_then(|v| v.as_str())
-                .and_then(|s| Uuid::parse_str(s).ok())
-            {
-                let label = content::entry_label(&entry, &id);
-                content::audit_content(
-                    &st,
-                    &pr,
-                    RequestContext::default(),
-                    "entry.create",
-                    &ct_name,
-                    &id,
-                    label,
-                    vec![],
-                )
-                .await;
-            }
             Ok(Some(FieldValue::value(json_to_gql(entry))))
         })
     }
@@ -369,21 +352,10 @@ pub fn update_field(ct_name: String) -> impl Fn(ResolverContext) -> FieldFuture 
             let pr = pr?;
             let id = id?;
             let body = body?;
-            let (entry, changes) = content::update_entry(&st, &pr, &ct_name, id, body)
-                .await
-                .map_err(gql_err)?;
-            let label = content::entry_label(&entry, &id);
-            content::audit_content(
-                &st,
-                &pr,
-                RequestContext::default(),
-                "entry.update",
-                &ct_name,
-                &id,
-                label,
-                changes,
-            )
-            .await;
+            let entry =
+                content::update_entry(&st, &pr, &RequestContext::default(), &ct_name, id, body)
+                    .await
+                    .map_err(gql_err)?;
             Ok(Some(FieldValue::value(json_to_gql(entry))))
         })
     }
@@ -400,20 +372,9 @@ pub fn delete_field(ct_name: String) -> impl Fn(ResolverContext) -> FieldFuture 
             let st = st?;
             let pr = pr?;
             let id = id?;
-            content::delete_entry(&st, &pr, &ct_name, id)
+            content::delete_entry(&st, &pr, &RequestContext::default(), &ct_name, id)
                 .await
                 .map_err(gql_err)?;
-            content::audit_content(
-                &st,
-                &pr,
-                RequestContext::default(),
-                "entry.delete",
-                &ct_name,
-                &id,
-                id.to_string(),
-                vec![],
-            )
-            .await;
             Ok(Some(FieldValue::value(GqlValue::from(true))))
         })
     }

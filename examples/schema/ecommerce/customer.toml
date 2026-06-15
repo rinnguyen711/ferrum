@@ -1,0 +1,29 @@
+# Ecommerce preset — Customer.
+[[content_type]]
+name = "customer"
+display_name = "Customer"
+kind = "collection"
+
+  [[content_type.field]]
+  name = "email"
+  kind = "email"
+  required = true
+  unique = true
+
+  [[content_type.field]]
+  name = "full_name"
+  kind = "string"
+  required = true
+
+  [[content_type.field]]
+  name = "phone"
+  kind = "string"
+
+  [[content_type.field]]
+  name = "addresses"
+  kind = "component"
+  kind_meta = { component = "shared.address", multiple = true }
+
+  [[content_type.field]]
+  name = "notes"
+  kind = "text"
