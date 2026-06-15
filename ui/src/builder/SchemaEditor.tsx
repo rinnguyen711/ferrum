@@ -191,6 +191,7 @@ export function SchemaEditor() {
             value={draft.display_name}
             onChange={(e) => { clearBanner(); setTypeDraft((d) => ({ ...d, display_name: e.target.value })); }}
             placeholder="Display name"
+            disabled={isManaged}
           />
           <p className="rs-cm-sub rs-mono">
             api::{draft.name}.{draft.name} · {draft.fields.length} fields · collection type
@@ -244,8 +245,8 @@ export function SchemaEditor() {
         <button
           type="button"
           className={"rs-toggle" + (draft.draft_publish ? " is-on" : "")}
-          disabled={draft.mode === "existing" && (draft.serverSnapshot ? draftPublishEnabled(draft.serverSnapshot) : false)}
-          title={draft.mode === "existing" && (draft.serverSnapshot ? draftPublishEnabled(draft.serverSnapshot) : false) ? "Cannot be disabled" : undefined}
+          disabled={isManaged || (draft.mode === "existing" && (draft.serverSnapshot ? draftPublishEnabled(draft.serverSnapshot) : false))}
+          title={isManaged ? "Managed by a schema file" : (draft.mode === "existing" && (draft.serverSnapshot ? draftPublishEnabled(draft.serverSnapshot) : false) ? "Cannot be disabled" : undefined)}
           aria-pressed={draft.draft_publish}
           onClick={() => {
             clearBanner();
