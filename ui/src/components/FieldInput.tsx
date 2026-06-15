@@ -21,7 +21,7 @@ import { useResource } from "../hooks/useResource";
 
 // ── FieldRow ──────────────────────────────────────────────────────────────────
 
-const WIDE_KINDS = new Set(["text", "json", "rich_text", "media"]);
+const WIDE_KINDS = new Set(["text", "json", "rich_text", "media", "component"]);
 
 export function FieldRow({
   field,
@@ -340,18 +340,13 @@ function ComponentField({
               </button>
             </div>
             {innerFields.map((f) => (
-              <div key={f.name} className="rs-field">
-                <div className="rs-field-label">
-                  <label>{f.name}</label>
-                  <span className="rs-field-hint">{f.kind}</span>
-                </div>
-                <FieldInput
-                  field={f}
-                  value={item[f.name]}
-                  onChange={(v) => setItem(i, { [f.name]: v })}
-                  type=""
-                />
-              </div>
+              <FieldRow
+                key={f.name}
+                field={f}
+                value={item[f.name]}
+                onChange={(v) => setItem(i, { [f.name]: v })}
+                type=""
+              />
             ))}
           </div>
         ))}
@@ -370,18 +365,13 @@ function ComponentField({
   return (
     <div className="rs-component-card">
       {innerFields.map((f) => (
-        <div key={f.name} className="rs-field">
-          <div className="rs-field-label">
-            <label>{f.name}</label>
-            <span className="rs-field-hint">{f.kind}</span>
-          </div>
-          <FieldInput
-            field={f}
-            value={obj[f.name]}
-            onChange={(v) => setField(f.name, v)}
-            type=""
-          />
-        </div>
+        <FieldRow
+          key={f.name}
+          field={f}
+          value={obj[f.name]}
+          onChange={(v) => setField(f.name, v)}
+          type=""
+        />
       ))}
     </div>
   );
