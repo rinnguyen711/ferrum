@@ -246,7 +246,10 @@ pub(crate) fn load_desired(path: &Path) -> Result<ParsedSchema, Error> {
             components.push(c);
         }
     }
-    Ok(ParsedSchema { content_types, components })
+    Ok(ParsedSchema {
+        content_types,
+        components,
+    })
 }
 
 /// Order creates so a relation's target is created before the dependent type.
@@ -472,10 +475,14 @@ async fn apply_components(
     for action in actions {
         match action {
             ComponentAction::Create(c) => {
-                components.create(&c.uid, &c.display_name, c.fields, true).await?;
+                components
+                    .create(&c.uid, &c.display_name, c.fields, true)
+                    .await?;
             }
             ComponentAction::Update(c) => {
-                components.update(&c.uid, &c.display_name, c.fields, true).await?;
+                components
+                    .update(&c.uid, &c.display_name, c.fields, true)
+                    .await?;
             }
             ComponentAction::Delete(uid) => {
                 let referencing = referencing_types(&uid, desired, schemas).await;
@@ -484,7 +491,12 @@ async fn apply_components(
             ComponentAction::Unmanage(uid) => {
                 if let Some(existing) = components.registry().get(&uid).await {
                     components
-                        .update(&existing.uid, &existing.display_name, existing.fields, false)
+                        .update(
+                            &existing.uid,
+                            &existing.display_name,
+                            existing.fields,
+                            false,
+                        )
                         .await?;
                 }
             }
@@ -503,7 +515,9 @@ async fn referencing_types(
     use std::collections::HashSet;
     let refs = |fields: &[Field]| {
         fields.iter().any(|f| {
-            f.component_meta().map(|m| m.component == uid).unwrap_or(false)
+            f.component_meta()
+                .map(|m| m.component == uid)
+                .unwrap_or(false)
         })
     };
     let mut names: HashSet<String> = HashSet::new();
@@ -615,10 +629,19 @@ mod tests {
     }
 
     fn comp(uid: &str, fields: Vec<Field>, managed: bool) -> rustapi_sql::Component {
-        rustapi_sql::Component { uid: uid.into(), display_name: uid.into(), fields, managed }
+        rustapi_sql::Component {
+            uid: uid.into(),
+            display_name: uid.into(),
+            fields,
+            managed,
+        }
     }
     fn tcomp(uid: &str, fields: Vec<Field>) -> super::TomlComponent {
-        super::TomlComponent { uid: uid.into(), display_name: uid.into(), fields }
+        super::TomlComponent {
+            uid: uid.into(),
+            display_name: uid.into(),
+            fields,
+        }
     }
 
     #[test]
@@ -799,7 +822,11 @@ options = { draft_publish = true }
         let dir =
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/schema/blog");
         let desired = super::load_desired(&dir).expect("load blog preset");
-        let names: Vec<&str> = desired.content_types.iter().map(|c| c.name.as_str()).collect();
+        let names: Vec<&str> = desired
+            .content_types
+            .iter()
+            .map(|c| c.name.as_str())
+            .collect();
         assert!(names.contains(&"author"));
         assert!(names.contains(&"post"));
         for c in &desired.content_types {

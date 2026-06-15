@@ -2,7 +2,9 @@
 
 use rustapi_core::{Field, FieldKind, PatchContentType};
 use rustapi_schema::sync::sync_from_path;
-use rustapi_schema::{ComponentRegistry, ComponentService, SchemaRegistry, SchemaService, SyncMode};
+use rustapi_schema::{
+    ComponentRegistry, ComponentService, SchemaRegistry, SchemaService, SyncMode,
+};
 use sqlx::PgPool;
 use std::io::Write;
 use testcontainers::runners::AsyncRunner;
@@ -141,7 +143,9 @@ async fn additive_ignores_db_only_field_full_drops_it() {
         .iter()
         .any(|f| f.name == "nickname"));
 
-    sync_from_path(&svc, &comp_service(&pool).await, path, SyncMode::Full).await.unwrap();
+    sync_from_path(&svc, &comp_service(&pool).await, path, SyncMode::Full)
+        .await
+        .unwrap();
     assert!(!svc
         .registry()
         .get("author")
@@ -159,7 +163,13 @@ async fn bad_toml_returns_error() {
     let dir = tempfile::tempdir().unwrap();
     let mut f = std::fs::File::create(dir.path().join("bad.toml")).unwrap();
     write!(f, "[[content_type]]\nname = \"x\"\n").unwrap();
-    let err = sync_from_path(&svc, &comp_service(&pool).await, dir.path().to_str().unwrap(), SyncMode::Additive).await;
+    let err = sync_from_path(
+        &svc,
+        &comp_service(&pool).await,
+        dir.path().to_str().unwrap(),
+        SyncMode::Additive,
+    )
+    .await;
     assert!(err.is_err(), "invalid TOML must error (fail-fast on boot)");
 }
 
@@ -210,10 +220,17 @@ async fn sync_creates_component_then_type_marked_managed() {
     sync_from_path(&svc, &comps, path, SyncMode::Additive)
         .await
         .expect("sync");
-    let seo = comps.registry().get("shared.seo").await.expect("component created");
+    let seo = comps
+        .registry()
+        .get("shared.seo")
+        .await
+        .expect("component created");
     assert!(seo.managed, "synced component must be managed");
     let post = svc.registry().get("post").await.expect("type created");
-    assert!(post.fields.iter().any(|f| f.name == "seo"), "component field present on type");
+    assert!(
+        post.fields.iter().any(|f| f.name == "seo"),
+        "component field present on type"
+    );
 
     // idempotent: second run, component unchanged
     sync_from_path(&svc, &comps, path, SyncMode::Additive)
@@ -254,12 +271,9 @@ display_name = "Post"
 "#
     )
     .unwrap();
-    let err = sync_from_path(
-        &svc,
-        &comps,
-        dir2.path().to_str().unwrap(),
-        SyncMode::Full,
-    )
-    .await;
-    assert!(err.is_err(), "full-dropping a referenced component must error");
+    let err = sync_from_path(&svc, &comps, dir2.path().to_str().unwrap(), SyncMode::Full).await;
+    assert!(
+        err.is_err(),
+        "full-dropping a referenced component must error"
+    );
 }
