@@ -162,3 +162,104 @@ async fn bad_toml_returns_error() {
     let err = sync_from_path(&svc, &comp_service(&pool).await, dir.path().to_str().unwrap(), SyncMode::Additive).await;
     assert!(err.is_err(), "invalid TOML must error (fail-fast on boot)");
 }
+
+fn write_component_dir() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let mut s = std::fs::File::create(dir.path().join("seo.toml")).unwrap();
+    write!(
+        s,
+        r#"
+[[component]]
+uid = "shared.seo"
+display_name = "SEO"
+  [[component.field]]
+  name = "meta_title"
+  kind = "string"
+"#
+    )
+    .unwrap();
+    let mut p = std::fs::File::create(dir.path().join("post.toml")).unwrap();
+    write!(
+        p,
+        r#"
+[[content_type]]
+name = "post"
+display_name = "Post"
+  [[content_type.field]]
+  name = "title"
+  kind = "string"
+  required = true
+  [[content_type.field]]
+  name = "seo"
+  kind = "component"
+  kind_meta = {{ component = "shared.seo", multiple = false }}
+"#
+    )
+    .unwrap();
+    dir
+}
+
+#[tokio::test]
+async fn sync_creates_component_then_type_marked_managed() {
+    let pool = setup_pool().await;
+    let svc = service(&pool).await;
+    let comps = comp_service(&pool).await;
+    let dir = write_component_dir();
+    let path = dir.path().to_str().unwrap();
+
+    sync_from_path(&svc, &comps, path, SyncMode::Additive)
+        .await
+        .expect("sync");
+    let seo = comps.registry().get("shared.seo").await.expect("component created");
+    assert!(seo.managed, "synced component must be managed");
+    let post = svc.registry().get("post").await.expect("type created");
+    assert!(post.fields.iter().any(|f| f.name == "seo"), "component field present on type");
+
+    // idempotent: second run, component unchanged
+    sync_from_path(&svc, &comps, path, SyncMode::Additive)
+        .await
+        .expect("re-sync");
+    let seo2 = comps.registry().get("shared.seo").await.unwrap();
+    assert_eq!(seo2.fields.len(), 1);
+}
+
+#[tokio::test]
+async fn full_drop_of_referenced_component_errors() {
+    let pool = setup_pool().await;
+    let svc = service(&pool).await;
+    let comps = comp_service(&pool).await;
+    let dir = write_component_dir();
+    let path = dir.path().to_str().unwrap();
+    sync_from_path(&svc, &comps, path, SyncMode::Additive)
+        .await
+        .unwrap();
+
+    // New TOML dir that drops the component but keeps the type referencing it.
+    let dir2 = tempfile::tempdir().unwrap();
+    let mut p = std::fs::File::create(dir2.path().join("post.toml")).unwrap();
+    write!(
+        p,
+        r#"
+[[content_type]]
+name = "post"
+display_name = "Post"
+  [[content_type.field]]
+  name = "title"
+  kind = "string"
+  required = true
+  [[content_type.field]]
+  name = "seo"
+  kind = "component"
+  kind_meta = {{ component = "shared.seo", multiple = false }}
+"#
+    )
+    .unwrap();
+    let err = sync_from_path(
+        &svc,
+        &comps,
+        dir2.path().to_str().unwrap(),
+        SyncMode::Full,
+    )
+    .await;
+    assert!(err.is_err(), "full-dropping a referenced component must error");
+}
