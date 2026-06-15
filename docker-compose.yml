@@ -19,7 +19,7 @@ services:
       postgres:
         condition: service_healthy
     volumes:
-      - ./examples/schema/blog:/schema:ro
+      - ./examples/schema/ecommerce:/schema:ro
     environment:
       DATABASE_URL: postgres://rustapi:rustapi@postgres:5432/rustapi
       # Override before `docker compose up` for non-demo use:
