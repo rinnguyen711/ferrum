@@ -1,0 +1,11 @@
+[book]
+title = "Rustapi"
+description = "Headless CMS framework in Rust — developer documentation"
+authors = ["Rustapi contributors"]
+language = "en"
+src = "src"
+
+[output.html]
+git-repository-url = "https://github.com/rinnguyen711/rustapi"
+default-theme = "light"
+preferred-dark-theme = "navy"
