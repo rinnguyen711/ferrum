@@ -44,8 +44,12 @@ async fn custom_router_create_via_content_api_persists_and_audits() {
     assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
     let rec: Value = resp.json().await.unwrap();
     assert_eq!(rec["title"], json!("from-custom-route"));
+    let created_id = rec["id"].as_str().expect("created entry id").to_string();
 
     let row = wait_for_audit(&app.pool, "entry.create").await;
     let target_type: Option<String> = row.try_get("target_type").ok();
     assert_eq!(target_type.as_deref(), Some("widget"));
+    // the audit row must reference the entry we just created (not some other row)
+    let target_id: Option<String> = row.try_get("target_id").ok();
+    assert_eq!(target_id.as_deref(), Some(created_id.as_str()));
 }
