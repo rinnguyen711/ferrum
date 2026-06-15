@@ -96,6 +96,7 @@ impl ComponentService {
         uid: &str,
         display_name: &str,
         fields: Vec<Field>,
+        managed: bool,
     ) -> Result<Component, Error> {
         validate_uid(uid)?;
         validate_inner_fields(&fields)?;
@@ -108,7 +109,7 @@ impl ComponentService {
         }
         let c = self
             .store
-            .create(uid, display_name, &fields)
+            .create(uid, display_name, &fields, managed)
             .await
             .map_err(internal)?;
         self.registry.insert(c.clone()).await;
@@ -120,6 +121,7 @@ impl ComponentService {
         uid: &str,
         display_name: &str,
         fields: Vec<Field>,
+        managed: bool,
     ) -> Result<Component, Error> {
         validate_inner_fields(&fields)?;
         for f in &fields {
@@ -128,7 +130,7 @@ impl ComponentService {
         }
         let c = self
             .store
-            .update(uid, display_name, &fields)
+            .update(uid, display_name, &fields, managed)
             .await
             .map_err(internal)?
             .ok_or(Error::NotFound)?;

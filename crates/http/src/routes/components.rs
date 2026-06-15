@@ -56,7 +56,7 @@ async fn create(
 ) -> Result<(StatusCode, Json<Component>), ApiError> {
     let c = state
         .components
-        .create(&payload.uid, &payload.display_name, payload.fields)
+        .create(&payload.uid, &payload.display_name, payload.fields, false)
         .await?;
     Ok((StatusCode::CREATED, Json(c)))
 }
@@ -68,7 +68,7 @@ async fn update_one(
 ) -> Result<Json<Component>, ApiError> {
     let c = state
         .components
-        .update(&uid, &payload.display_name, payload.fields)
+        .update(&uid, &payload.display_name, payload.fields, false)
         .await?;
     Ok(Json(c))
 }
