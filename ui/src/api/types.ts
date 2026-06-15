@@ -238,6 +238,11 @@ export interface Component {
   uid: string;
   display_name: string;
   fields: Field[];
+  managed?: boolean;
+}
+
+export function managedComponent(c: { managed?: boolean }): boolean {
+  return c.managed === true;
 }
 
 export interface NewComponent {

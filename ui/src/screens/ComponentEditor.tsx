@@ -5,6 +5,7 @@ import { Notice, LoadingState } from "../components/ui";
 import { useResource } from "../hooks/useResource";
 import { getComponent, deleteComponent, listContentTypes, listComponents } from "../api/endpoints";
 import type { FieldKind } from "../api/types";
+import { managedComponent } from "../api/types";
 import { ApiError } from "../api/client";
 import { useBuilderDraft } from "../builder/BuilderDraftContext";
 import { FieldRow } from "../builder/FieldRow";
@@ -156,6 +157,8 @@ export function ComponentEditor() {
   if (loadError || !component) return <div className="rs-empty">Component not found.</div>;
   if (!draft || draft.mode !== "component" || draft.uid !== component.uid) return <LoadingState />;
 
+  const isManaged = managedComponent(component);
+
   return (
     <div className="rs-cm">
       <div className="rs-cm-head">
@@ -165,6 +168,7 @@ export function ComponentEditor() {
             value={draft.display_name}
             onChange={(e) => { clearBanner(); setCompDraft((d) => ({ ...d, display_name: e.target.value })); }}
             placeholder="Display name"
+            disabled={isManaged}
           />
           <p className="rs-cm-sub rs-mono">
             component::{uid} · {draft.fields.length} fields
@@ -174,15 +178,21 @@ export function ComponentEditor() {
           <button
             className="rs-btn rs-btn--ghost rs-danger"
             onClick={() => setConfirming(true)}
+            disabled={isManaged}
           >
             Delete component
           </button>
         </div>
       </div>
 
+      {isManaged && (
+        <Notice tone="ok">
+          Managed by a schema file — edit the TOML and restart to change this component.
+        </Notice>
+      )}
       {banner && <Notice>{banner}</Notice>}
 
-      <SaveBar />
+      <SaveBar disabled={isManaged} />
 
       <div className="rs-schema">
         <div className="rs-schema-head"><span>Field</span><span>Type</span><span></span></div>
@@ -190,11 +200,11 @@ export function ComponentEditor() {
           <FieldRow
             key={f.id}
             field={f}
-            onEdit={() => setModal({ step: "config", field: f, isNew: false })}
-            onRemove={() => removeField(f)}
+            onEdit={() => { if (!isManaged) setModal({ step: "config", field: f, isNew: false }); }}
+            onRemove={() => { if (!isManaged) removeField(f); }}
           />
         ))}
-        <button className="rs-schema-add" onClick={addField}>
+        <button className="rs-schema-add" onClick={addField} disabled={isManaged}>
           <Icons.plus size={16} /> Add another field to this component
         </button>
       </div>
