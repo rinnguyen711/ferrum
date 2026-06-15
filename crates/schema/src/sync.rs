@@ -27,11 +27,44 @@ impl SyncMode {
     }
 }
 
-/// One TOML file's worth of content types.
+/// One TOML file's worth of content types and components.
 #[derive(Debug, Deserialize)]
 struct SchemaFile {
     #[serde(default, rename = "content_type")]
     content_types: Vec<TomlContentType>,
+    #[serde(default, rename = "component")]
+    components: Vec<TomlComponent>,
+}
+
+/// A component as declared in TOML. `field` is renamed so the TOML key is
+/// `[[component.field]]`.
+// Fields consumed by plan_components in Task 4.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct TomlComponent {
+    pub uid: String,
+    pub display_name: String,
+    #[serde(default, rename = "field")]
+    pub fields: Vec<Field>,
+}
+
+/// Parsed content of one or more TOML schema documents.
+pub(crate) struct ParsedSchema {
+    pub content_types: Vec<NewContentType>,
+    // consumed by plan_components in Task 4
+    #[allow(dead_code)]
+    pub components: Vec<TomlComponent>,
+}
+
+/// Parse a single TOML document into content types + components.
+pub(crate) fn parse_schema(doc: &str) -> Result<ParsedSchema, Error> {
+    let parsed: SchemaFile = toml::from_str(doc).map_err(|e| {
+        Error::Validation(ValidationErrors::single(format!("schema TOML parse: {e}")))
+    })?;
+    Ok(ParsedSchema {
+        content_types: parsed.content_types.into_iter().map(Into::into).collect(),
+        components: parsed.components,
+    })
 }
 
 /// A content type as declared in TOML. Maps onto `NewContentType`; `field` is
@@ -168,12 +201,9 @@ fn managed_options(declared: &serde_json::Value) -> serde_json::Value {
     serde_json::Value::Object(obj)
 }
 
-/// Parse a single TOML document into content types.
+/// Parse a single TOML document into content types (components ignored).
 pub(crate) fn parse_toml(doc: &str) -> Result<Vec<NewContentType>, Error> {
-    let parsed: SchemaFile = toml::from_str(doc).map_err(|e| {
-        Error::Validation(ValidationErrors::single(format!("schema TOML parse: {e}")))
-    })?;
-    Ok(parsed.content_types.into_iter().map(Into::into).collect())
+    Ok(parse_schema(doc)?.content_types)
 }
 
 /// Load + merge all content types from a path. If `path` is a directory, every
@@ -462,6 +492,30 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
+    }
+
+    #[test]
+    fn parses_component_blocks() {
+        let doc = r#"
+[[component]]
+uid = "shared.seo"
+display_name = "SEO"
+  [[component.field]]
+  name = "meta_title"
+  kind = "string"
+
+[[content_type]]
+name = "post"
+display_name = "Post"
+  [[content_type.field]]
+  name = "title"
+  kind = "string"
+"#;
+        let parsed = parse_schema(doc).expect("parse");
+        assert_eq!(parsed.content_types.len(), 1);
+        assert_eq!(parsed.components.len(), 1);
+        assert_eq!(parsed.components[0].uid, "shared.seo");
+        assert_eq!(parsed.components[0].fields[0].name, "meta_title");
     }
 
     #[test]
