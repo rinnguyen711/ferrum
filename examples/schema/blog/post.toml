@@ -23,3 +23,8 @@ options = { draft_publish = true }
   name = "author"
   kind = "relation"
   kind_meta = { target = "author", cardinality = "many_to_one", inverse = "posts" }
+
+  [[content_type.field]]
+  name = "seo"
+  kind = "component"
+  kind_meta = { component = "shared.seo", multiple = false }

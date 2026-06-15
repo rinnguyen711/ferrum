@@ -1,0 +1,12 @@
+# Blog preset — reusable SEO component.
+[[component]]
+uid = "shared.seo"
+display_name = "SEO"
+
+  [[component.field]]
+  name = "meta_title"
+  kind = "string"
+
+  [[component.field]]
+  name = "meta_description"
+  kind = "text"

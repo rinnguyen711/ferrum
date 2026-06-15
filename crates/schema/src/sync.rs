@@ -805,6 +805,10 @@ options = { draft_publish = true }
         for c in &desired.content_types {
             c.validate().expect("preset type valid");
         }
+        assert!(
+            desired.components.iter().any(|c| c.uid == "shared.seo"),
+            "blog preset must include shared.seo component"
+        );
         let ordered = super::order_creates(desired.content_types);
         let pos = |n: &str| ordered.iter().position(|c| c.name == n).unwrap();
         assert!(
