@@ -489,6 +489,22 @@ options = { draft_publish = true }
     }
 
     #[test]
+    fn blog_preset_parses_and_orders() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/schema/blog");
+        let desired = super::load_desired(&dir).expect("load blog preset");
+        let names: Vec<&str> = desired.iter().map(|c| c.name.as_str()).collect();
+        assert!(names.contains(&"author"));
+        assert!(names.contains(&"post"));
+        for c in &desired {
+            c.validate().expect("preset type valid");
+        }
+        let ordered = super::order_creates(desired);
+        let pos = |n: &str| ordered.iter().position(|c| c.name == n).unwrap();
+        assert!(pos("author") < pos("post"), "author must be created before post");
+    }
+
+    #[test]
     fn order_creates_places_target_before_dependent() {
         let mut post = nct("post", vec![fld("title")]);
         let mut rel = fld("author");

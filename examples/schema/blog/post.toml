@@ -1,0 +1,25 @@
+# Blog preset — Post (relates to Author).
+[[content_type]]
+name = "post"
+display_name = "Post"
+kind = "collection"
+options = { draft_publish = true }
+
+  [[content_type.field]]
+  name = "title"
+  kind = "string"
+  required = true
+
+  [[content_type.field]]
+  name = "slug"
+  kind = "slug"
+  required = true
+
+  [[content_type.field]]
+  name = "body"
+  kind = "text"
+
+  [[content_type.field]]
+  name = "author"
+  kind = "relation"
+  kind_meta = { target = "author", cardinality = "many_to_one", inverse = "posts" }

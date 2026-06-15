@@ -1,0 +1,14 @@
+# Blog preset — Author. Synced via RUSTAPI_SCHEMA_DIR=examples/schema/blog
+[[content_type]]
+name = "author"
+display_name = "Author"
+kind = "collection"
+
+  [[content_type.field]]
+  name = "name"
+  kind = "string"
+  required = true
+
+  [[content_type.field]]
+  name = "bio"
+  kind = "text"
