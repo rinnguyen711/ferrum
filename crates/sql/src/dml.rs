@@ -777,6 +777,27 @@ SELECT $1::uuid, x.asset, x.ord::int FROM UNNEST($2::uuid[]) WITH ORDINALITY AS 
             ]
         );
     }
+
+    #[test]
+    fn select_list_keyset_status_published_with_cursor() {
+        let s = Sort { column: "created_at".into(), dir: SortDir::Desc };
+        let id = Uuid::nil();
+        let after = Some((BoundValue::Str("2024".into()), id));
+        let (sql, binds) = select_list_keyset_status(
+            "post", &Filter::None, &s, after, 10, PublishFilter::Published,
+        )
+        .unwrap();
+        assert_eq!(
+            sql,
+            "SELECT * FROM \"ct_post\" \
+             WHERE \"published_at\" IS NOT NULL AND (\"created_at\", \"id\") < ($1, $2::uuid) \
+             ORDER BY \"created_at\" DESC, \"id\" DESC LIMIT $3"
+        );
+        assert_eq!(
+            binds,
+            vec![BoundValue::Str("2024".into()), BoundValue::Uuid(id), BoundValue::I64(10)]
+        );
+    }
 }
 
 /// Emit a `WHERE` fragment plus the binds it consumes, starting at the
