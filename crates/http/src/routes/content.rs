@@ -164,11 +164,13 @@ pub(crate) async fn list_entries(
     // Compute nextCursor from the last row before rows are consumed into JSON.
     // Only when keyset mode AND the page came back full (a short page = last page).
     let next_cursor = if keyset_mode && rows.len() == opts.page_size as usize {
-        rows.last().map(|r| {
-            let last_val = read_sort_value(r, &opts.sort.column, sort_kind);
-            let last_id: uuid::Uuid = r.try_get("id").expect("row has id");
-            crate::cursor::encode(&opts.sort, &last_val, last_id)
-        })
+        rows.last()
+            .map(|r| -> Result<String, Error> {
+                let last_val = read_sort_value(r, &opts.sort.column, sort_kind)?;
+                let last_id: uuid::Uuid = r.try_get("id").map_err(|e| db(e).0)?;
+                Ok(crate::cursor::encode(&opts.sort, &last_val, last_id))
+            })
+            .transpose()?
     } else {
         None
     };
@@ -1525,32 +1527,45 @@ fn sort_column_kind(ct: &ContentType, col: &str) -> rustapi_core::FieldKind {
     match col {
         "id" => FieldKind::Uuid,
         "created_at" | "updated_at" | "published_at" => FieldKind::Datetime,
-        _ => FieldKind::Datetime,
+        other => {
+            tracing::warn!(
+                column = other,
+                "unrecognized sort column; assuming Datetime kind for cursor"
+            );
+            FieldKind::Datetime
+        }
     }
 }
 
 /// Read the sort column's value from a fetched row as a `BoundValue`, for
-/// building the next cursor. Mirrors the kinds `cursor::json_to_bound` accepts.
+/// building the next cursor. Returns an error rather than fabricating a value
+/// if the column read fails (e.g. a NULL sort value) — a wrong cursor would
+/// silently corrupt pagination, so failing loudly is safer.
 fn read_sort_value(
     row: &sqlx::postgres::PgRow,
     col: &str,
     kind: rustapi_core::FieldKind,
-) -> rustapi_core::BoundValue {
+) -> Result<rustapi_core::BoundValue, Error> {
     use rustapi_core::{BoundValue, FieldKind};
     use sqlx::Row;
-    match kind {
-        FieldKind::Integer => BoundValue::I64(row.try_get::<i64, _>(col).unwrap_or_default()),
-        FieldKind::Float => BoundValue::F64(row.try_get::<f64, _>(col).unwrap_or_default()),
-        FieldKind::Boolean => BoundValue::Bool(row.try_get::<bool, _>(col).unwrap_or_default()),
+    let map_err = |e: sqlx::Error| {
+        Error::Internal(anyhow::anyhow!(
+            "cannot read sort column `{col}` for cursor: {e}"
+        ))
+    };
+    let v = match kind {
+        FieldKind::Integer => BoundValue::I64(row.try_get::<i64, _>(col).map_err(map_err)?),
+        FieldKind::Float => BoundValue::F64(row.try_get::<f64, _>(col).map_err(map_err)?),
+        FieldKind::Boolean => BoundValue::Bool(row.try_get::<bool, _>(col).map_err(map_err)?),
         FieldKind::Datetime => {
-            let dt: chrono::DateTime<chrono::Utc> =
-                row.try_get(col).unwrap_or_else(|_| chrono::Utc::now());
+            let dt: chrono::DateTime<chrono::Utc> = row.try_get(col).map_err(map_err)?;
             BoundValue::Str(dt.to_rfc3339())
         }
         FieldKind::Uuid => {
-            let u: uuid::Uuid = row.try_get(col).unwrap_or_default();
+            let u: uuid::Uuid = row.try_get(col).map_err(map_err)?;
             BoundValue::Str(u.to_string())
         }
-        _ => BoundValue::Str(row.try_get::<String, _>(col).unwrap_or_default()),
-    }
+        _ => BoundValue::Str(row.try_get::<String, _>(col).map_err(map_err)?),
+    };
+    Ok(v)
 }
