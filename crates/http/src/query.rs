@@ -280,4 +280,24 @@ mod tests {
         assert!(opts.with_count);
         assert!(opts.cursor.is_none());
     }
+
+    #[test]
+    fn with_count_explicit_true_in_cursor_mode() {
+        let opts = parse_list(
+            &ct(),
+            ListParams {
+                page: None,
+                page_size: None,
+                sort: None,
+                populate: None,
+                status: None,
+                cursor: Some("abc".into()),
+                with_count: Some(true),
+            },
+            100,
+        )
+        .unwrap();
+        // explicit withCount=true must win even though cursor mode defaults to false
+        assert!(opts.with_count);
+    }
 }
