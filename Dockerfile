@@ -34,6 +34,18 @@ FROM gcr.io/distroless/cc-debian12:nonroot AS runtime
 WORKDIR /app
 COPY --from=rust /tmp/rustapi /usr/local/bin/rustapi
 COPY --from=ui /ui/dist /app/studio
+
+# Provenance — populated by CI via --build-arg. Default to empty so local
+# `docker build` still works without passing them.
+ARG OCI_SOURCE=""
+ARG OCI_REVISION=""
+ARG OCI_VERSION=""
+LABEL org.opencontainers.image.source=$OCI_SOURCE \
+      org.opencontainers.image.revision=$OCI_REVISION \
+      org.opencontainers.image.version=$OCI_VERSION \
+      org.opencontainers.image.title="rustapi" \
+      org.opencontainers.image.description="Headless CMS framework in Rust"
+
 ENV RUSTAPI_BIND=0.0.0.0:8080 \
     RUSTAPI_STUDIO_DIR=/app/studio \
     RUSTAPI_LOG=info
