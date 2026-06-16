@@ -1,0 +1,35 @@
+# Production-style compose: pulls the published image instead of building from
+# source. Replace <owner> with the GitHub owner once the image is published.
+# Set a real secret before `up`:  export RUSTAPI_JWT_SECRET=$(openssl rand -hex 32)
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: rustapi
+      POSTGRES_PASSWORD: rustapi
+      POSTGRES_DB: rustapi
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rustapi"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  rustapi:
+    image: ghcr.io/<owner>/rustapi:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://rustapi:rustapi@postgres:5432/rustapi
+      RUSTAPI_JWT_SECRET: ${RUSTAPI_JWT_SECRET:?set RUSTAPI_JWT_SECRET to a 32+ char secret}
+      # Optional: ship TOML content types by mounting a dir and pointing here.
+      # RUSTAPI_SCHEMA_DIR: /schema
+    # volumes:
+    #   - ./my-schema:/schema:ro
+    ports:
+      - "8080:8080"
+
+volumes:
+  pgdata:
