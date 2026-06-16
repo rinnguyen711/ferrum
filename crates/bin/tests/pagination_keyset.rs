@@ -3,14 +3,11 @@ use common::TestApp;
 use serde_json::json;
 use std::collections::HashSet;
 
-/// Proves keyset pagination returns every row exactly once even when the sort
-/// column has duplicate values across all 50 entries.  The id tiebreak must
-/// prevent any row from appearing on two pages or being skipped at a page seam.
-#[tokio::test]
-async fn keyset_pages_all_rows_once_with_duplicate_sort_values() {
-    let app = TestApp::spawn().await;
-
-    // Create content type with an integer field.
+// ---------------------------------------------------------------------------
+// Shared seed helper: create the `post` type with an integer `views` field,
+// insert `n` entries all with the given `views` value, return their ids.
+// ---------------------------------------------------------------------------
+async fn seed(app: &TestApp, n: usize, views: i64) -> HashSet<String> {
     let resp = app
         .admin(app.client.post(app.url("/admin/content-types")))
         .json(&json!({
@@ -25,12 +22,11 @@ async fn keyset_pages_all_rows_once_with_duplicate_sort_values() {
         .unwrap();
     assert_eq!(resp.status(), 201, "{}", resp.text().await.unwrap());
 
-    // Insert 50 entries ALL with the SAME views value to stress the tiebreak.
-    let mut created: HashSet<String> = HashSet::new();
-    for _ in 0..50 {
+    let mut ids: HashSet<String> = HashSet::new();
+    for _ in 0..n {
         let resp = app
             .admin(app.client.post(app.url("/api/post")))
-            .json(&json!({"views": 10}))
+            .json(&json!({"views": views}))
             .send()
             .await
             .unwrap();
@@ -40,33 +36,43 @@ async fn keyset_pages_all_rows_once_with_duplicate_sort_values() {
             .as_str()
             .expect("id in created entry")
             .to_string();
-        created.insert(id);
+        ids.insert(id);
     }
-    assert_eq!(
-        created.len(),
-        50,
-        "all 50 inserts must produce distinct ids"
-    );
+    assert_eq!(ids.len(), n, "all {n} inserts must produce distinct ids");
+    ids
+}
+
+/// Proves keyset pagination returns every row exactly once even when the sort
+/// column has duplicate values across all 50 entries.  The id tiebreak must
+/// prevent any row from appearing on two pages or being skipped at a page seam.
+/// Uses `cursor=first` to start keyset paging per the new contract.
+#[tokio::test]
+async fn keyset_pages_all_rows_once_with_duplicate_sort_values() {
+    let app = TestApp::spawn().await;
+
+    let created = seed(&app, 50, 10).await;
 
     // Page through using keyset cursor, pageSize=10.
+    // Start with `cursor=first` (new sentinel — start keyset mode from beginning).
     let mut seen: HashSet<String> = HashSet::new();
-    let mut cursor: Option<String> = None;
+    let mut cursor: Option<String> = Some("first".to_string());
+
+    // pages needed = 50/10 = 5; headroom for off-by-one
+    let max_iters = (50 / 10) * 2 + 2;
     let mut iterations = 0;
 
     loop {
         iterations += 1;
         assert!(
-            iterations <= 20,
-            "safety limit: still paginating after 20 iterations — possible infinite loop"
+            iterations <= max_iters,
+            "safety limit: still paginating after {max_iters} iterations — possible infinite loop"
         );
 
-        let url = match &cursor {
-            Some(tok) => app.url(&format!(
-                "/api/post?sort=views:desc&pageSize=10&cursor={}",
-                tok
-            )),
-            None => app.url("/api/post?sort=views:desc&pageSize=10"),
-        };
+        let tok = cursor.as_deref().unwrap();
+        let url = app.url(&format!(
+            "/api/post?sort=views:desc&pageSize=10&cursor={}",
+            tok
+        ));
 
         let resp = app.admin(app.client.get(&url)).send().await.unwrap();
         assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
@@ -111,31 +117,7 @@ async fn keyset_pages_all_rows_once_with_duplicate_sort_values() {
 async fn with_count_false_omits_total() {
     let app = TestApp::spawn().await;
 
-    // Create content type.
-    let resp = app
-        .admin(app.client.post(app.url("/admin/content-types")))
-        .json(&json!({
-            "name": "post",
-            "display_name": "Post",
-            "fields": [
-                {"name": "views", "kind": "integer"}
-            ]
-        }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), 201, "{}", resp.text().await.unwrap());
-
-    // Insert 5 entries.
-    for i in 0..5 {
-        let resp = app
-            .admin(app.client.post(app.url("/api/post")))
-            .json(&json!({"views": i}))
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), 201, "{}", resp.text().await.unwrap());
-    }
+    seed(&app, 5, 0).await;
 
     // withCount=false → total key must be absent from meta.
     let resp = app
@@ -162,6 +144,36 @@ async fn with_count_false_omits_total() {
     assert_eq!(
         body["meta"]["total"], 5,
         "expected total=5 in default offset mode, got meta: {}",
+        body["meta"]
+    );
+}
+
+/// Locks the contract: plain offset requests (no cursor param) must NEVER emit
+/// `nextCursor`, even when the page is full. Offset mode returns `total` instead.
+#[tokio::test]
+async fn offset_mode_omits_next_cursor() {
+    let app = TestApp::spawn().await;
+
+    seed(&app, 5, 42).await;
+
+    let body: serde_json::Value = app
+        .admin(app.client.get(app.url("/api/post?pageSize=10")))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    assert!(
+        body["meta"].get("nextCursor").is_none(),
+        "offset mode must NOT emit nextCursor; got {:?}",
+        body["meta"]
+    );
+    assert_eq!(
+        body["meta"]["total"],
+        serde_json::json!(5),
+        "offset mode must emit total; got meta: {}",
         body["meta"]
     );
 }

@@ -123,16 +123,19 @@ pub(crate) async fn list_entries(
     let sort_kind = sort_column_kind(&ct, &opts.sort.column);
 
     // Decode cursor up-front if present (400 on bad/mismatched token).
-    let after = match &opts.cursor {
+    // "first" is the sentinel for "start keyset paging from the beginning"
+    // (no prior page, so after = None). Any other value is a real token.
+    let after = match opts.cursor.as_deref() {
+        None => None,
+        Some("first") => None, // start keyset paging from the beginning
         Some(tok) => {
             let (val, id) = crate::cursor::decode(tok, &opts.sort, sort_kind).map_err(|_| {
                 Error::Validation(ValidationErrors::single(
-                    "invalid cursor (use a nextCursor token from a previous response)",
+                    "invalid cursor (use a nextCursor token from a previous response, or `first` to start)",
                 ))
             })?;
             Some((val, id))
         }
-        None => None,
     };
 
     let keyset_mode = opts.cursor.is_some();
@@ -161,11 +164,9 @@ pub(crate) async fn list_entries(
     let q = bind_all(sqlx::query(&list_sql), &list_binds);
     let rows = q.fetch_all(&state.pool).await.map_err(|e| db(e).0)?;
 
-    // Compute nextCursor whenever the page is full (short page = last page).
-    // This applies in both offset-based first-page requests and subsequent
-    // cursor-mode requests, so clients can always switch to keyset pagination
-    // after the first page.
-    let next_cursor = if rows.len() == opts.page_size as usize {
+    // nextCursor only in keyset mode, and only when the page came back full
+    // (a short page means this was the last page → nextCursor is null).
+    let next_cursor = if keyset_mode && rows.len() == opts.page_size as usize {
         rows.last()
             .map(|r| -> Result<String, Error> {
                 let last_val = read_sort_value(r, &opts.sort.column, sort_kind)?;
@@ -209,7 +210,7 @@ pub(crate) async fn list_entries(
     if let Some(t) = total {
         meta.insert("total".into(), json!(t));
     }
-    if next_cursor.is_some() || keyset_mode {
+    if keyset_mode {
         meta.insert("nextCursor".into(), json!(next_cursor));
     }
 
@@ -1567,7 +1568,17 @@ fn read_sort_value(
             let u: uuid::Uuid = row.try_get(col).map_err(map_err)?;
             BoundValue::Str(u.to_string())
         }
-        _ => BoundValue::Str(row.try_get::<String, _>(col).map_err(map_err)?),
+        FieldKind::String | FieldKind::Text => {
+            BoundValue::Str(row.try_get::<String, _>(col).map_err(map_err)?)
+        }
+        // Non-scalar kinds (Json/RichText/Component/Media/Relation) are not
+        // valid keyset sort columns — fail with a clear client error rather
+        // than attempting a String decode that panics on a jsonb column.
+        other => {
+            return Err(Error::Validation(rustapi_core::ValidationErrors::single(
+                format!("cannot use `{col}` (kind {other:?}) as a keyset cursor sort column"),
+            )));
+        }
     };
     Ok(v)
 }
