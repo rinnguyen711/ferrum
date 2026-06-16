@@ -107,6 +107,7 @@ cargo test --workspace
 # Run the server against an external Postgres
 export DATABASE_URL=postgres://postgres:postgres@localhost:5432/rustapi
 export RUSTAPI_JWT_SECRET=$(openssl rand -hex 32)
+export RUSTAPI_DB_MAX_CONNECTIONS=20          # optional: Postgres pool size, default 10
 export RUSTAPI_STUDIO_DIR=$PWD/ui/dist        # optional: serve admin UI at /studio
 export RUSTAPI_SCHEMA_DIR=examples/schema/blog # optional: load TOML schema files on startup
 cargo run -p rustapi
