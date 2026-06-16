@@ -86,13 +86,20 @@ fn bound_to_json(v: &BoundValue) -> serde_json::Value {
 }
 
 /// Rebuild a typed `BoundValue` from the token JSON for the sort column's kind.
-/// String/Text/Datetime/Uuid all bind as `Str` (matches how the seek query
-/// casts placeholders), Integer as `I64`, etc. Returns `None` on type mismatch.
+/// Datetime and Uuid decode to their NATIVE variants so the seek query binds
+/// the correct Postgres OID (timestamptz / uuid) — avoids "operator does not
+/// exist: timestamptz < text" at query time. Returns `None` on type mismatch.
 fn json_to_bound(v: &serde_json::Value, kind: FieldKind) -> Option<BoundValue> {
     match kind {
-        FieldKind::String | FieldKind::Text | FieldKind::Datetime | FieldKind::Uuid => {
-            v.as_str().map(|s| BoundValue::Str(s.to_string()))
-        }
+        FieldKind::Datetime => v.as_str().and_then(|s| {
+            chrono::DateTime::parse_from_rfc3339(s)
+                .ok()
+                .map(|dt| BoundValue::DateTime(dt.with_timezone(&chrono::Utc)))
+        }),
+        FieldKind::Uuid => v
+            .as_str()
+            .and_then(|s| uuid::Uuid::parse_str(s).ok().map(BoundValue::Uuid)),
+        FieldKind::String | FieldKind::Text => v.as_str().map(|s| BoundValue::Str(s.to_string())),
         FieldKind::Integer => v.as_i64().map(BoundValue::I64),
         FieldKind::Float => v.as_f64().map(BoundValue::F64),
         FieldKind::Boolean => v.as_bool().map(BoundValue::Bool),
@@ -116,11 +123,14 @@ mod tests {
     fn round_trip_datetime() {
         let sort = sort_desc("created_at");
         let id = Uuid::new_v4();
-        let val = BoundValue::Str("2024-01-01T00:00:00Z".into());
+        let dt = chrono::DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let val = BoundValue::DateTime(dt);
         let tok = encode(&sort, &val, id);
         let (decoded_val, decoded_id) = decode(&tok, &sort, FieldKind::Datetime).unwrap();
         assert_eq!(decoded_id, id);
-        assert_eq!(decoded_val, BoundValue::Str("2024-01-01T00:00:00Z".into()));
+        assert_eq!(decoded_val, BoundValue::DateTime(dt));
     }
 
     #[test]
@@ -171,23 +181,23 @@ mod tests {
     }
 
     #[test]
-    fn encode_datetime_variant_decodes_as_rfc3339_str() {
+    fn encode_datetime_variant_round_trips() {
         use chrono::{TimeZone, Utc};
         let sort = sort_desc("created_at");
         let id = Uuid::new_v4();
         let dt = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
         let tok = encode(&sort, &BoundValue::DateTime(dt), id);
         let (val, _) = decode(&tok, &sort, FieldKind::Datetime).unwrap();
-        assert_eq!(val, BoundValue::Str(dt.to_rfc3339()));
+        assert_eq!(val, BoundValue::DateTime(dt));
     }
 
     #[test]
-    fn encode_uuid_variant_decodes_as_str() {
+    fn encode_uuid_variant_round_trips() {
         let sort = sort_desc("id");
         let id = Uuid::new_v4();
         let val_uuid = Uuid::new_v4();
         let tok = encode(&sort, &BoundValue::Uuid(val_uuid), id);
         let (val, _) = decode(&tok, &sort, FieldKind::Uuid).unwrap();
-        assert_eq!(val, BoundValue::Str(val_uuid.to_string()));
+        assert_eq!(val, BoundValue::Uuid(val_uuid));
     }
 }

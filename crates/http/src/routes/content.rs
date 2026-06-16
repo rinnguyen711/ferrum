@@ -140,6 +140,13 @@ pub(crate) async fn list_entries(
 
     let keyset_mode = opts.cursor.is_some();
 
+    if keyset_mode && !is_keyset_sortable(sort_kind) {
+        return Err(Error::Validation(ValidationErrors::single(format!(
+            "cannot use `{}` as a keyset cursor sort column",
+            opts.sort.column
+        ))));
+    }
+
     let (list_sql, list_binds) = if keyset_mode {
         rustapi_sql::select_list_keyset_status(
             &ct.name,
@@ -205,7 +212,9 @@ pub(crate) async fn list_entries(
     };
 
     let mut meta = serde_json::Map::new();
-    meta.insert("page".into(), json!(opts.page));
+    if !keyset_mode {
+        meta.insert("page".into(), json!(opts.page));
+    }
     meta.insert("pageSize".into(), json!(opts.page_size));
     if let Some(t) = total {
         meta.insert("total".into(), json!(t));
@@ -1520,6 +1529,22 @@ async fn import_entries(
     })))
 }
 
+/// True if a FieldKind can be used as a keyset cursor sort column (has a
+/// scalar, orderable, bindable representation).
+fn is_keyset_sortable(kind: rustapi_core::FieldKind) -> bool {
+    use rustapi_core::FieldKind;
+    matches!(
+        kind,
+        FieldKind::String
+            | FieldKind::Text
+            | FieldKind::Integer
+            | FieldKind::Float
+            | FieldKind::Boolean
+            | FieldKind::Datetime
+            | FieldKind::Uuid
+    )
+}
+
 /// FieldKind of a sortable column: a user field's kind, or the kind of a known
 /// system column. Defaults to Datetime for the timestamp system columns.
 fn sort_column_kind(ct: &ContentType, col: &str) -> rustapi_core::FieldKind {
@@ -1558,15 +1583,23 @@ fn read_sort_value(
     };
     let v = match kind {
         FieldKind::Integer => BoundValue::I64(row.try_get::<i64, _>(col).map_err(map_err)?),
-        FieldKind::Float => BoundValue::F64(row.try_get::<f64, _>(col).map_err(map_err)?),
+        FieldKind::Float => {
+            let f = row.try_get::<f64, _>(col).map_err(map_err)?;
+            if !f.is_finite() {
+                return Err(Error::Internal(anyhow::anyhow!(
+                    "cannot build cursor: sort column `{col}` has a non-finite value"
+                )));
+            }
+            BoundValue::F64(f)
+        }
         FieldKind::Boolean => BoundValue::Bool(row.try_get::<bool, _>(col).map_err(map_err)?),
         FieldKind::Datetime => {
             let dt: chrono::DateTime<chrono::Utc> = row.try_get(col).map_err(map_err)?;
-            BoundValue::Str(dt.to_rfc3339())
+            BoundValue::DateTime(dt)
         }
         FieldKind::Uuid => {
             let u: uuid::Uuid = row.try_get(col).map_err(map_err)?;
-            BoundValue::Str(u.to_string())
+            BoundValue::Uuid(u)
         }
         FieldKind::String | FieldKind::Text => {
             BoundValue::Str(row.try_get::<String, _>(col).map_err(map_err)?)
