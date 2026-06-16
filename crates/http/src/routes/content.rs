@@ -118,18 +118,75 @@ pub(crate) async fn list_entries(
         PublishFilter::All
     };
 
-    let (list_sql, list_binds) = rustapi_sql::select_list_status(
-        &ct.name,
-        &filter,
-        &opts.sort,
-        opts.page_size as i64,
-        offset,
-        publish,
-    )
+    // Resolve the sort column kind once (needed to decode the cursor and to
+    // read the last row's sort value for nextCursor).
+    let sort_kind = sort_column_kind(&ct, &opts.sort.column);
+
+    let keyset_mode = opts.cursor.is_some();
+
+    // Reject a non-scalar sort column before decoding the cursor, so the caller
+    // gets a clear "cannot use X" message rather than a generic "invalid
+    // cursor" (decode would also fail on the same column, but less helpfully).
+    if keyset_mode && !is_keyset_sortable(sort_kind) {
+        return Err(Error::Validation(ValidationErrors::single(format!(
+            "cannot use `{}` as a keyset cursor sort column",
+            opts.sort.column
+        ))));
+    }
+
+    // Decode cursor up-front if present (400 on bad/mismatched token).
+    // "first" is the sentinel for "start keyset paging from the beginning"
+    // (no prior page, so after = None). Any other value is a real token.
+    let after = match opts.cursor.as_deref() {
+        None => None,
+        Some("first") => None, // start keyset paging from the beginning
+        Some(tok) => {
+            let (val, id) = crate::cursor::decode(tok, &opts.sort, sort_kind).map_err(|_| {
+                Error::Validation(ValidationErrors::single(
+                    "invalid cursor (use a nextCursor token from a previous response, or `first` to start)",
+                ))
+            })?;
+            Some((val, id))
+        }
+    };
+
+    let (list_sql, list_binds) = if keyset_mode {
+        rustapi_sql::select_list_keyset_status(
+            &ct.name,
+            &filter,
+            &opts.sort,
+            after,
+            opts.page_size as i64,
+            publish,
+        )
+    } else {
+        rustapi_sql::select_list_status(
+            &ct.name,
+            &filter,
+            &opts.sort,
+            opts.page_size as i64,
+            offset,
+            publish,
+        )
+    }
     .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
 
     let q = bind_all(sqlx::query(&list_sql), &list_binds);
     let rows = q.fetch_all(&state.pool).await.map_err(|e| db(e).0)?;
+
+    // nextCursor only in keyset mode, and only when the page came back full
+    // (a short page means this was the last page → nextCursor is null).
+    let next_cursor = if keyset_mode && rows.len() == opts.page_size as usize {
+        rows.last()
+            .map(|r| -> Result<String, Error> {
+                let last_val = read_sort_value(r, &opts.sort.column, sort_kind)?;
+                let last_id: uuid::Uuid = r.try_get("id").map_err(|e| db(e).0)?;
+                Ok(crate::cursor::encode(&opts.sort, &last_val, last_id))
+            })
+            .transpose()?
+    } else {
+        None
+    };
 
     let mut maps: Vec<Map<String, Value>> = Vec::with_capacity(rows.len());
     for r in &rows {
@@ -148,19 +205,28 @@ pub(crate) async fn list_entries(
 
     let data: Vec<Value> = maps.into_iter().map(Value::Object).collect();
 
-    let (count_sql, count_binds) = rustapi_sql::count_status(&ct.name, &filter, publish)
-        .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
-    let cq = bind_all_as(sqlx::query_as::<_, (i64,)>(&count_sql), &count_binds);
-    let total: i64 = cq.fetch_one(&state.pool).await.map_err(|e| db(e).0)?.0;
+    let total: Option<i64> = if opts.with_count {
+        let (count_sql, count_binds) = rustapi_sql::count_status(&ct.name, &filter, publish)
+            .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
+        let cq = bind_all_as(sqlx::query_as::<_, (i64,)>(&count_sql), &count_binds);
+        Some(cq.fetch_one(&state.pool).await.map_err(|e| db(e).0)?.0)
+    } else {
+        None
+    };
 
-    Ok(json!({
-        "data": data,
-        "meta": {
-            "page": opts.page,
-            "pageSize": opts.page_size,
-            "total": total
-        }
-    }))
+    let mut meta = serde_json::Map::new();
+    if !keyset_mode {
+        meta.insert("page".into(), json!(opts.page));
+    }
+    meta.insert("pageSize".into(), json!(opts.page_size));
+    if let Some(t) = total {
+        meta.insert("total".into(), json!(t));
+    }
+    if keyset_mode {
+        meta.insert("nextCursor".into(), json!(next_cursor));
+    }
+
+    Ok(json!({ "data": data, "meta": Value::Object(meta) }))
 }
 
 pub async fn get_entry(
@@ -1464,4 +1530,91 @@ async fn import_entries(
         "updated": updated,
         "errors": errors,
     })))
+}
+
+/// True if a FieldKind can be used as a keyset cursor sort column (has a
+/// scalar, orderable, bindable representation).
+fn is_keyset_sortable(kind: rustapi_core::FieldKind) -> bool {
+    use rustapi_core::FieldKind;
+    matches!(
+        kind,
+        FieldKind::String
+            | FieldKind::Text
+            | FieldKind::Integer
+            | FieldKind::Float
+            | FieldKind::Boolean
+            | FieldKind::Datetime
+            | FieldKind::Uuid
+    )
+}
+
+/// FieldKind of a sortable column: a user field's kind, or the kind of a known
+/// system column. Defaults to Datetime for the timestamp system columns.
+fn sort_column_kind(ct: &ContentType, col: &str) -> rustapi_core::FieldKind {
+    use rustapi_core::FieldKind;
+    if let Some(f) = ct.fields.iter().find(|f| f.name == col) {
+        return f.kind;
+    }
+    match col {
+        "id" => FieldKind::Uuid,
+        "created_at" | "updated_at" | "published_at" => FieldKind::Datetime,
+        other => {
+            tracing::warn!(
+                column = other,
+                "unrecognized sort column; assuming Datetime kind for cursor"
+            );
+            FieldKind::Datetime
+        }
+    }
+}
+
+/// Read the sort column's value from a fetched row as a `BoundValue`, for
+/// building the next cursor. Returns an error rather than fabricating a value
+/// if the column read fails (e.g. a NULL sort value) — a wrong cursor would
+/// silently corrupt pagination, so failing loudly is safer.
+fn read_sort_value(
+    row: &sqlx::postgres::PgRow,
+    col: &str,
+    kind: rustapi_core::FieldKind,
+) -> Result<rustapi_core::BoundValue, Error> {
+    use rustapi_core::{BoundValue, FieldKind};
+    use sqlx::Row;
+    let map_err = |e: sqlx::Error| {
+        Error::Internal(anyhow::anyhow!(
+            "cannot read sort column `{col}` for cursor: {e}"
+        ))
+    };
+    let v = match kind {
+        FieldKind::Integer => BoundValue::I64(row.try_get::<i64, _>(col).map_err(map_err)?),
+        FieldKind::Float => {
+            let f = row.try_get::<f64, _>(col).map_err(map_err)?;
+            if !f.is_finite() {
+                return Err(Error::Validation(rustapi_core::ValidationErrors::single(
+                    format!("cannot build cursor: sort column `{col}` has a non-finite value"),
+                )));
+            }
+            BoundValue::F64(f)
+        }
+        FieldKind::Boolean => BoundValue::Bool(row.try_get::<bool, _>(col).map_err(map_err)?),
+        FieldKind::Datetime => {
+            let dt: chrono::DateTime<chrono::Utc> = row.try_get(col).map_err(map_err)?;
+            BoundValue::DateTime(dt)
+        }
+        FieldKind::Uuid => {
+            let u: uuid::Uuid = row.try_get(col).map_err(map_err)?;
+            BoundValue::Uuid(u)
+        }
+        FieldKind::String | FieldKind::Text => {
+            BoundValue::Str(row.try_get::<String, _>(col).map_err(map_err)?)
+        }
+        // Non-scalar kinds (Json/RichText/Component/Media/Relation) are not
+        // valid keyset sort columns — fail with a clear client error rather
+        // than attempting a String decode that panics on a jsonb column.
+        other => {
+            return Err(Error::Validation(rustapi_core::ValidationErrors::single(
+                format!("cannot use `{col}` (kind {other:?}) as a keyset cursor sort column"),
+            )));
+        }
+    };
+    Ok(v)
 }
