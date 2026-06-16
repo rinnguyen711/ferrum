@@ -42,11 +42,11 @@ async fn main() -> Result<()> {
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "rustapi starting");
 
     let pool = PgPoolOptions::new()
-        .max_connections(10)
+        .max_connections(cfg.db_max_connections)
         .connect(&cfg.database_url)
         .await
         .context("connect to Postgres")?;
-    tracing::info!(max_connections = 10, "postgres connected");
+    tracing::info!(max_connections = cfg.db_max_connections, "postgres connected");
 
     MIGRATOR
         .run(&pool)

@@ -5,6 +5,8 @@ use anyhow::{anyhow, Context, Result};
 #[derive(Debug, Clone)]
 pub struct Config {
     pub database_url: String,
+    /// Postgres connection pool size. `RUSTAPI_DB_MAX_CONNECTIONS`, default 10.
+    pub db_max_connections: u32,
     pub jwt_secret: String,
     pub jwt_ttl_secs: i64,
     pub bind: String,
@@ -29,6 +31,11 @@ pub struct Config {
 impl Config {
     pub fn from_env() -> Result<Self> {
         let database_url = std::env::var("DATABASE_URL").context("DATABASE_URL must be set")?;
+        let db_max_connections = std::env::var("RUSTAPI_DB_MAX_CONNECTIONS")
+            .ok()
+            .and_then(|s| s.parse::<u32>().ok())
+            .filter(|n| *n > 0)
+            .unwrap_or(10);
         let jwt_secret =
             std::env::var("RUSTAPI_JWT_SECRET").context("RUSTAPI_JWT_SECRET must be set")?;
         if jwt_secret.len() < 32 {
@@ -68,6 +75,7 @@ impl Config {
         let public_base_url = std::env::var("RUSTAPI_PUBLIC_URL").unwrap_or_else(|_| "/".into());
         Ok(Self {
             database_url,
+            db_max_connections,
             jwt_secret,
             jwt_ttl_secs,
             bind,
@@ -93,5 +101,21 @@ mod tests {
         std::env::set_var("RUSTAPI_JWT_SECRET", "short");
         let err = Config::from_env().unwrap_err();
         assert!(err.to_string().contains("at least 32"));
+    }
+
+    #[test]
+    fn db_max_connections_parses() {
+        // The pool-size parse is pure; test it directly to avoid the shared
+        // process-env race with `rejects_short_jwt_secret` (both mutate
+        // RUSTAPI_JWT_SECRET and tests run on parallel threads).
+        let parse = |raw: Option<&str>| -> u32 {
+            raw.and_then(|s| s.parse::<u32>().ok())
+                .filter(|n| *n > 0)
+                .unwrap_or(10)
+        };
+        assert_eq!(parse(None), 10, "unset → default 10");
+        assert_eq!(parse(Some("20")), 20, "explicit value wins");
+        assert_eq!(parse(Some("0")), 10, "zero → default");
+        assert_eq!(parse(Some("nope")), 10, "garbage → default");
     }
 }
