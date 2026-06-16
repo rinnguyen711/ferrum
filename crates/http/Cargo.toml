@@ -35,6 +35,7 @@ imagesize = { workspace = true }
 bytes = { workspace = true }
 csv.workspace = true
 hex = "0.4"
+base64 = "0.22"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
