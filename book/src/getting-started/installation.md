@@ -1,10 +1,42 @@
 # Installation
 
-You can run Rustapi two ways: with Docker Compose for a one-command demo, or
-with cargo against your own Postgres. Start with Docker — it's the fastest path
-to a running server.
+The fastest way to run Rustapi is the published Docker image — no clone, no
+build. You can also build from source with Docker Compose, or run the backend
+directly with cargo.
 
-## Run with Docker
+## Run the published image
+
+You need Docker and a Postgres database. Point the image at your database and
+give it a JWT secret (required, at least 32 characters):
+
+```sh
+docker run -p 8080:8080 \
+  -e DATABASE_URL=postgres://USER:PASS@HOST:5432/rustapi \
+  -e RUSTAPI_JWT_SECRET=$(openssl rand -hex 32) \
+  ghcr.io/<owner>/rustapi:latest
+```
+
+The server listens on `http://localhost:8080`, with the admin UI at `/studio`.
+Confirm it's live:
+
+```sh
+curl http://localhost:8080/healthz
+```
+
+To run the image and a database together, use the standalone compose file. Set a
+secret first, then start it:
+
+```sh
+export RUSTAPI_JWT_SECRET=$(openssl rand -hex 32)
+docker compose -f docker-compose.prod.yml up
+```
+
+Continue to [First-run setup](first-run.md) to create your admin account.
+
+> Replace `<owner>` with the GitHub owner the image is published under. For the
+> full list of environment variables, see the [README](../../README.md).
+
+## Run with Docker (from source)
 
 You need Docker installed. From the repository root:
 
