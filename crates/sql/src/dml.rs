@@ -247,8 +247,12 @@ pub fn select_list_status(
     binds.push(BoundValue::I64(limit));
     binds.push(BoundValue::I64(offset));
 
+    // Always include "id" as a secondary sort so the offset ordering is
+    // consistent with the keyset ordering (which seeks on (sort_col, id)).
+    // Without this tiebreak the seam between the first offset page and the
+    // first keyset page is non-deterministic when sort_col has duplicate values.
     let sql = format!(
-        "SELECT * FROM {table}{where_sql} ORDER BY {col} {dir} LIMIT ${limit_ph} OFFSET ${offset_ph}"
+        "SELECT * FROM {table}{where_sql} ORDER BY {col} {dir}, \"id\" {dir} LIMIT ${limit_ph} OFFSET ${offset_ph}"
     );
     Ok((sql, binds))
 }
@@ -476,7 +480,7 @@ mod tests {
         let (sql, binds) = select_list("post", &Filter::None, &s, 25, 50).unwrap();
         assert_eq!(
             sql,
-            "SELECT * FROM \"ct_post\" ORDER BY \"created_at\" DESC LIMIT $1 OFFSET $2"
+            "SELECT * FROM \"ct_post\" ORDER BY \"created_at\" DESC, \"id\" DESC LIMIT $1 OFFSET $2"
         );
         assert_eq!(binds, vec![BoundValue::I64(25), BoundValue::I64(50)]);
     }
@@ -554,7 +558,7 @@ mod tests {
         let (sql, binds) = select_list("post", &f, &s, 25, 50).unwrap();
         assert_eq!(
             sql,
-            "SELECT * FROM \"ct_post\" WHERE \"title\" = $1::text ORDER BY \"created_at\" DESC LIMIT $2 OFFSET $3"
+            "SELECT * FROM \"ct_post\" WHERE \"title\" = $1::text ORDER BY \"created_at\" DESC, \"id\" DESC LIMIT $2 OFFSET $3"
         );
         assert_eq!(
             binds,
@@ -713,7 +717,10 @@ SELECT $1::uuid, x.asset, x.ord::int FROM UNNEST($2::uuid[]) WITH ORDINALITY AS 
 
     #[test]
     fn select_list_keyset_first_page_no_cursor_desc() {
-        let s = Sort { column: "created_at".into(), dir: SortDir::Desc };
+        let s = Sort {
+            column: "created_at".into(),
+            dir: SortDir::Desc,
+        };
         let (sql, binds) = super::select_list_keyset("post", &Filter::None, &s, None, 25).unwrap();
         assert_eq!(
             sql,
@@ -724,7 +731,10 @@ SELECT $1::uuid, x.asset, x.ord::int FROM UNNEST($2::uuid[]) WITH ORDINALITY AS 
 
     #[test]
     fn select_list_keyset_with_cursor_desc() {
-        let s = Sort { column: "created_at".into(), dir: SortDir::Desc };
+        let s = Sort {
+            column: "created_at".into(),
+            dir: SortDir::Desc,
+        };
         let id = Uuid::nil();
         let after = Some((BoundValue::Str("2024-01-01T00:00:00Z".into()), id));
         let (sql, binds) = super::select_list_keyset("post", &Filter::None, &s, after, 25).unwrap();
@@ -735,13 +745,20 @@ SELECT $1::uuid, x.asset, x.ord::int FROM UNNEST($2::uuid[]) WITH ORDINALITY AS 
         );
         assert_eq!(
             binds,
-            vec![BoundValue::Str("2024-01-01T00:00:00Z".into()), BoundValue::Uuid(id), BoundValue::I64(25)]
+            vec![
+                BoundValue::Str("2024-01-01T00:00:00Z".into()),
+                BoundValue::Uuid(id),
+                BoundValue::I64(25)
+            ]
         );
     }
 
     #[test]
     fn select_list_keyset_with_cursor_asc_uses_gt() {
-        let s = Sort { column: "title".into(), dir: SortDir::Asc };
+        let s = Sort {
+            column: "title".into(),
+            dir: SortDir::Asc,
+        };
         let id = Uuid::nil();
         let after = Some((BoundValue::Str("hello".into()), id));
         let (sql, _) = super::select_list_keyset("post", &Filter::None, &s, after, 10).unwrap();
@@ -754,9 +771,14 @@ SELECT $1::uuid, x.asset, x.ord::int FROM UNNEST($2::uuid[]) WITH ORDINALITY AS 
 
     #[test]
     fn select_list_keyset_with_filter_shifts_placeholders() {
-        let s = Sort { column: "created_at".into(), dir: SortDir::Desc };
+        let s = Sort {
+            column: "created_at".into(),
+            dir: SortDir::Desc,
+        };
         let f = Filter::All(vec![Filter::Leaf(Condition::new(
-            "title", FieldKind::String, Op::Eq,
+            "title",
+            FieldKind::String,
+            Op::Eq,
             FilterValue::Bound(BoundValue::Str("hi".into())),
         ))]);
         let id = Uuid::nil();
@@ -780,11 +802,19 @@ SELECT $1::uuid, x.asset, x.ord::int FROM UNNEST($2::uuid[]) WITH ORDINALITY AS 
 
     #[test]
     fn select_list_keyset_status_published_with_cursor() {
-        let s = Sort { column: "created_at".into(), dir: SortDir::Desc };
+        let s = Sort {
+            column: "created_at".into(),
+            dir: SortDir::Desc,
+        };
         let id = Uuid::nil();
         let after = Some((BoundValue::Str("2024".into()), id));
         let (sql, binds) = select_list_keyset_status(
-            "post", &Filter::None, &s, after, 10, PublishFilter::Published,
+            "post",
+            &Filter::None,
+            &s,
+            after,
+            10,
+            PublishFilter::Published,
         )
         .unwrap();
         assert_eq!(
@@ -795,7 +825,11 @@ SELECT $1::uuid, x.asset, x.ord::int FROM UNNEST($2::uuid[]) WITH ORDINALITY AS 
         );
         assert_eq!(
             binds,
-            vec![BoundValue::Str("2024".into()), BoundValue::Uuid(id), BoundValue::I64(10)]
+            vec![
+                BoundValue::Str("2024".into()),
+                BoundValue::Uuid(id),
+                BoundValue::I64(10)
+            ]
         );
     }
 }

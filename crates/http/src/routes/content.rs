@@ -161,9 +161,11 @@ pub(crate) async fn list_entries(
     let q = bind_all(sqlx::query(&list_sql), &list_binds);
     let rows = q.fetch_all(&state.pool).await.map_err(|e| db(e).0)?;
 
-    // Compute nextCursor from the last row before rows are consumed into JSON.
-    // Only when keyset mode AND the page came back full (a short page = last page).
-    let next_cursor = if keyset_mode && rows.len() == opts.page_size as usize {
+    // Compute nextCursor whenever the page is full (short page = last page).
+    // This applies in both offset-based first-page requests and subsequent
+    // cursor-mode requests, so clients can always switch to keyset pagination
+    // after the first page.
+    let next_cursor = if rows.len() == opts.page_size as usize {
         rows.last()
             .map(|r| -> Result<String, Error> {
                 let last_val = read_sort_value(r, &opts.sort.column, sort_kind)?;
@@ -207,7 +209,7 @@ pub(crate) async fn list_entries(
     if let Some(t) = total {
         meta.insert("total".into(), json!(t));
     }
-    if keyset_mode {
+    if next_cursor.is_some() || keyset_mode {
         meta.insert("nextCursor".into(), json!(next_cursor));
     }
 
