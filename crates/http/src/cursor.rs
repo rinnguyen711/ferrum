@@ -2,6 +2,10 @@
 //! `(sort_col, dir, last_sort_value, last_id)` position. Clients treat the
 //! token as a black box; we keep it opaque so internals can change freely.
 
+// Module is not yet wired to call sites; suppress dead-code until Task 3
+// integrates encode/decode into the query handler.
+#![allow(dead_code)]
+
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use rustapi_core::{BoundValue, FieldKind};
 use rustapi_sql::{Sort, SortDir};
@@ -9,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Debug, PartialEq)]
-pub enum CursorError {
+pub(crate) enum CursorError {
     /// Token is not valid base64 / JSON, or fields are missing/ill-typed.
     Malformed,
     /// Token's sort column or direction does not match the request's sort.
@@ -36,7 +40,7 @@ fn dir_str(dir: SortDir) -> &'static str {
 }
 
 /// Encode the cursor position into an opaque token.
-pub fn encode(sort: &Sort, last_value: &BoundValue, last_id: Uuid) -> String {
+pub(crate) fn encode(sort: &Sort, last_value: &BoundValue, last_id: Uuid) -> String {
     let v = bound_to_json(last_value);
     let payload = Payload {
         c: sort.column.clone(),
@@ -50,7 +54,7 @@ pub fn encode(sort: &Sort, last_value: &BoundValue, last_id: Uuid) -> String {
 
 /// Decode + validate a token against the request's current `sort` and the sort
 /// column's `kind`. Returns `(sort_value_bind, last_id)` for the seek query.
-pub fn decode(
+pub(crate) fn decode(
     token: &str,
     sort: &Sort,
     kind: FieldKind,
@@ -79,6 +83,8 @@ fn bound_to_json(v: &BoundValue) -> serde_json::Value {
         BoundValue::Bool(b) => serde_json::json!(b),
         BoundValue::DateTime(dt) => serde_json::Value::String(dt.to_rfc3339()),
         BoundValue::Uuid(u) => serde_json::Value::String(u.to_string()),
+        // Null/Json are never valid sort-cursor values (callers paginate on scalar stored
+        // columns only); map to JSON null as a safe sentinel.
         BoundValue::Null(_) | BoundValue::Json(_) => serde_json::Value::Null,
     }
 }
@@ -166,5 +172,26 @@ mod tests {
         let sort = sort_desc("created_at");
         let err = decode(&raw, &sort, FieldKind::String).unwrap_err();
         assert_eq!(err, CursorError::Malformed);
+    }
+
+    #[test]
+    fn encode_datetime_variant_decodes_as_rfc3339_str() {
+        use chrono::{TimeZone, Utc};
+        let sort = sort_desc("created_at");
+        let id = Uuid::new_v4();
+        let dt = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+        let tok = encode(&sort, &BoundValue::DateTime(dt), id);
+        let (val, _) = decode(&tok, &sort, FieldKind::Datetime).unwrap();
+        assert_eq!(val, BoundValue::Str(dt.to_rfc3339()));
+    }
+
+    #[test]
+    fn encode_uuid_variant_decodes_as_str() {
+        let sort = sort_desc("id");
+        let id = Uuid::new_v4();
+        let val_uuid = Uuid::new_v4();
+        let tok = encode(&sort, &BoundValue::Uuid(val_uuid), id);
+        let (val, _) = decode(&tok, &sort, FieldKind::Uuid).unwrap();
+        assert_eq!(val, BoundValue::Str(val_uuid.to_string()));
     }
 }

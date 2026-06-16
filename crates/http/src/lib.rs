@@ -2,7 +2,7 @@
 
 pub mod auth;
 pub mod content_api;
-pub mod cursor;
+mod cursor;
 pub mod entry;
 pub mod error;
 pub mod filter;
