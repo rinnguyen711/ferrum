@@ -7,7 +7,7 @@
 
 use crate::filter::{Condition, Filter, FilterValue, Op};
 use crate::ident::{join_table_name, quote_ident, table_name, IdentError};
-use crate::sort::Sort;
+use crate::sort::{Sort, SortDir};
 use rustapi_core::{BoundValue, ContentType, FieldKind};
 use std::collections::BTreeMap;
 use uuid::Uuid;
@@ -249,6 +249,74 @@ pub fn select_list_status(
 
     let sql = format!(
         "SELECT * FROM {table}{where_sql} ORDER BY {col} {dir} LIMIT ${limit_ph} OFFSET ${offset_ph}"
+    );
+    Ok((sql, binds))
+}
+
+/// Keyset (seek) list query. Seeks past the `(sort_col, id)` cursor instead of
+/// using OFFSET, so page depth no longer affects cost (needs an index on
+/// `(sort_col, id)`). `after = None` returns the first page (no seek clause).
+/// The `id` tiebreak makes ordering total so no rows are skipped/duplicated at
+/// page seams. Comparison is `<` for DESC, `>` for ASC.
+pub fn select_list_keyset(
+    ct_name: &str,
+    filter: &Filter,
+    sort: &Sort,
+    after: Option<(BoundValue, Uuid)>,
+    limit: i64,
+) -> Result<SqlAndBinds, DmlError> {
+    select_list_keyset_status(ct_name, filter, sort, after, limit, PublishFilter::All)
+}
+
+/// Like `select_list_keyset` but also filters by publish state.
+pub fn select_list_keyset_status(
+    ct_name: &str,
+    filter: &Filter,
+    sort: &Sort,
+    after: Option<(BoundValue, Uuid)>,
+    limit: i64,
+    publish: PublishFilter,
+) -> Result<SqlAndBinds, DmlError> {
+    let table = table_name(ct_name)?;
+    let col = quote_ident(&sort.column)?;
+    let dir = sort.dir.as_sql();
+    let cmp = match sort.dir {
+        SortDir::Asc => ">",
+        SortDir::Desc => "<",
+    };
+
+    let (mut where_sql, mut binds) = render_where(filter, 1)?;
+    let publish_pred = match publish {
+        PublishFilter::Published => Some("\"published_at\" IS NOT NULL"),
+        PublishFilter::Draft => Some("\"published_at\" IS NULL"),
+        PublishFilter::All => None,
+    };
+    if let Some(pred) = publish_pred {
+        if where_sql.is_empty() {
+            where_sql = format!(" WHERE {pred}");
+        } else {
+            where_sql = format!("{where_sql} AND {pred}");
+        }
+    }
+
+    if let Some((val, id)) = after {
+        let val_ph = binds.len() + 1;
+        let id_ph = binds.len() + 2;
+        let seek = format!("({col}, \"id\") {cmp} (${val_ph}, ${id_ph}::uuid)");
+        if where_sql.is_empty() {
+            where_sql = format!(" WHERE {seek}");
+        } else {
+            where_sql = format!("{where_sql} AND {seek}");
+        }
+        binds.push(val);
+        binds.push(BoundValue::Uuid(id));
+    }
+
+    let limit_ph = binds.len() + 1;
+    binds.push(BoundValue::I64(limit));
+
+    let sql = format!(
+        "SELECT * FROM {table}{where_sql} ORDER BY {col} {dir}, \"id\" {dir} LIMIT ${limit_ph}"
     );
     Ok((sql, binds))
 }
@@ -641,6 +709,73 @@ SELECT $1::uuid, x.asset, x.ord::int FROM UNNEST($2::uuid[]) WITH ORDINALITY AS 
         assert!(sql.contains("ANY($1::uuid[])"));
         // should not contain LIMIT/OFFSET
         assert!(!sql.contains("LIMIT"));
+    }
+
+    #[test]
+    fn select_list_keyset_first_page_no_cursor_desc() {
+        let s = Sort { column: "created_at".into(), dir: SortDir::Desc };
+        let (sql, binds) = super::select_list_keyset("post", &Filter::None, &s, None, 25).unwrap();
+        assert_eq!(
+            sql,
+            "SELECT * FROM \"ct_post\" ORDER BY \"created_at\" DESC, \"id\" DESC LIMIT $1"
+        );
+        assert_eq!(binds, vec![BoundValue::I64(25)]);
+    }
+
+    #[test]
+    fn select_list_keyset_with_cursor_desc() {
+        let s = Sort { column: "created_at".into(), dir: SortDir::Desc };
+        let id = Uuid::nil();
+        let after = Some((BoundValue::Str("2024-01-01T00:00:00Z".into()), id));
+        let (sql, binds) = super::select_list_keyset("post", &Filter::None, &s, after, 25).unwrap();
+        assert_eq!(
+            sql,
+            "SELECT * FROM \"ct_post\" WHERE (\"created_at\", \"id\") < ($1, $2::uuid) \
+             ORDER BY \"created_at\" DESC, \"id\" DESC LIMIT $3"
+        );
+        assert_eq!(
+            binds,
+            vec![BoundValue::Str("2024-01-01T00:00:00Z".into()), BoundValue::Uuid(id), BoundValue::I64(25)]
+        );
+    }
+
+    #[test]
+    fn select_list_keyset_with_cursor_asc_uses_gt() {
+        let s = Sort { column: "title".into(), dir: SortDir::Asc };
+        let id = Uuid::nil();
+        let after = Some((BoundValue::Str("hello".into()), id));
+        let (sql, _) = super::select_list_keyset("post", &Filter::None, &s, after, 10).unwrap();
+        assert_eq!(
+            sql,
+            "SELECT * FROM \"ct_post\" WHERE (\"title\", \"id\") > ($1, $2::uuid) \
+             ORDER BY \"title\" ASC, \"id\" ASC LIMIT $3"
+        );
+    }
+
+    #[test]
+    fn select_list_keyset_with_filter_shifts_placeholders() {
+        let s = Sort { column: "created_at".into(), dir: SortDir::Desc };
+        let f = Filter::All(vec![Filter::Leaf(Condition::new(
+            "title", FieldKind::String, Op::Eq,
+            FilterValue::Bound(BoundValue::Str("hi".into())),
+        ))]);
+        let id = Uuid::nil();
+        let after = Some((BoundValue::Str("2024".into()), id));
+        let (sql, binds) = super::select_list_keyset("post", &f, &s, after, 25).unwrap();
+        assert_eq!(
+            sql,
+            "SELECT * FROM \"ct_post\" WHERE \"title\" = $1::text AND (\"created_at\", \"id\") < ($2, $3::uuid) \
+             ORDER BY \"created_at\" DESC, \"id\" DESC LIMIT $4"
+        );
+        assert_eq!(
+            binds,
+            vec![
+                BoundValue::Str("hi".into()),
+                BoundValue::Str("2024".into()),
+                BoundValue::Uuid(id),
+                BoundValue::I64(25),
+            ]
+        );
     }
 }
 
