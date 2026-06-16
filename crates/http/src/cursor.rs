@@ -2,10 +2,6 @@
 //! `(sort_col, dir, last_sort_value, last_id)` position. Clients treat the
 //! token as a black box; we keep it opaque so internals can change freely.
 
-// Module is not yet wired to call sites; suppress dead-code until Task 3
-// integrates encode/decode into the query handler.
-#![allow(dead_code)]
-
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use rustapi_core::{BoundValue, FieldKind};
 use rustapi_sql::{Sort, SortDir};
