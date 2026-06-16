@@ -122,6 +122,18 @@ pub(crate) async fn list_entries(
     // read the last row's sort value for nextCursor).
     let sort_kind = sort_column_kind(&ct, &opts.sort.column);
 
+    let keyset_mode = opts.cursor.is_some();
+
+    // Reject a non-scalar sort column before decoding the cursor, so the caller
+    // gets a clear "cannot use X" message rather than a generic "invalid
+    // cursor" (decode would also fail on the same column, but less helpfully).
+    if keyset_mode && !is_keyset_sortable(sort_kind) {
+        return Err(Error::Validation(ValidationErrors::single(format!(
+            "cannot use `{}` as a keyset cursor sort column",
+            opts.sort.column
+        ))));
+    }
+
     // Decode cursor up-front if present (400 on bad/mismatched token).
     // "first" is the sentinel for "start keyset paging from the beginning"
     // (no prior page, so after = None). Any other value is a real token.
@@ -137,15 +149,6 @@ pub(crate) async fn list_entries(
             Some((val, id))
         }
     };
-
-    let keyset_mode = opts.cursor.is_some();
-
-    if keyset_mode && !is_keyset_sortable(sort_kind) {
-        return Err(Error::Validation(ValidationErrors::single(format!(
-            "cannot use `{}` as a keyset cursor sort column",
-            opts.sort.column
-        ))));
-    }
 
     let (list_sql, list_binds) = if keyset_mode {
         rustapi_sql::select_list_keyset_status(
@@ -1586,8 +1589,8 @@ fn read_sort_value(
         FieldKind::Float => {
             let f = row.try_get::<f64, _>(col).map_err(map_err)?;
             if !f.is_finite() {
-                return Err(Error::Internal(anyhow::anyhow!(
-                    "cannot build cursor: sort column `{col}` has a non-finite value"
+                return Err(Error::Validation(rustapi_core::ValidationErrors::single(
+                    format!("cannot build cursor: sort column `{col}` has a non-finite value"),
                 )));
             }
             BoundValue::F64(f)
