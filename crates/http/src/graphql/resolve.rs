@@ -279,6 +279,8 @@ pub fn list_field(ct_name: String) -> impl Fn(ResolverContext) -> FieldFuture + 
                 sort,
                 populate: None,
                 status: None,
+                cursor: None,
+                with_count: None,
             };
             let env =
                 content::list_entries(&st, &pr, &ct_name, params, populate.as_deref(), &raw_query)

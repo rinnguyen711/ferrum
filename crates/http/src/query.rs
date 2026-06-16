@@ -19,6 +19,10 @@ pub struct ListParams {
     pub populate: Option<String>,
     #[serde(default)]
     pub status: Option<String>,
+    #[serde(default)]
+    pub cursor: Option<String>,
+    #[serde(rename = "withCount", default)]
+    pub with_count: Option<bool>,
 }
 
 #[derive(Debug)]
@@ -26,6 +30,8 @@ pub struct ListOpts {
     pub page: u32,
     pub page_size: u32,
     pub sort: Sort,
+    pub cursor: Option<String>,
+    pub with_count: bool,
 }
 
 pub fn parse_list(
@@ -47,10 +53,19 @@ pub fn parse_list(
         Some(s) => parse_sort(&s, ct)?,
     };
 
+    // Cursor mode skips count by default (keyset callers page until empty).
+    // Offset mode counts by default; either can opt out via withCount=false.
+    let with_count = match params.with_count {
+        Some(v) => v,
+        None => params.cursor.is_none(),
+    };
+
     Ok(ListOpts {
         page,
         page_size,
         sort,
+        cursor: params.cursor,
+        with_count,
     })
 }
 
@@ -132,6 +147,8 @@ mod tests {
                 sort: None,
                 populate: None,
                 status: None,
+                cursor: None,
+                with_count: None,
             },
             50,
         )
@@ -149,6 +166,8 @@ mod tests {
                 sort: Some("title:desc".into()),
                 populate: None,
                 status: None,
+                cursor: None,
+                with_count: None,
             },
             100,
         )
@@ -167,6 +186,8 @@ mod tests {
                 sort: Some("nope".into()),
                 populate: None,
                 status: None,
+                cursor: None,
+                with_count: None,
             },
             100,
         );
@@ -183,6 +204,8 @@ mod tests {
                 sort: Some("title:sideways".into()),
                 populate: None,
                 status: None,
+                cursor: None,
+                with_count: None,
             },
             100,
         );
@@ -229,5 +252,32 @@ mod tests {
             is_sortable("title", &ct_m2m),
             "stored field must be sortable"
         );
+    }
+
+    #[test]
+    fn parses_cursor_and_with_count() {
+        let opts = parse_list(
+            &ct(),
+            ListParams {
+                page: None,
+                page_size: None,
+                sort: None,
+                populate: None,
+                status: None,
+                cursor: Some("abc".into()),
+                with_count: Some(false),
+            },
+            100,
+        )
+        .unwrap();
+        assert_eq!(opts.cursor.as_deref(), Some("abc"));
+        assert!(!opts.with_count);
+    }
+
+    #[test]
+    fn with_count_defaults_true_for_offset() {
+        let opts = parse_list(&ct(), ListParams::default(), 100).unwrap();
+        assert!(opts.with_count);
+        assert!(opts.cursor.is_none());
     }
 }
