@@ -14,6 +14,27 @@ Headless CMS framework in Rust. Axum + sqlx backend, React + TS admin UI.
 
 ## Docker (quickest demo)
 
+The quickest way to try Rustapi without cloning is the published image. Point it
+at a Postgres database and give it a JWT secret (required, 32+ chars):
+
+```sh
+docker run -p 8080:8080 \
+  -e DATABASE_URL=postgres://USER:PASS@HOST:5432/rustapi \
+  -e RUSTAPI_JWT_SECRET=$(openssl rand -hex 32) \
+  ghcr.io/<owner>/rustapi:latest
+```
+
+Or run image + database together with the standalone compose file:
+
+```sh
+export RUSTAPI_JWT_SECRET=$(openssl rand -hex 32)
+docker compose -f docker-compose.prod.yml up
+```
+
+Replace `<owner>` with the GitHub owner the image is published under.
+
+To build from source instead:
+
 ```sh
 docker compose up --build
 # → http://localhost:8080/studio  (UI)
