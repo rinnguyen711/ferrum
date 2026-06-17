@@ -16,6 +16,7 @@
 - [Relations](concepts/relations.md)
 - [Draft & publish](concepts/draft-publish.md)
 - [Single types](concepts/single-types.md)
+- [Admin UI architecture](concepts/admin-ui.md)
 
 # Guides
 
@@ -27,6 +28,8 @@
 - [Write hooks](guides/write-hooks.md)
 - [Import & export](guides/import-export.md)
 - [GraphQL](guides/graphql.md)
+- [Add a custom field widget](guides/custom-field-widget.md)
+- [Build & embed the admin UI](guides/build-admin-ui.md)
 
 # Reference
 
