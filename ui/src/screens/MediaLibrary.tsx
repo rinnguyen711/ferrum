@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Icons } from "../components/icons";
 import {
   listFolders, createFolder, updateFolder, deleteFolder,
-  listAssets, updateAsset, deleteAsset, uploadAsset,
+  listAssets, updateAsset, deleteAsset, uploadAsset, folderAssetCounts,
 } from "../api/endpoints";
 import { ApiError } from "../api/client";
 import type { MediaFolder, MediaAsset } from "../api/types";
@@ -32,12 +32,13 @@ function assetType(a: MediaAsset): string {
 
 export function MediaLibrary() {
   const [folders, setFolders] = useState<MediaFolder[]>([]);
+  const [assetCounts, setAssetCounts] = useState<Record<string, number>>({});
   const [assets, setAssets] = useState<MediaAsset[]>([]);
   const [cur, setCur] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>("newest");
   const [view, setView] = useState<View>(() =>
-    localStorage.getItem(VIEW_KEY) === "list" ? "list" : "grid");
+    localStorage.getItem(VIEW_KEY) === "grid" ? "grid" : "list");
   const [selected, setSelected] = useState<string[]>([]);
   const [modal, setModal] = useState<ModalState>(null);
   const [deleteState, setDeleteState] = useState<DeleteState>(null);
@@ -48,10 +49,16 @@ export function MediaLibrary() {
   const dragIds = useRef<string[]>([]);
 
   const reloadFolders = useCallback(async () => {
-    setFolders(await listFolders({ all: true }));
+    const [fs, counts] = await Promise.all([
+      listFolders({ all: true }),
+      folderAssetCounts().catch(() => ({})),
+    ]);
+    setFolders(fs);
+    setAssetCounts(counts);
   }, []);
   const reloadAssets = useCallback(async (folderId: string | null) => {
     setAssets(await listAssets(folderId));
+    folderAssetCounts().then(setAssetCounts).catch(() => {});
   }, []);
 
   useEffect(() => { reloadFolders().catch(() => {}); }, [reloadFolders]);
@@ -318,7 +325,7 @@ export function MediaLibrary() {
                     </thead>
                     <tbody>
                       {visibleFolders.map((f) => {
-                        const subs = folderCount(f.id);
+                        const items = folderCount(f.id) + (assetCounts[f.id] ?? 0);
                         return (
                           <tr key={`folder-${f.id}`}
                             className={"rs-media-row--folder" + (dropTarget === f.id ? " is-drop" : "")}
@@ -327,10 +334,10 @@ export function MediaLibrary() {
                             onDragLeave={() => setDropTarget((d) => d === f.id ? null : d)}
                             onDrop={(e) => { e.preventDefault(); onFolderDrop(f.id); }}>
                             <td></td>
-                            <td><span className="rs-media-row-folderico"><Icons.folder size={18} /></span></td>
+                            <td><span className="rs-media-row-folderico"><Icons.folder size={32} /></span></td>
                             <td><strong title={f.name}>{f.name}</strong></td>
                             <td className="rs-cell-muted">Folder</td>
-                            <td className="rs-cell-muted rs-mono">{subs === 0 ? "Empty" : `${subs} folder${subs === 1 ? "" : "s"}`}</td>
+                            <td className="rs-cell-muted rs-mono">{items === 0 ? "Empty" : `${items} item${items === 1 ? "" : "s"}`}</td>
                             <td>
                               <span className="rs-media-row-acts">
                                 <span className="rs-folder-menu" title="Edit folder"

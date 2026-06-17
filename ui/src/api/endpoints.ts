@@ -178,6 +178,11 @@ export function listFolders(opts: { parentId?: string | null; all?: boolean } = 
   return apiFetch<MediaFolder[]>(`/admin/media/folders${q}`);
 }
 
+/** Map of folder id → asset count. Folders with no assets are absent. */
+export function folderAssetCounts(): Promise<Record<string, number>> {
+  return apiFetch<Record<string, number>>("/admin/media/folders/asset-counts");
+}
+
 export function createFolder(body: NewFolder): Promise<MediaFolder> {
   return apiFetch<MediaFolder>("/admin/media/folders", { method: "POST", body });
 }

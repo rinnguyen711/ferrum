@@ -923,7 +923,7 @@ select.rs-input { appearance: none; background-image: url("data:image/svg+xml,%3
 /* Folder rows in the list-view asset table (file-manager style). */
 .rs-media-row--folder { cursor: pointer; }
 .rs-media-row--folder.is-drop { background: var(--accent-soft); box-shadow: 0 0 0 2px var(--accent) inset; }
-.rs-media-row-folderico { width: 30px; height: 30px; border-radius: var(--r-sm); display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-text); }
+.rs-media-row-folderico { width: 40px; height: 40px; border-radius: var(--r-sm); display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-text); }
 .rs-media-row-acts { display: inline-flex; gap: 2px; }
 .rs-media-row--folder:hover .rs-folder-menu { opacity: 1; }
 .rs-media-card-meta { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
