@@ -198,6 +198,18 @@ pub async fn list_assets(
     Ok(rows.into_iter().map(asset_from).collect())
 }
 
+/// Count of assets directly in each folder. Root-level assets (NULL folder_id)
+/// are excluded — only folders that hold at least one asset appear.
+pub async fn folder_asset_counts(pool: &PgPool) -> Result<Vec<(Uuid, i64)>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, (Uuid, i64)>(
+        "SELECT folder_id, COUNT(*) FROM _media_assets \
+         WHERE folder_id IS NOT NULL GROUP BY folder_id",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
 pub async fn get_asset(pool: &PgPool, id: Uuid) -> Result<Option<AssetRow>, sqlx::Error> {
     let t = sqlx::query_as::<_, AssetTuple>(&format!(
         "SELECT {ASSET_COLS} FROM _media_assets WHERE id = $1"

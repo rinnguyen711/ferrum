@@ -33,6 +33,7 @@ pub fn router() -> Router<AppState> {
             "/admin/media/folders",
             get(list_folders).post(create_folder),
         )
+        .route("/admin/media/folders/asset-counts", get(folder_asset_counts))
         .route(
             "/admin/media/folders/:id",
             axum::routing::patch(update_folder).delete(delete_folder),
@@ -98,6 +99,19 @@ async fn list_folders(
             .map_err(internal)?
     };
     Ok(Json(rows.into_iter().map(FolderView::from).collect()))
+}
+
+/// Map of folder id → number of assets directly in that folder. Folders with no
+/// assets are absent from the map (the UI treats a missing key as zero).
+async fn folder_asset_counts(
+    State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
+) -> Result<Json<std::collections::HashMap<Uuid, i64>>, ApiError> {
+    ensure(&state, &principal, Action::ContentRead).await?;
+    let counts = store::folder_asset_counts(&state.pool)
+        .await
+        .map_err(internal)?;
+    Ok(Json(counts.into_iter().collect()))
 }
 
 #[derive(Deserialize)]
