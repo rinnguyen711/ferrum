@@ -19,6 +19,16 @@ import { DeleteConfirmModal } from "./media/DeleteConfirmModal";
 type ModalState = null | "folder" | "upload" | "move" | { editFolder: MediaFolder };
 type DeleteState = null | { kind: "assets"; ids: string[] } | { kind: "folder"; id: string };
 type Sort = "newest" | "oldest" | "name";
+type View = "grid" | "list";
+
+const VIEW_KEY = "rs-media-view";
+
+/** Uppercased file extension, falling back to the MIME subtype. */
+function assetType(a: MediaAsset): string {
+  const m = a.original_filename.match(/\.([a-z0-9]+)$/i);
+  if (m) return m[1].toUpperCase();
+  return (a.mime_type.split("/")[1] || "file").toUpperCase();
+}
 
 export function MediaLibrary() {
   const [folders, setFolders] = useState<MediaFolder[]>([]);
@@ -26,6 +36,8 @@ export function MediaLibrary() {
   const [cur, setCur] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>("newest");
+  const [view, setView] = useState<View>(() =>
+    localStorage.getItem(VIEW_KEY) === "list" ? "list" : "grid");
   const [selected, setSelected] = useState<string[]>([]);
   const [modal, setModal] = useState<ModalState>(null);
   const [deleteState, setDeleteState] = useState<DeleteState>(null);
@@ -44,6 +56,7 @@ export function MediaLibrary() {
 
   useEffect(() => { reloadFolders().catch(() => {}); }, [reloadFolders]);
   useEffect(() => { reloadAssets(cur).catch(() => {}); }, [cur, reloadAssets]);
+  useEffect(() => { localStorage.setItem(VIEW_KEY, view); }, [view]);
 
   const path = useMemo(() => {
     const chain: MediaFolder[] = [];
@@ -68,6 +81,12 @@ export function MediaLibrary() {
     sort === "name" ? a.file_name.localeCompare(b.file_name)
       : sort === "oldest" ? a.created_at.localeCompare(b.created_at)
         : b.created_at.localeCompare(a.created_at));
+
+  // List view renders folders inline atop the asset table: always name-sorted,
+  // filtered by the same search query as assets.
+  let visibleFolders = subFolders.slice();
+  if (query) visibleFolders = visibleFolders.filter((f) => f.name.toLowerCase().includes(query.toLowerCase()));
+  visibleFolders.sort((a, b) => a.name.localeCompare(b.name));
 
   const flash = (msg: string) => { setNotice(msg); setTimeout(() => setNotice(null), 4000); };
 
@@ -180,6 +199,16 @@ export function MediaLibrary() {
           onClick={() => setSort(sort === "newest" ? "oldest" : sort === "oldest" ? "name" : "newest")}>
           <Icons.sort size={15} /> {sort === "name" ? "Name (A–Z)" : sort === "oldest" ? "Oldest first" : "Newest first"}
         </button>
+        <div className="rs-segment" role="group" aria-label="View">
+          <button className={"rs-seg" + (view === "grid" ? " is-active" : "")} type="button"
+            title="Grid view" aria-pressed={view === "grid"} onClick={() => setView("grid")}>
+            <Icons.grid size={15} />
+          </button>
+          <button className={"rs-seg" + (view === "list" ? " is-active" : "")} type="button"
+            title="List view" aria-pressed={view === "list"} onClick={() => setView("list")}>
+            <Icons.list size={15} />
+          </button>
+        </div>
       </div>
 
       {notice && <Notice>{notice}</Notice>}
@@ -207,7 +236,7 @@ export function MediaLibrary() {
         </div>
       ) : (
         <>
-          {subFolders.length > 0 && (
+          {view === "grid" && subFolders.length > 0 && (
             <>
               <div className="rs-media-sectionhead"><h2>Folders</h2><span className="rs-count-pill">{subFolders.length}</span></div>
               <div className="rs-folder-grid">
@@ -233,39 +262,109 @@ export function MediaLibrary() {
             </>
           )}
 
-          {visible.length > 0 && (
+          {(visible.length > 0 || (view === "list" && visibleFolders.length > 0)) && (
             <>
               <div className="rs-media-sectionhead">
                 <h2>Assets</h2><span className="rs-count-pill">{visible.length}</span>
-                <div className="rs-spacer" />
-                <button className="rs-link-btn" type="button"
-                  onClick={() => setSelected(selected.length === visible.length ? [] : visible.map((a) => a.id))}>
-                  {selected.length === visible.length ? "Deselect all" : "Select all"}
-                </button>
+                {view === "grid" && <>
+                  <div className="rs-spacer" />
+                  <button className="rs-link-btn" type="button"
+                    onClick={() => setSelected(selected.length === visible.length ? [] : visible.map((a) => a.id))}>
+                    {selected.length === visible.length ? "Deselect all" : "Select all"}
+                  </button>
+                </>}
               </div>
-              <div className="rs-media-grid">
-                {visible.map((m) => {
-                  const sel = selected.includes(m.id);
-                  return (
-                    <div className={"rs-media-card" + (sel ? " is-selected" : "")} key={m.id}
-                      draggable onDragStart={() => onAssetDragStart(m.id)}
-                      onClick={() => setDetail(m)}>
-                      <div className="rs-media-check" onClick={(e) => { e.stopPropagation(); toggleSel(m.id); }}>
-                        <SelectBox checked={sel} />
-                      </div>
-                      <AssetThumb asset={m} />
-                      <div className="rs-media-card-meta">
-                        <span className="rs-media-card-text">
-                          <strong title={m.file_name}>{m.file_name}</strong>
-                          <span className="rs-cell-muted rs-mono">
-                            {m.width && m.height ? `${m.width}×${m.height} · ` : ""}{(m.size_bytes / 1048576).toFixed(1)} MB
+              {view === "grid" ? (
+                <div className="rs-media-grid">
+                  {visible.map((m) => {
+                    const sel = selected.includes(m.id);
+                    return (
+                      <div className={"rs-media-card" + (sel ? " is-selected" : "")} key={m.id}
+                        draggable onDragStart={() => onAssetDragStart(m.id)}
+                        onClick={() => setDetail(m)}>
+                        <div className="rs-media-check" onClick={(e) => { e.stopPropagation(); toggleSel(m.id); }}>
+                          <SelectBox checked={sel} />
+                        </div>
+                        <AssetThumb asset={m} />
+                        <div className="rs-media-card-meta">
+                          <span className="rs-media-card-text">
+                            <strong title={m.file_name}>{m.file_name}</strong>
+                            <span className="rs-cell-muted rs-mono">
+                              {m.width && m.height ? `${m.width}×${m.height} · ` : ""}{(m.size_bytes / 1048576).toFixed(1)} MB
+                            </span>
                           </span>
-                        </span>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="rs-table-wrap">
+                  <table className="rs-table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: 36 }}>
+                          <span className="rs-media-check rs-media-check--inline"
+                            onClick={() => setSelected(selected.length === visible.length ? [] : visible.map((a) => a.id))}>
+                            <SelectBox checked={visible.length > 0 && selected.length === visible.length} />
+                          </span>
+                        </th>
+                        <th style={{ width: 48 }}></th>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Size</th>
+                        <th>Uploaded</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleFolders.map((f) => {
+                        const subs = folderCount(f.id);
+                        return (
+                          <tr key={`folder-${f.id}`}
+                            className={"rs-media-row--folder" + (dropTarget === f.id ? " is-drop" : "")}
+                            onClick={() => setCur(f.id)}
+                            onDragOver={(e) => { if (dragIds.current.length) { e.preventDefault(); setDropTarget(f.id); } }}
+                            onDragLeave={() => setDropTarget((d) => d === f.id ? null : d)}
+                            onDrop={(e) => { e.preventDefault(); onFolderDrop(f.id); }}>
+                            <td></td>
+                            <td><span className="rs-media-row-folderico"><Icons.folder size={18} /></span></td>
+                            <td><strong title={f.name}>{f.name}</strong></td>
+                            <td className="rs-cell-muted">Folder</td>
+                            <td className="rs-cell-muted rs-mono">{subs === 0 ? "Empty" : `${subs} folder${subs === 1 ? "" : "s"}`}</td>
+                            <td>
+                              <span className="rs-media-row-acts">
+                                <span className="rs-folder-menu" title="Edit folder"
+                                  onClick={(e) => { e.stopPropagation(); setModal({ editFolder: f }); }}><Icons.edit size={15} /></span>
+                                <span className="rs-folder-menu" title="Delete folder"
+                                  onClick={(e) => { e.stopPropagation(); onDeleteFolder(f.id); }}><Icons.trash size={15} /></span>
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {visible.map((m) => {
+                        const sel = selected.includes(m.id);
+                        return (
+                          <tr key={m.id} className={sel ? "is-selected" : ""}
+                            draggable onDragStart={() => onAssetDragStart(m.id)}
+                            onClick={() => setDetail(m)}>
+                            <td onClick={(e) => { e.stopPropagation(); toggleSel(m.id); }}>
+                              <span className="rs-media-check rs-media-check--inline">
+                                <SelectBox checked={sel} />
+                              </span>
+                            </td>
+                            <td><AssetThumb asset={m} className="rs-media-cover--sm" /></td>
+                            <td><strong title={m.file_name}>{m.file_name}</strong></td>
+                            <td className="rs-cell-muted rs-mono">{assetType(m)}</td>
+                            <td className="rs-cell-muted rs-mono">{(m.size_bytes / 1048576).toFixed(1)} MB</td>
+                            <td className="rs-cell-muted">{new Date(m.created_at).toLocaleDateString()}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </>
           )}
         </>

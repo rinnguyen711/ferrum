@@ -512,6 +512,8 @@ select.rs-input { appearance: none; background-image: url("data:image/svg+xml,%3
 .rs-media-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; box-shadow: var(--shadow-sm); transition: .14s; cursor: pointer; }
 .rs-media-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
 .rs-media-cover { aspect-ratio: 4/3; position: relative; display: grid; place-items: end start; padding: 10px; }
+.rs-media-cover--sm { aspect-ratio: 1; width: 40px; height: 40px; padding: 0; border-radius: var(--r-md); overflow: hidden; }
+.rs-media-cover--sm .rs-media-ext { display: none; }
 .rs-media-ext { font-size: 10px; font-weight: 700; color: rgba(0,0,0,.5); background: rgba(255,255,255,.7); padding: 2px 6px; border-radius: 4px; }
 .rs-media-card-meta { padding: 10px 12px; }
 .rs-media-card-meta strong { display: block; font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -909,10 +911,21 @@ select.rs-input { appearance: none; background-image: url("data:image/svg+xml,%3
 .rs-media-card:hover .rs-media-check, .rs-media-card.is-selected .rs-media-check { opacity: 1; }
 .rs-media-check .rs-check { background: rgba(255,255,255,.92); box-shadow: var(--shadow-sm); }
 [data-theme="dark"] .rs-media-check .rs-check { background: rgba(20,20,22,.85); }
-.rs-media-selbox { position: absolute; top: 9px; left: 9px; z-index: 2; width: 20px; height: 20px; border-radius: 5px; border: 2px solid rgba(255,255,255,.85); background: rgba(255,255,255,.15); backdrop-filter: blur(2px); display: grid; place-items: center; color: #fff; opacity: 0; transition: .12s; box-shadow: var(--shadow-sm); }
+.rs-media-check--inline { position: static; opacity: 1; display: inline-flex; cursor: pointer; }
+.rs-media-selbox { position: absolute; top: 9px; left: 9px; z-index: 2; width: 20px; height: 20px; border-radius: 5px; border: 1px solid rgba(255,255,255,.85); background: rgba(255,255,255,.15); backdrop-filter: blur(2px); display: grid; place-items: center; color: #fff; opacity: 0; transition: .12s; box-shadow: var(--shadow-sm); }
 .rs-media-card:hover .rs-media-selbox, .rs-media-card.is-selected .rs-media-selbox { opacity: 1; }
 .rs-media-selbox.is-checked { background: var(--accent); border-color: var(--accent); }
 [data-theme="dark"] .rs-media-selbox { border-color: rgba(255,255,255,.7); background: rgba(0,0,0,.25); }
+/* Inline (list/picker) sits on a plain surface, not a thumbnail — needs a
+   surface-contrast border so the empty box reads on white. */
+.rs-media-check--inline .rs-media-selbox { position: static; top: auto; left: auto; opacity: 1; border-color: var(--border-strong); background: var(--surface); color: var(--accent); box-shadow: var(--shadow-sm); backdrop-filter: none; }
+.rs-media-check--inline .rs-media-selbox.is-checked { border-color: var(--accent); background: var(--accent); color: #fff; }
+/* Folder rows in the list-view asset table (file-manager style). */
+.rs-media-row--folder { cursor: pointer; }
+.rs-media-row--folder.is-drop { background: var(--accent-soft); box-shadow: 0 0 0 2px var(--accent) inset; }
+.rs-media-row-folderico { width: 30px; height: 30px; border-radius: var(--r-sm); display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-text); }
+.rs-media-row-acts { display: inline-flex; gap: 2px; }
+.rs-media-row--folder:hover .rs-folder-menu { opacity: 1; }
 .rs-media-card-meta { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .rs-media-card-meta .rs-media-card-text { min-width: 0; }
 
