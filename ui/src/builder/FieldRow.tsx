@@ -39,33 +39,75 @@ function metaText(f: DraftField): string {
 
 export function FieldRow({
   field,
+  index,
+  count,
+  reorderable,
+  dragOver,
   onEdit,
   onRemove,
+  onMove,
+  onDragStart,
+  onDragEnter,
+  onDragEnd,
+  onDrop,
 }: {
   field: DraftField;
+  index: number;
+  count: number;
+  reorderable: boolean;
+  dragOver?: boolean;
   onEdit: () => void;
   onRemove: () => void;
+  onMove: (dir: -1 | 1) => void;
+  onDragStart: () => void;
+  onDragEnter: () => void;
+  onDragEnd: () => void;
+  onDrop: () => void;
 }) {
   const I = Icons[KIND_ICON[field.kind] ?? "type"];
   const meta = metaText(field);
+  const label = field.name || "untitled";
   return (
-    <div className="rs-schema-row">
-      <span className="rs-schema-drag"><Icons.drag size={16} /></span>
-      <div className="rs-schema-fieldicon"><I size={16} /></div>
-      <div className="rs-schema-name">
-        <strong className="rs-mono">{field.name || "untitled"}</strong>
+    <div
+      className={"rs-schema-row" + (dragOver ? " is-drag-over" : "")}
+      role="row"
+      draggable={reorderable}
+      onDragStart={reorderable ? onDragStart : undefined}
+      onDragEnter={reorderable ? onDragEnter : undefined}
+      onDragOver={reorderable ? (e) => e.preventDefault() : undefined}
+      onDragEnd={reorderable ? onDragEnd : undefined}
+      onDrop={reorderable ? (e) => { e.preventDefault(); onDrop(); } : undefined}
+    >
+      {reorderable ? (
+        <button
+          className="rs-schema-drag"
+          role="cell"
+          aria-label={`Reorder ${label}, position ${index + 1} of ${count}. Use arrow up and down keys to move.`}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowUp") { e.preventDefault(); onMove(-1); }
+            else if (e.key === "ArrowDown") { e.preventDefault(); onMove(1); }
+          }}
+        >
+          <Icons.drag size={16} aria-hidden="true" />
+        </button>
+      ) : (
+        <span className="rs-schema-drag" role="cell" />
+      )}
+      <div className="rs-schema-fieldicon" role="cell"><I size={16} aria-hidden="true" /></div>
+      <div className="rs-schema-name" role="cell">
+        <strong className="rs-mono">{label}</strong>
         {field.required && <span className="rs-req-tag">required</span>}
       </div>
-      <div className="rs-schema-type">
+      <div className="rs-schema-type" role="cell">
         <span className="rs-type-pill">{field.kind}</span>
         {meta && <span className="rs-cell-muted">{meta}</span>}
       </div>
-      <div className="rs-schema-actions">
-        <button className="rs-row-btn" onClick={onEdit} title="Edit field">
-          <Icons.edit size={15} />
+      <div className="rs-schema-actions" role="cell">
+        <button className="rs-row-btn" onClick={onEdit} aria-label={`Edit ${label}`}>
+          <Icons.edit size={15} aria-hidden="true" />
         </button>
-        <button className="rs-row-btn rs-danger" onClick={onRemove} title="Remove field">
-          <Icons.trash size={15} />
+        <button className="rs-row-btn rs-danger" onClick={onRemove} aria-label={`Remove ${label}`}>
+          <Icons.trash size={15} aria-hidden="true" />
         </button>
       </div>
     </div>

@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Icons } from "../components/icons";
 import { Avatar } from "../components/shell";
-import { Notice, EditorBar, ConfirmDialog } from "../components/ui";
+import { Notice, EditorBar, ConfirmDialog, LoadingState, EmptyState } from "../components/ui";
 import { useResource } from "../hooks/useResource";
 import { listUsers, listRoles, createUser, updateUser, deleteUser } from "../api/endpoints";
 import { ApiError } from "../api/client";
@@ -29,17 +29,21 @@ export function UserEditor() {
   const [tab, setTab] = useState<Tab>("account");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [hydrated, setHydrated] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
 
-  // Hydrate form once the user loads (edit mode).
-  if (!isNew && existing && !hydrated) {
+  // Hydrate form once the user loads (edit mode). Keyed on the resolved user so
+  // it runs after the list fetch settles, not during render.
+  const hydrated = useRef(false);
+  useEffect(() => {
+    if (isNew || !existing || hydrated.current) return;
     setEmail(existing.email);
-    setRoles(existing.roles.length ? existing.roles : ["viewer"]);
+    setRoles(existing.roles.length ? existing.roles : ["editor"]);
     setConfirmed(existing.confirmed);
     setBlocked(existing.blocked);
-    setHydrated(true);
-  }
+    hydrated.current = true;
+  }, [isNew, existing]);
+
+  const tabsId = useId();
 
   const toggleRole = (key: string) => {
     setRoles((rs) => (rs.includes(key) ? rs.filter((r) => r !== key) : [...rs, key]));
@@ -104,6 +108,45 @@ export function UserEditor() {
     ["api", "API & preview"],
   ];
 
+  // Reason the save button is disabled — surfaced to screen readers so the
+  // greyed-out control isn't a dead end.
+  const saveHint = !email
+    ? "Enter an email address to save."
+    : isNew && !password
+      ? "Enter a password to create the user."
+      : null;
+
+  const moveTab = (dir: 1 | -1) => {
+    const i = tabs.findIndex(([k]) => k === tab);
+    const next = tabs[(i + dir + tabs.length) % tabs.length][0];
+    setTab(next);
+    document.getElementById(`${tabsId}-tab-${next}`)?.focus();
+  };
+
+  // No single-user GET this slice — edit hydrates from the list. Guard the two
+  // states that produces: still fetching, and a deep-linked id not in the list.
+  if (!isNew && (users.loading || roles_.loading)) {
+    return (
+      <div className="rs-editor">
+        <EditorBar onBack={() => navigate("/users")} title="User" />
+        <LoadingState />
+      </div>
+    );
+  }
+  if (!isNew && !existing) {
+    return (
+      <div className="rs-editor">
+        <EditorBar onBack={() => navigate("/users")} title="User" />
+        <EmptyState>
+          User not found. It may have been deleted.{" "}
+          <button className="rs-link-btn" onClick={() => navigate("/users")}>
+            Back to users
+          </button>
+        </EmptyState>
+      </div>
+    );
+  }
+
   return (
     <div className="rs-editor">
       <EditorBar
@@ -133,28 +176,45 @@ export function UserEditor() {
             <button
               className="rs-btn rs-btn--primary"
               disabled={busy || !email || (isNew && !password)}
+              aria-describedby={saveHint ? `${tabsId}-save-hint` : undefined}
               onClick={save}
             >
               <Icons.bolt size={15} /> {isNew ? "Create user" : "Save user"}
             </button>
+            {saveHint && (
+              <span id={`${tabsId}-save-hint`} className="rs-sr-only">
+                {saveHint}
+              </span>
+            )}
           </>
         }
       />
 
-      {error && (
-        <div style={{ margin: "0 24px" }}>
-          <Notice>{error}</Notice>
-        </div>
-      )}
+      <div role="alert" aria-live="assertive">
+        {error && (
+          <div style={{ margin: "0 24px" }}>
+            <Notice>{error}</Notice>
+          </div>
+        )}
+      </div>
 
       <div className="rs-editor-body">
         <div className="rs-editor-main">
-          <div className="rs-editor-tabs">
+          <div className="rs-editor-tabs" role="tablist" aria-label="User settings">
             {tabs.map(([k, l]) => (
               <button
                 key={k}
+                id={`${tabsId}-tab-${k}`}
+                role="tab"
+                aria-selected={tab === k}
+                aria-controls={`${tabsId}-panel-${k}`}
+                tabIndex={tab === k ? 0 : -1}
                 className={"rs-etab" + (tab === k ? " is-active" : "")}
                 onClick={() => setTab(k)}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowRight") moveTab(1);
+                  else if (e.key === "ArrowLeft") moveTab(-1);
+                }}
               >
                 {l}
               </button>
@@ -162,7 +222,12 @@ export function UserEditor() {
           </div>
 
           {tab === "account" && (
-            <div className="rs-fields">
+            <div
+              className="rs-fields"
+              role="tabpanel"
+              id={`${tabsId}-panel-account`}
+              aria-labelledby={`${tabsId}-tab-account`}
+            >
               <label className="rs-field rs-field--full">
                 <span className="rs-field-label">
                   Email <span className="rs-req">*</span>
@@ -201,9 +266,11 @@ export function UserEditor() {
                 </span>
                 <button
                   type="button"
+                  role="switch"
+                  aria-label="Confirmed"
+                  aria-checked={confirmed}
                   className={"rs-toggle" + (confirmed ? " is-on" : "")}
                   onClick={() => setConfirmed((v) => !v)}
-                  aria-pressed={confirmed}
                 >
                   <span className="rs-toggle-knob" />
                 </button>
@@ -216,9 +283,11 @@ export function UserEditor() {
                 </span>
                 <button
                   type="button"
+                  role="switch"
+                  aria-label="Blocked"
+                  aria-checked={blocked}
                   className={"rs-toggle" + (blocked ? " is-on" : "")}
                   onClick={() => setBlocked((v) => !v)}
-                  aria-pressed={blocked}
                 >
                   <span className="rs-toggle-knob" />
                 </button>
@@ -227,13 +296,22 @@ export function UserEditor() {
           )}
 
           {tab === "permissions" && (
-            <div className="rs-fields">
-              <div className="rs-field rs-field--full">
-                <span className="rs-field-label">Roles</span>
+            <div
+              className="rs-fields"
+              role="tabpanel"
+              id={`${tabsId}-panel-permissions`}
+              aria-labelledby={`${tabsId}-tab-permissions`}
+            >
+              <div className="rs-field rs-field--full" role="group" aria-labelledby={`${tabsId}-roles-label`}>
+                <span className="rs-field-label" id={`${tabsId}-roles-label`}>
+                  Roles
+                </span>
                 <div className="rs-perm-grid">
                   {rolesData.map((r) => (
                     <button
                       key={r.key}
+                      role="checkbox"
+                      aria-checked={roles.includes(r.key)}
                       className={"rs-role-radio" + (roles.includes(r.key) ? " is-on" : "")}
                       onClick={() => toggleRole(r.key)}
                       type="button"
@@ -257,7 +335,12 @@ export function UserEditor() {
           )}
 
           {tab === "api" && (
-            <div className="rs-api">
+            <div
+              className="rs-api"
+              role="tabpanel"
+              id={`${tabsId}-panel-api`}
+              aria-labelledby={`${tabsId}-tab-api`}
+            >
               <pre className="rs-code">
                 <code>
                   {JSON.stringify(

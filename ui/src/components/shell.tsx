@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Icons, type IconKey } from "./icons";
 import { getHealth, listContentTypes, listComponents } from "../api/endpoints";
@@ -6,7 +6,7 @@ import type { Health, Component } from "../api/types";
 import { useResource } from "../hooks/useResource";
 import type { Section } from "../Layout";
 import { useBuilderDraft } from "../builder/BuilderDraftContext";
-import { getClaims } from "../auth";
+import { getClaims, clearToken } from "../auth";
 import { CreateTypeModal } from "../builder/CreateTypeModal";
 import { CreateSingleTypeModal } from "../builder/CreateSingleTypeModal";
 import { CreateComponentModal } from "../builder/CreateComponentModal";
@@ -83,20 +83,24 @@ export function Sidebar({ section: _section }: { section: Section }) {
   ];
   const isActive = (to: string, end?: boolean) =>
     end ? location.pathname === to : location.pathname.startsWith(to);
+  const settingsActive = location.pathname.startsWith("/settings");
   return (
-    <nav className="rs-rail">
+    <nav className="rs-rail" aria-label="Primary">
       <RailLogo />
       <div className="rs-rail-items">
         {items.map((it) => {
           const I = Icons[it.icon];
+          const active = isActive(it.to, it.end);
           return (
             <button
               key={it.to}
               data-tip={it.label}
-              className={"rs-rail-btn" + (isActive(it.to, it.end) ? " is-active" : "")}
+              aria-label={it.label}
+              aria-current={active ? "page" : undefined}
+              className={"rs-rail-btn" + (active ? " is-active" : "")}
               onClick={() => builder.guardedNavigate(it.to)}
             >
-              <I size={20} />
+              <I size={20} aria-hidden="true" />
             </button>
           );
         })}
@@ -104,14 +108,83 @@ export function Sidebar({ section: _section }: { section: Section }) {
       <div className="rs-rail-foot">
         <button
           data-tip="Settings"
-          className={"rs-rail-btn" + (location.pathname.startsWith("/settings") ? " is-active" : "")}
+          aria-label="Settings"
+          aria-current={settingsActive ? "page" : undefined}
+          className={"rs-rail-btn" + (settingsActive ? " is-active" : "")}
           onClick={() => builder.guardedNavigate("/settings")}
         >
-          <Icons.gear size={20} />
+          <Icons.gear size={20} aria-hidden="true" />
         </button>
-        <Avatar name="Admin" initials="AD" color={AVATAR_NEUTRAL} size={30} />
+        <AccountMenu />
       </div>
     </nav>
+  );
+}
+
+/** Avatar button in the rail foot → account popover (email, settings, sign out). */
+function AccountMenu() {
+  const navigate = useNavigate();
+  const builder = useBuilderDraft();
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const claims = getClaims();
+  const email = claims?.email ?? "Admin";
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const signOut = () => {
+    clearToken();
+    navigate("/login", { replace: true });
+  };
+
+  return (
+    <div className="rs-account" ref={wrapRef}>
+      <button
+        className="rs-rail-avatar-btn"
+        aria-label="Account menu"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <Avatar name={email} initials={initials(email)} color={AVATAR_NEUTRAL} size={30} />
+      </button>
+      {open && (
+        <div className="rs-account-menu" role="menu" aria-label="Account">
+          <div className="rs-account-head">
+            <span className="rs-account-label">Signed in as</span>
+            <strong title={email}>{email}</strong>
+          </div>
+          <div className="rs-account-sep" />
+          <button
+            role="menuitem"
+            className="rs-account-item"
+            onClick={() => {
+              setOpen(false);
+              builder.guardedNavigate("/settings");
+            }}
+          >
+            <Icons.gear size={15} aria-hidden="true" /> Settings
+          </button>
+          <button role="menuitem" className="rs-account-item rs-danger" onClick={signOut}>
+            <Icons.lock size={15} aria-hidden="true" /> Sign out
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -488,25 +561,26 @@ export function HealthPill() {
 
   if (failed) {
     return (
-      <div className="rs-health rs-health--down" data-tip="API unreachable">
-        <span className="rs-health-dot" />
+      <div className="rs-health rs-health--down" data-tip="API unreachable" role="status">
+        <span className="rs-health-dot" aria-hidden="true" />
         <span className="rs-health-text">API unreachable</span>
       </div>
     );
   }
   if (!health) {
     return (
-      <div className="rs-health" data-tip="Checking…">
-        <span className="rs-health-dot" />
+      <div className="rs-health" data-tip="Checking…" role="status" aria-busy="true">
+        <span className="rs-health-dot" aria-hidden="true" />
         <span className="rs-health-text">Checking…</span>
       </div>
     );
   }
   return (
-    <div className="rs-health" data-tip={`Rust API · v${health.version}`}>
-      <span className="rs-health-dot" />
-      <span className="rs-health-text">API healthy</span>
-      <span className="rs-health-sep" />
+    <div className="rs-health" data-tip={`Rust API · v${health.version}`} role="status">
+      <span className="rs-health-dot" aria-hidden="true" />
+      <span className="rs-sr-only">API healthy, </span>
+      <span className="rs-health-text" aria-hidden="true">API healthy</span>
+      <span className="rs-health-sep" aria-hidden="true" />
       <span className="rs-mono rs-health-lat">v{health.version} · {health.db_ms}ms</span>
     </div>
   );
@@ -518,29 +592,34 @@ export function Topbar({
   right,
   dark,
   onToggleDark,
-  email,
-  onLogout,
 }: {
   title?: string;
   crumbs?: string[];
   right?: ReactNode;
   dark: boolean;
   onToggleDark: () => void;
-  email?: string | null;
-  onLogout?: () => void;
 }) {
+  const trail = crumbs ?? (title ? [title] : []);
   return (
     <header className="rs-topbar">
-      <div className="rs-crumbs">
-        {crumbs &&
-          crumbs.map((c, i) => (
-            <Fragment key={i}>
-              {i > 0 && <Icons.chevRight size={14} className="rs-crumb-sep" />}
-              <span className={"rs-crumb" + (i === crumbs.length - 1 ? " is-last" : "")}>{c}</span>
-            </Fragment>
-          ))}
-        {!crumbs && <span className="rs-crumb is-last">{title}</span>}
-      </div>
+      <nav className="rs-crumbs" aria-label="Breadcrumb">
+        <ol className="rs-crumb-list">
+          {trail.map((c, i) => {
+            const last = i === trail.length - 1;
+            return (
+              <Fragment key={i}>
+                {i > 0 && <Icons.chevRight size={14} className="rs-crumb-sep" aria-hidden="true" />}
+                <li
+                  className={"rs-crumb" + (last ? " is-last" : "")}
+                  aria-current={last ? "page" : undefined}
+                >
+                  {c}
+                </li>
+              </Fragment>
+            );
+          })}
+        </ol>
+      </nav>
       <div className="rs-topbar-right">
         {right}
         <HealthPill />
@@ -548,30 +627,11 @@ export function Topbar({
           className="rs-icon-btn"
           data-tip={dark ? "Light mode" : "Dark mode"}
           onClick={onToggleDark}
-          aria-label="Toggle dark mode"
+          aria-label="Dark mode"
+          aria-pressed={dark}
         >
-          {dark ? <Icons.sun size={18} /> : <Icons.moon size={18} />}
+          {dark ? <Icons.sun size={18} aria-hidden="true" /> : <Icons.moon size={18} aria-hidden="true" />}
         </button>
-        <div className="rs-topbar-user">
-          <Avatar
-            name={email ?? "Admin"}
-            initials={initials(email ?? "Admin")}
-            color={AVATAR_NEUTRAL}
-            size={28}
-          />
-          <div className="rs-topbar-user-meta">
-            <strong>{email ?? "Admin"}</strong>
-            <span>Signed in</span>
-          </div>
-          <button
-            className="rs-icon-btn"
-            data-tip="Sign out"
-            onClick={onLogout}
-            aria-label="Sign out"
-          >
-            <Icons.external size={18} />
-          </button>
-        </div>
       </div>
     </header>
   );

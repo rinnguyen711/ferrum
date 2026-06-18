@@ -31,48 +31,68 @@ function DeleteTypeModal({
 }) {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+
   useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === "Escape" && !deleting) onCloseRef.current(); };
+    const trigger = document.activeElement as HTMLElement | null;
+    cancelRef.current?.focus(); // initial focus on the non-destructive action
+    const h = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !deleting) { onCloseRef.current(); return; }
+      if (e.key !== "Tab") return;
+      // Trap focus within the dialog.
+      const f = dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      if (!f || f.length === 0) return;
+      const first = f[0];
+      const last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
     window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
+    return () => {
+      window.removeEventListener("keydown", h);
+      trigger?.focus(); // restore focus to the element that opened the dialog
+    };
   }, [deleting]);
 
   return (
     <div className="rs-modal-backdrop" onClick={() => { if (!deleting) onClose(); }}>
       <div
-        className="rs-modal"
+        ref={dialogRef}
+        className="rs-modal rs-modal--sm"
         role="dialog"
         aria-modal="true"
+        aria-labelledby="del-type-title"
         onClick={(e) => e.stopPropagation()}
-        style={{ maxWidth: 420 }}
       >
         <div className="rs-modal-head">
-          <div className="rs-modal-ico" style={{ background: "var(--danger-soft, var(--surface-3))", color: "var(--danger)" }}>
-            <Icons.trash size={18} />
+          <div className="rs-modal-ico rs-modal-ico--danger">
+            <Icons.trash size={18} aria-hidden="true" />
           </div>
           <div className="rs-modal-titles">
             <span className="rs-modal-eyebrow">Destructive action</span>
-            <h2>Delete "{typeName}"?</h2>
+            <h2 id="del-type-title">Delete "{typeName}"?</h2>
           </div>
           <button className="rs-modal-x" onClick={onClose} disabled={deleting} aria-label="Close">
-            <Icons.x size={18} />
+            <Icons.x size={18} aria-hidden="true" />
           </button>
         </div>
         <div className="rs-modal-body">
-          <p style={{ fontSize: 14, color: "var(--text-muted)", margin: 0 }}>
+          <p className="rs-modal-text">
             This will permanently drop the <strong className="rs-mono">{typeName}</strong> content type and <strong>all its entries</strong>. This cannot be undone.
           </p>
-          {error && <div style={{ marginTop: 12 }}><Notice>{error}</Notice></div>}
+          {error && <div className="rs-modal-error" role="alert"><Notice>{error}</Notice></div>}
         </div>
-        <div className="rs-modal-foot" style={{ justifyContent: "space-between" }}>
-          <button className="rs-btn rs-btn--ghost" onClick={onClose} disabled={deleting}>
+        <div className="rs-modal-foot">
+          <button ref={cancelRef} className="rs-btn rs-btn--ghost" onClick={onClose} disabled={deleting}>
             Cancel
           </button>
           <button
-            className="rs-btn rs-btn--primary"
+            className="rs-btn rs-btn--primary rs-btn--danger"
             onClick={onConfirm}
             disabled={deleting}
-            style={{ background: "var(--danger)", borderColor: "var(--danger)", color: "#fff" }}
           >
             {deleting ? "Deleting…" : "Delete type"}
           </button>
@@ -140,6 +160,11 @@ export function SchemaEditor() {
     setDelBanner(null);
   }, [type]);
 
+  // Field-reorder state — declared before the early return so the hook order
+  // stays stable across renders (React error #310 otherwise).
+  const dragSrc = useRef<number | null>(null);
+  const [dragOver, setDragOver] = useState<number | null>(null);
+
   if (!draft || draft.mode === "component") return <LoadingState />;
 
   // Narrowed setter — this editor only ever touches content-type drafts.
@@ -182,6 +207,26 @@ export function SchemaEditor() {
     setModal(null);
   };
 
+  // Field reorder — drag (mouse) + Arrow keys on the grip (keyboard). Matches
+  // the media-field drag idiom. Managed types are read-only, so no reorder.
+  const reorderable = !isManaged;
+  const moveField = (from: number, to: number) => {
+    if (to < 0 || to >= draft.fields.length || from === to) return;
+    clearBanner();
+    setTypeDraft((d) => {
+      const next = d.fields.slice();
+      const [item] = next.splice(from, 1);
+      next.splice(to, 0, item);
+      return { ...d, fields: next };
+    });
+  };
+  const onDrop = (to: number) => {
+    const from = dragSrc.current;
+    setDragOver(null);
+    dragSrc.current = null;
+    if (from !== null) moveField(from, to);
+  };
+
   return (
     <div className="rs-cm">
       <div className="rs-cm-head">
@@ -199,8 +244,8 @@ export function SchemaEditor() {
           </p>
         </div>
         <div className="rs-editor-actions">
-          <button className="rs-btn rs-btn--ghost" data-placeholder title="Coming soon">
-            <Icons.eye size={15} /> Preview API
+          <button className="rs-btn rs-btn--ghost" disabled title="Coming soon" aria-label="Preview API (coming soon)">
+            <Icons.eye size={15} aria-hidden="true" /> Preview API
           </button>
         {draft.mode === "existing" && (
           <button
@@ -219,21 +264,23 @@ export function SchemaEditor() {
           Managed by a schema file — edit the TOML and restart to change this type.
         </Notice>
       )}
-      {banner && <Notice>{banner}</Notice>}
-      {renameCollisions.length > 0 && (
-        <Notice>
-          Field{renameCollisions.length > 1 ? "s" : ""} {renameCollisions.join(", ")}{" "}
-          already exist on this type. Renaming or changing a field's type is not
-          supported — remove the new field or pick a different name.
-        </Notice>
-      )}
-      {Object.keys(fieldErrors).length > 0 && (
-        <Notice>
-          {Object.entries(fieldErrors).map(([name, msg]) => (
-            <div key={name}><strong className="rs-mono">{name}</strong>: {msg}</div>
-          ))}
-        </Notice>
-      )}
+      <div role="alert" aria-live="assertive">
+        {banner && <Notice>{banner}</Notice>}
+        {renameCollisions.length > 0 && (
+          <Notice>
+            Field{renameCollisions.length > 1 ? "s" : ""} {renameCollisions.join(", ")}{" "}
+            already exist on this type. Renaming or changing a field's type is not
+            supported — remove the new field or pick a different name.
+          </Notice>
+        )}
+        {Object.keys(fieldErrors).length > 0 && (
+          <Notice>
+            {Object.entries(fieldErrors).map(([name, msg]) => (
+              <div key={name}><strong className="rs-mono">{name}</strong>: {msg}</div>
+            ))}
+          </Notice>
+        )}
+      </div>
 
       <SaveBar disabled={isManaged} />
 
@@ -244,10 +291,12 @@ export function SchemaEditor() {
         </div>
         <button
           type="button"
+          role="switch"
+          aria-label="Enable Draft & Publish"
           className={"rs-toggle" + (draft.draft_publish ? " is-on" : "")}
           disabled={isManaged || (draft.mode === "existing" && (draft.serverSnapshot ? draftPublishEnabled(draft.serverSnapshot) : false))}
           title={isManaged ? "Managed by a schema file" : (draft.mode === "existing" && (draft.serverSnapshot ? draftPublishEnabled(draft.serverSnapshot) : false) ? "Cannot be disabled" : undefined)}
-          aria-pressed={draft.draft_publish}
+          aria-checked={draft.draft_publish}
           onClick={() => {
             clearBanner();
             setTypeDraft((d) => ({ ...d, draft_publish: !d.draft_publish }));
@@ -257,19 +306,42 @@ export function SchemaEditor() {
         </button>
       </div>
 
-      <div className="rs-schema">
-        <div className="rs-schema-head"><span>Field</span><span>Type</span><span></span></div>
-        {draft.fields.map((f) => (
-          <FieldRow
-            key={f.id}
-            field={f}
-            onEdit={() => { if (!isManaged) editField(f); }}
-            onRemove={() => { if (!isManaged) removeField(f); }}
-          />
-        ))}
+      <div className="rs-schema" role="table" aria-label="Fields">
+        <div className="rs-schema-head" role="row">
+          <span role="columnheader" className="rs-sr-only">Reorder</span>
+          <span role="columnheader" className="rs-sr-only">Icon</span>
+          <span role="columnheader">Field</span>
+          <span role="columnheader">Type</span>
+          <span role="columnheader" className="rs-sr-only">Actions</span>
+        </div>
+        {draft.fields.length === 0 ? (
+          <div className="rs-schema-empty">
+            <Icons.layers size={22} aria-hidden="true" />
+            <strong>No fields yet</strong>
+            <span>Add your first field to define this content type's shape.</span>
+          </div>
+        ) : (
+          draft.fields.map((f, i) => (
+            <FieldRow
+              key={f.id}
+              field={f}
+              index={i}
+              count={draft.fields.length}
+              reorderable={reorderable}
+              dragOver={dragOver === i}
+              onEdit={() => { if (!isManaged) editField(f); }}
+              onRemove={() => { if (!isManaged) removeField(f); }}
+              onMove={(dir) => moveField(i, i + dir)}
+              onDragStart={() => { dragSrc.current = i; }}
+              onDragEnter={() => { if (dragSrc.current !== null && dragSrc.current !== i) setDragOver(i); }}
+              onDragEnd={() => { setDragOver(null); dragSrc.current = null; }}
+              onDrop={() => onDrop(i)}
+            />
+          ))
+        )}
         {!isManaged && (
           <button className="rs-schema-add" onClick={addField}>
-            <Icons.plus size={16} /> Add another field to this collection type
+            <Icons.plus size={16} aria-hidden="true" /> Add another field to this collection type
           </button>
         )}
       </div>

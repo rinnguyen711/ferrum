@@ -153,6 +153,20 @@ export function ComponentEditor() {
   const removeField = (f: DraftField) =>
     setCompDraft((d) => ({ ...d, fields: d.fields.filter((x) => x.id !== f.id) }));
 
+  // Field reorder — drag + Arrow keys on the grip. Mirrors SchemaEditor.
+  const moveField = (from: number, to: number, len: number) => {
+    if (to < 0 || to >= len || from === to) return;
+    clearBanner();
+    setCompDraft((d) => {
+      const next = d.fields.slice();
+      const [item] = next.splice(from, 1);
+      next.splice(to, 0, item);
+      return { ...d, fields: next };
+    });
+  };
+  const dragSrc = useRef<number | null>(null);
+  const [dragOver, setDragOver] = useState<number | null>(null);
+
   if (loading) return <LoadingState />;
   if (loadError || !component) return <div className="rs-empty">Component not found.</div>;
   if (!draft || draft.mode !== "component" || draft.uid !== component.uid) return <LoadingState />;
@@ -190,23 +204,53 @@ export function ComponentEditor() {
           Managed by a schema file — edit the TOML and restart to change this component.
         </Notice>
       )}
-      {banner && <Notice>{banner}</Notice>}
+      <div role="alert" aria-live="assertive">
+        {banner && <Notice>{banner}</Notice>}
+      </div>
 
       <SaveBar disabled={isManaged} />
 
-      <div className="rs-schema">
-        <div className="rs-schema-head"><span>Field</span><span>Type</span><span></span></div>
-        {draft.fields.map((f) => (
-          <FieldRow
-            key={f.id}
-            field={f}
-            onEdit={() => { if (!isManaged) setModal({ step: "config", field: f, isNew: false }); }}
-            onRemove={() => { if (!isManaged) removeField(f); }}
-          />
-        ))}
+      <div className="rs-schema" role="table" aria-label="Fields">
+        <div className="rs-schema-head" role="row">
+          <span role="columnheader" className="rs-sr-only">Reorder</span>
+          <span role="columnheader" className="rs-sr-only">Icon</span>
+          <span role="columnheader">Field</span>
+          <span role="columnheader">Type</span>
+          <span role="columnheader" className="rs-sr-only">Actions</span>
+        </div>
+        {draft.fields.length === 0 ? (
+          <div className="rs-schema-empty">
+            <Icons.layers size={22} aria-hidden="true" />
+            <strong>No fields yet</strong>
+            <span>Add your first field to define this component's shape.</span>
+          </div>
+        ) : (
+          draft.fields.map((f, i) => (
+            <FieldRow
+              key={f.id}
+              field={f}
+              index={i}
+              count={draft.fields.length}
+              reorderable={!isManaged}
+              dragOver={dragOver === i}
+              onEdit={() => { if (!isManaged) setModal({ step: "config", field: f, isNew: false }); }}
+              onRemove={() => { if (!isManaged) removeField(f); }}
+              onMove={(dir) => moveField(i, i + dir, draft.fields.length)}
+              onDragStart={() => { dragSrc.current = i; }}
+              onDragEnter={() => { if (dragSrc.current !== null && dragSrc.current !== i) setDragOver(i); }}
+              onDragEnd={() => { setDragOver(null); dragSrc.current = null; }}
+              onDrop={() => {
+                const from = dragSrc.current;
+                setDragOver(null);
+                dragSrc.current = null;
+                if (from !== null) moveField(from, i, draft.fields.length);
+              }}
+            />
+          ))
+        )}
         {!isManaged && (
           <button className="rs-schema-add" onClick={addField}>
-            <Icons.plus size={16} /> Add another field to this component
+            <Icons.plus size={16} aria-hidden="true" /> Add another field to this component
           </button>
         )}
       </div>
