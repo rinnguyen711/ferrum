@@ -26,6 +26,7 @@
 - [Roles & permissions](guides/roles.md)
 - [Webhooks](guides/webhooks.md)
 - [Write hooks](guides/write-hooks.md)
+- [Call the content API from Rust](guides/content-api.md)
 - [Import & export](guides/import-export.md)
 - [GraphQL](guides/graphql.md)
 - [Add a custom field widget](guides/custom-field-widget.md)
