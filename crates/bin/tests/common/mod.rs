@@ -122,6 +122,7 @@ impl TestApp {
             components: components.clone(),
             authz: Arc::new(RoleAuthz::new(Arc::new(roles.clone()))),
             roles,
+            locales: std::sync::Arc::new(rustapi_http::locale_registry::LocaleRegistry::new()),
             gql: rustapi_http::graphql::GqlRegistry::new(),
             events: sink,
             audit: Arc::new(DbAuditSink::new(pool.clone())),

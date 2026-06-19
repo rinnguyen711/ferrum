@@ -46,7 +46,10 @@ async fn main() -> Result<()> {
         .connect(&cfg.database_url)
         .await
         .context("connect to Postgres")?;
-    tracing::info!(max_connections = cfg.db_max_connections, "postgres connected");
+    tracing::info!(
+        max_connections = cfg.db_max_connections,
+        "postgres connected"
+    );
 
     MIGRATOR
         .run(&pool)
@@ -99,6 +102,7 @@ async fn main() -> Result<()> {
         components,
         authz: Arc::new(RoleAuthz::new(Arc::new(roles.clone()))),
         roles,
+        locales: std::sync::Arc::new(rustapi_http::locale_registry::LocaleRegistry::new()),
         gql: rustapi_http::graphql::GqlRegistry::new(),
         events: Arc::new(rustapi::webhook_worker::DbEventSink::new(pool.clone())),
         audit: Arc::new(rustapi::audit_sink::DbAuditSink::new(pool.clone())),

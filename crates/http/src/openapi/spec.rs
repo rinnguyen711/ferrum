@@ -107,6 +107,7 @@ mod tests {
             components,
             authz: Arc::new(AlwaysAllow),
             roles: crate::RoleRegistry::new(),
+            locales: std::sync::Arc::new(crate::locale_registry::LocaleRegistry::new()),
             gql: crate::graphql::GqlRegistry::new(),
             events: Arc::new(NoopSink),
             audit: Arc::new(NoopAuditSink),
