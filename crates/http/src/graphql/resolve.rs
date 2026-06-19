@@ -252,6 +252,7 @@ pub fn list_field(ct_name: String) -> impl Fn(ResolverContext) -> FieldFuture + 
         let page = opt_u32(&ctx, "page");
         let page_size = opt_u32(&ctx, "pageSize");
         let sort = opt_string(&ctx, "sort");
+        let locale = opt_string(&ctx, "locale");
         let raw_query = ctx
             .args
             .get("filters")
@@ -290,7 +291,7 @@ pub fn list_field(ct_name: String) -> impl Fn(ResolverContext) -> FieldFuture + 
                 params,
                 populate.as_deref(),
                 &raw_query,
-                None,
+                locale.as_deref(),
             )
             .await
             .map_err(gql_err)?;
@@ -306,6 +307,7 @@ pub fn get_field(ct_name: String) -> impl Fn(ResolverContext) -> FieldFuture + C
         let st = app_state(&ctx);
         let pr = principal(&ctx);
         let id = id_arg(&ctx);
+        let locale = opt_string(&ctx, "locale");
         // For get-one the entry fields are directly under the field (no `data`).
         let selected = selected_field_names(ctx.look_ahead());
         FieldFuture::new(async move {
@@ -318,7 +320,16 @@ pub fn get_field(ct_name: String) -> impl Fn(ResolverContext) -> FieldFuture + C
                 .get(&ct_name)
                 .await
                 .and_then(|ct| populate_arg(&selected, &ct));
-            match content::get_entry(&st, &pr, &ct_name, id, populate.as_deref(), None).await {
+            match content::get_entry(
+                &st,
+                &pr,
+                &ct_name,
+                id,
+                populate.as_deref(),
+                locale.as_deref(),
+            )
+            .await
+            {
                 Ok(entry) => Ok(Some(FieldValue::value(json_to_gql(entry)))),
                 Err(Error::NotFound) => Ok(None),
                 Err(e) => Err(gql_err(e)),

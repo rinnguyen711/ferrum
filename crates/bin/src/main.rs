@@ -82,6 +82,15 @@ async fn main() -> Result<()> {
         .await
         .context("hydrate role registry")?;
 
+    // Hydrate the locale registry from `_locales` (seeded by migration 0016).
+    // Runs after migrations so the table exists. A load failure is non-fatal:
+    // log and continue with an empty set rather than refuse to boot.
+    let locales = std::sync::Arc::new(rustapi_http::locale_registry::LocaleRegistry::new());
+    match rustapi_sql::locales::load_all(&pool).await {
+        Ok(all) => locales.set(all).await,
+        Err(e) => tracing::warn!(error = %e, "failed to load locales at boot; using empty set"),
+    }
+
     if let Some(path) = &cfg.schema_path {
         rustapi_schema::sync::sync_from_path(&schemas, &components, path, cfg.schema_sync_mode)
             .await
@@ -102,7 +111,7 @@ async fn main() -> Result<()> {
         components,
         authz: Arc::new(RoleAuthz::new(Arc::new(roles.clone()))),
         roles,
-        locales: std::sync::Arc::new(rustapi_http::locale_registry::LocaleRegistry::new()),
+        locales,
         gql: rustapi_http::graphql::GqlRegistry::new(),
         events: Arc::new(rustapi::webhook_worker::DbEventSink::new(pool.clone())),
         audit: Arc::new(rustapi::audit_sink::DbAuditSink::new(pool.clone())),

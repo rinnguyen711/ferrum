@@ -266,7 +266,8 @@ pub fn build_schema(types: &[ContentType]) -> Result<Schema, SchemaError> {
             .argument(InputValue::new(
                 "filters",
                 TypeRef::named(scalars::JSON_SCALAR),
-            )),
+            ))
+            .argument(InputValue::new("locale", TypeRef::named(TypeRef::STRING))),
         );
         query = query.field(
             Field::new(
@@ -277,7 +278,8 @@ pub fn build_schema(types: &[ContentType]) -> Result<Schema, SchemaError> {
             .argument(InputValue::new(
                 "id",
                 TypeRef::named_nn(scalars::UUID_SCALAR),
-            )),
+            ))
+            .argument(InputValue::new("locale", TypeRef::named(TypeRef::STRING))),
         );
 
         // Mutation: create / update / delete.
