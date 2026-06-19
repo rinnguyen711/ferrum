@@ -19,10 +19,11 @@ pub use ddl::{
     drop_table, DdlError,
 };
 pub use dml::{
-    count, count_status, delete, delete_links, delete_media_links, insert, insert_links,
-    insert_media_links, publish, render_where, select_by_document, select_by_id, select_by_ids_sql,
-    select_list, select_list_keyset_status, select_list_localized, select_list_status,
-    select_row_id_exact, unpublish, update, DmlError, PublishFilter, SqlAndBinds,
+    count, count_localized, count_status, delete, delete_links, delete_media_links, insert,
+    insert_links, insert_media_links, publish, render_where, select_by_document, select_by_id,
+    select_by_ids_sql, select_list, select_list_keyset_status, select_list_localized,
+    select_list_status, select_row_id_exact, unpublish, update, DmlError, PublishFilter,
+    SqlAndBinds,
 };
 pub use filter::{op_allows_kind, Condition, Filter, FilterValue, Op};
 pub use ident::{join_table_name, media_join_table_name, quote_ident, table_name, IdentError};

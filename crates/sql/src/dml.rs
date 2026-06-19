@@ -459,6 +459,50 @@ pub fn count_status(
     Ok((format!("SELECT count(*) FROM {table}{where_sql}"), binds))
 }
 
+/// Count of documents a localized list would return: one per document
+/// (requested-locale row, or default-locale row when requested absent),
+/// composing the same filter + publish predicate as `select_list_localized`.
+/// Binds: $1=requested, $2=default, then filter binds.
+pub fn count_localized(
+    ct_name: &str,
+    filter: &Filter,
+    publish: PublishFilter,
+    requested: &str,
+    default: &str,
+) -> Result<SqlAndBinds, DmlError> {
+    let table = table_name(ct_name)?;
+
+    let mut binds: Vec<BoundValue> = vec![
+        BoundValue::Str(requested.to_string()),
+        BoundValue::Str(default.to_string()),
+    ];
+    let locale_pred = format!(
+        "(\"locale\" = $1 OR (\"locale\" = $2 AND NOT EXISTS (\
+         SELECT 1 FROM {table} d WHERE d.\"document_id\" = {table}.\"document_id\" AND d.\"locale\" = $1)))"
+    );
+
+    let (where_frag, filter_binds) = render_where(filter, binds.len() + 1)?;
+    binds.extend(filter_binds);
+
+    let mut where_sql = if where_frag.is_empty() {
+        format!(" WHERE {locale_pred}")
+    } else {
+        let stripped = where_frag.trim_start_matches(" WHERE ");
+        format!(" WHERE {locale_pred} AND {stripped}")
+    };
+
+    let publish_pred = match publish {
+        PublishFilter::Published => Some("\"published_at\" IS NOT NULL"),
+        PublishFilter::Draft => Some("\"published_at\" IS NULL"),
+        PublishFilter::All => None,
+    };
+    if let Some(pred) = publish_pred {
+        where_sql = format!("{where_sql} AND {pred}");
+    }
+
+    Ok((format!("SELECT count(*) FROM {table}{where_sql}"), binds))
+}
+
 /// Postgres type-cast string for a FieldKind. Used by row-decoding helpers
 /// and by `render_where` to type placeholders in filter conditions.
 fn order_symbol(op: Op) -> &'static str {
@@ -970,6 +1014,29 @@ SELECT $1::uuid, x.asset, x.ord::int FROM UNNEST($2::uuid[]) WITH ORDINALITY AS 
             "en",
         )
         .unwrap();
+        assert!(sql.contains("\"published_at\" IS NOT NULL"), "got: {sql}");
+    }
+
+    #[test]
+    fn count_localized_uses_locale_predicate() {
+        let (sql, binds) =
+            super::count_localized("post", &Filter::None, PublishFilter::All, "fr", "en").unwrap();
+        assert!(
+            sql.starts_with("SELECT count(*) FROM \"ct_post\" WHERE"),
+            "got: {sql}"
+        );
+        assert!(sql.contains("NOT EXISTS"), "got: {sql}");
+        assert!(sql.contains("\"locale\" = $1"), "got: {sql}");
+        assert_eq!(binds[0], BoundValue::Str("fr".into()));
+        assert_eq!(binds[1], BoundValue::Str("en".into()));
+        assert!(!sql.contains("LIMIT"), "got: {sql}");
+    }
+
+    #[test]
+    fn count_localized_composes_publish() {
+        let (sql, _) =
+            super::count_localized("post", &Filter::None, PublishFilter::Published, "fr", "en")
+                .unwrap();
         assert!(sql.contains("\"published_at\" IS NOT NULL"), "got: {sql}");
     }
 

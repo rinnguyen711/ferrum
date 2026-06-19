@@ -238,8 +238,15 @@ pub(crate) async fn list_entries(
     let data: Vec<Value> = maps.into_iter().map(Value::Object).collect();
 
     let total: Option<i64> = if opts.with_count {
-        let (count_sql, count_binds) = rustapi_sql::count_status(&ct.name, &filter, publish)
-            .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
+        // Localized lists collapse to one row per document, so the count must
+        // use the same locale predicate or it overcounts multi-locale documents.
+        let (count_sql, count_binds) = if let Some(requested) = requested_locale.as_deref() {
+            let default = state.locales.default_code().await;
+            rustapi_sql::count_localized(&ct.name, &filter, publish, requested, &default)
+        } else {
+            rustapi_sql::count_status(&ct.name, &filter, publish)
+        }
+        .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
         let cq = bind_all_as(sqlx::query_as::<_, (i64,)>(&count_sql), &count_binds);
         Some(cq.fetch_one(&state.pool).await.map_err(|e| db(e).0)?.0)
     } else {
