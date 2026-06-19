@@ -79,6 +79,28 @@ pub fn add_published_at_column(ct_name: &str) -> Result<String, DdlError> {
     ))
 }
 
+/// Build the multi-statement DDL that turns a non-localized table into a
+/// localized one. Existing rows become the default-locale row of their own
+/// document (`document_id = id`, `locale = <default>`). Returns a single
+/// string of `;`-separated statements (executed together by the caller).
+///
+/// `default_locale` is validated by the caller (LocaleRegistry default is
+/// always a valid tag); it is single-quote-escaped here defensively.
+pub fn localize_table(ct_name: &str, default_locale: &str) -> Result<String, DdlError> {
+    let table = table_name(ct_name)?;
+    let loc = default_locale.replace('\'', "''");
+    let uniq = quote_ident(&format!("{ct_name}_document_locale_uniq"))?;
+    Ok(format!(
+        "ALTER TABLE {table} ADD COLUMN \"document_id\" uuid; \
+         ALTER TABLE {table} ADD COLUMN \"locale\" text; \
+         UPDATE {table} SET \"document_id\" = \"id\", \"locale\" = '{loc}'; \
+         ALTER TABLE {table} ALTER COLUMN \"document_id\" SET NOT NULL; \
+         ALTER TABLE {table} ALTER COLUMN \"locale\" SET NOT NULL; \
+         ALTER TABLE {table} ADD CONSTRAINT {uniq} UNIQUE (\"document_id\", \"locale\"); \
+         CREATE INDEX ON {table} (\"document_id\")"
+    ))
+}
+
 /// `ALTER TABLE ct_<name> DROP COLUMN "<col>"`
 pub fn drop_column(ct_name: &str, col: &str) -> Result<String, DdlError> {
     let table = table_name(ct_name)?;
@@ -853,5 +875,44 @@ PRIMARY KEY (\"post_id\", \"asset_id\"))"
             sql,
             "ALTER TABLE \"ct_post\" ADD COLUMN \"published_at\" TIMESTAMPTZ"
         );
+    }
+
+    #[test]
+    fn localize_existing_builds_add_backfill_notnull_unique() {
+        let sql = localize_table("post", "en").unwrap();
+        assert!(
+            sql.contains("ADD COLUMN \"document_id\" uuid"),
+            "got: {sql}"
+        );
+        assert!(sql.contains("ADD COLUMN \"locale\" text"), "got: {sql}");
+        assert!(
+            sql.contains("UPDATE \"ct_post\" SET \"document_id\" = \"id\", \"locale\" = 'en'"),
+            "got: {sql}"
+        );
+        assert!(
+            sql.contains("ALTER COLUMN \"document_id\" SET NOT NULL"),
+            "got: {sql}"
+        );
+        assert!(
+            sql.contains("ALTER COLUMN \"locale\" SET NOT NULL"),
+            "got: {sql}"
+        );
+        assert!(
+            sql.contains(
+                "ADD CONSTRAINT \"post_document_locale_uniq\" UNIQUE (\"document_id\", \"locale\")"
+            ),
+            "got: {sql}"
+        );
+    }
+
+    #[test]
+    fn localize_table_escapes_default_locale() {
+        let sql = localize_table("post", "pt-br").unwrap();
+        assert!(sql.contains("\"locale\" = 'pt-br'"), "got: {sql}");
+    }
+
+    #[test]
+    fn localize_table_rejects_bad_table_name() {
+        assert!(localize_table("Bad Name", "en").is_err());
     }
 }
