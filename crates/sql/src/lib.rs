@@ -37,6 +37,9 @@ pub use webhooks::{
 
 pub mod audit;
 
+pub mod locales;
+pub use locales::Locale;
+
 pub mod roles;
 pub use roles::{
     delete_role, get_role, list_roles, load_all, set_permissions, upsert_role, RolePermission,
