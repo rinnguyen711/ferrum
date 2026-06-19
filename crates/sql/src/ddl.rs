@@ -65,7 +65,7 @@ pub fn add_column(ct_name: &str, field: &Field) -> Result<String, DdlError> {
         ))));
     }
     let table = table_name(ct_name)?;
-    let def = column_def(ct_name, field)?;
+    let def = column_def(ct_name, field, false)?;
     Ok(format!("ALTER TABLE {table} ADD COLUMN {def}"))
 }
 
@@ -173,28 +173,35 @@ pub fn drop_media_join_table(ct: &str, field: &str) -> Result<String, DdlError> 
     Ok(format!("DROP TABLE {jt}"))
 }
 
-/// Wraps `column_def`. When the type is localized and the field is unique,
-/// the per-column `UNIQUE` is stripped and a table-level
-/// `UNIQUE ("document_id","locale","<col>")` is recorded in `scoped` instead,
-/// so two locales of the same document may share a value (e.g. a slug).
+/// Wraps `column_def`. When the type is localized and the field carries a
+/// per-column `UNIQUE` — either a scalar field with `unique = true` or a
+/// one-to-one relation (whose uniqueness comes from its cardinality, not
+/// `f.unique`) — the per-column `UNIQUE` is suppressed in `column_def` and a
+/// table-level `UNIQUE ("document_id","locale","<col>")` is recorded in
+/// `scoped` instead, so two locales of the same document may share a value
+/// (e.g. a slug) and the same document may exist in multiple locales.
 fn column_def_localized(
     ct_name: &str,
     f: &Field,
     localized: bool,
     scoped: &mut Vec<String>,
 ) -> Result<String, DdlError> {
-    let def = column_def(ct_name, f)?;
-    if localized && f.unique {
+    use rustapi_core::Cardinality;
+    let is_one_to_one = f
+        .relation_meta()
+        .is_some_and(|m| m.cardinality == Cardinality::OneToOne);
+    let should_scope = localized && (f.unique || is_one_to_one);
+    let def = column_def(ct_name, f, should_scope)?;
+    if should_scope {
         let col = quote_ident(&f.physical_column())?;
         scoped.push(format!("UNIQUE (\"document_id\", \"locale\", {col})"));
-        return Ok(def.replacen(" UNIQUE", "", 1));
     }
     Ok(def)
 }
 
-fn column_def(ct_name: &str, f: &Field) -> Result<String, DdlError> {
+fn column_def(ct_name: &str, f: &Field, suppress_unique: bool) -> Result<String, DdlError> {
     if f.kind == FieldKind::Relation {
-        return relation_column_def(f);
+        return relation_column_def(f, suppress_unique);
     }
     if f.kind == FieldKind::Media {
         let col = quote_ident(&f.physical_column())?;
@@ -213,7 +220,11 @@ fn column_def(ct_name: &str, f: &Field) -> Result<String, DdlError> {
             String::new()
         };
         let not_null = if f.required { " NOT NULL" } else { "" };
-        let unique = if f.unique { " UNIQUE" } else { "" };
+        let unique = if f.unique && !suppress_unique {
+            " UNIQUE"
+        } else {
+            ""
+        };
         let values_lit = meta
             .values
             .iter()
@@ -244,7 +255,11 @@ fn column_def(ct_name: &str, f: &Field) -> Result<String, DdlError> {
             String::new()
         };
         let not_null = if f.required { " NOT NULL" } else { "" };
-        let unique = if f.unique { " UNIQUE" } else { "" };
+        let unique = if f.unique && !suppress_unique {
+            " UNIQUE"
+        } else {
+            ""
+        };
         return Ok(format!("{col} text{default_clause}{not_null}{unique}"));
     }
     let col = quote_ident(&f.name)?;
@@ -257,13 +272,13 @@ fn column_def(ct_name: &str, f: &Field) -> Result<String, DdlError> {
     if f.required {
         s.push_str(" NOT NULL");
     }
-    if f.unique {
+    if f.unique && !suppress_unique {
         s.push_str(" UNIQUE");
     }
     Ok(s)
 }
 
-fn relation_column_def(f: &Field) -> Result<String, DdlError> {
+fn relation_column_def(f: &Field, suppress_unique: bool) -> Result<String, DdlError> {
     use rustapi_core::Cardinality;
     let meta = f
         .relation_meta()
@@ -271,7 +286,7 @@ fn relation_column_def(f: &Field) -> Result<String, DdlError> {
     let col = quote_ident(&f.physical_column())?;
     let target = table_name(&meta.target)?;
     let not_null = if f.required { " NOT NULL" } else { "" };
-    let unique = if meta.cardinality == Cardinality::OneToOne {
+    let unique = if meta.cardinality == Cardinality::OneToOne && !suppress_unique {
         " UNIQUE"
     } else {
         ""
@@ -779,6 +794,56 @@ PRIMARY KEY (\"post_id\", \"asset_id\"))"
             sql.contains("UNIQUE (\"document_id\", \"locale\", \"slug\")"),
             "got: {sql}"
         );
+    }
+
+    #[test]
+    fn localized_unique_default_with_unique_substring_not_corrupted() {
+        // A unique String field whose DEFAULT contains " UNIQUE" must keep its
+        // default intact AND be scoped (no global UNIQUE left on the column).
+        let mut f = field("code", FieldKind::String);
+        f.unique = true;
+        f.default = json!("x UNIQUE");
+        let mut c = ct(vec![f]);
+        c.options = json!({ "localized": true });
+        let sql = create_table(&c).unwrap();
+        assert!(sql.contains("DEFAULT 'x UNIQUE'"), "default mangled: {sql}");
+        // No standalone per-column UNIQUE on the code column:
+        assert!(
+            !sql.contains("'x UNIQUE' NOT NULL UNIQUE"),
+            "global unique left: {sql}"
+        );
+        assert!(
+            sql.contains("UNIQUE (\"document_id\", \"locale\", \"code\")"),
+            "got: {sql}"
+        );
+    }
+
+    #[test]
+    fn localized_one_to_one_relation_is_scoped_not_global() {
+        let mut f = field("profile", FieldKind::Relation);
+        f.kind_meta = json!({"target":"profile","cardinality":"one_to_one"});
+        let mut c = ct(vec![f]);
+        c.options = json!({ "localized": true });
+        let sql = create_table(&c).unwrap();
+        // FK column present but NOT globally UNIQUE:
+        assert!(sql.contains("\"profile_id\" uuid"), "got: {sql}");
+        assert!(
+            !sql.contains("\"profile_id\" uuid UNIQUE"),
+            "global unique left: {sql}"
+        );
+        assert!(
+            sql.contains("UNIQUE (\"document_id\", \"locale\", \"profile_id\")"),
+            "got: {sql}"
+        );
+    }
+
+    #[test]
+    fn non_localized_one_to_one_still_global_unique() {
+        // Regression guard: non-localized one-to-one keeps its global UNIQUE.
+        let mut f = field("profile", FieldKind::Relation);
+        f.kind_meta = json!({"target":"profile","cardinality":"one_to_one"});
+        let sql = create_table(&ct(vec![f])).unwrap();
+        assert!(sql.contains("\"profile_id\" uuid UNIQUE"), "got: {sql}");
     }
 
     #[test]
