@@ -913,7 +913,9 @@ options = { draft_publish = true }
         // produce a Patch whose options EQUAL the stored options (so apply skips it).
         let desired = vec![nct("post", vec![fld("title")])];
         // Simulate stored state after first sync: resolved_options + managed.
-        let stored_opts = serde_json::json!({ "draft_publish": false, "managed": true });
+        // resolved_options() fills both draft_publish and localized defaults.
+        let stored_opts =
+            serde_json::json!({ "draft_publish": false, "localized": false, "managed": true });
         let mut existing = ct("post", vec![fld("title")], true);
         existing.options = stored_opts.clone();
         let actions = plan_sync(&desired, &[existing], SyncMode::Additive).unwrap();
