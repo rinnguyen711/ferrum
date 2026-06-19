@@ -44,10 +44,15 @@ pub fn insert(
     let mut placeholders = vec![];
     let mut binds = vec![];
     for (i, (name, val)) in values.iter().enumerate() {
-        let Some(f) = by_name.get(name.as_str()) else {
-            return Err(DmlError::UnknownField(name.clone()));
+        let col = if rustapi_core::LOCALIZATION_COLUMNS.contains(&name.as_str()) {
+            quote_ident(name)?
+        } else {
+            let Some(f) = by_name.get(name.as_str()) else {
+                return Err(DmlError::UnknownField(name.clone()));
+            };
+            quote_ident(&f.physical_column())?
         };
-        cols.push(quote_ident(&f.physical_column())?);
+        cols.push(col);
         placeholders.push(format!("${}", i + 1));
         binds.push(val.clone());
     }
@@ -73,10 +78,14 @@ pub fn update(
     let mut sets = vec![];
     let mut binds: Vec<BoundValue> = vec![];
     for (i, (name, val)) in values.iter().enumerate() {
-        let Some(f) = by_name.get(name.as_str()) else {
-            return Err(DmlError::UnknownField(name.clone()));
+        let col = if rustapi_core::LOCALIZATION_COLUMNS.contains(&name.as_str()) {
+            quote_ident(name)?
+        } else {
+            let Some(f) = by_name.get(name.as_str()) else {
+                return Err(DmlError::UnknownField(name.clone()));
+            };
+            quote_ident(&f.physical_column())?
         };
-        let col = quote_ident(&f.physical_column())?;
         let placeholder = i + 1;
         sets.push(format!("{col} = ${placeholder}"));
         binds.push(val.clone());
@@ -200,6 +209,101 @@ pub fn select_by_ids_sql(ct_name: &str) -> Result<String, DmlError> {
     let table = table_name(ct_name)?;
     Ok(format!(
         "SELECT * FROM {table} WHERE \"id\" = ANY($1::uuid[])"
+    ))
+}
+
+/// Single localized entry by `document_id`, preferring `requested` locale and
+/// falling back to `default` locale. Binds: `$1`=document_id, `$2`=requested,
+/// `$3`=default. `ORDER BY ("locale" = $2) DESC` puts the requested-locale row
+/// first; `LIMIT 1` then yields it, or the default-locale row if requested is
+/// absent.
+pub fn select_by_document(
+    ct_name: &str,
+    document_id: Uuid,
+    requested: &str,
+    default: &str,
+) -> Result<SqlAndBinds, DmlError> {
+    let table = table_name(ct_name)?;
+    let sql = format!(
+        "SELECT * FROM {table} WHERE \"document_id\" = $1::uuid \
+         AND \"locale\" IN ($2, $3) ORDER BY (\"locale\" = $2) DESC LIMIT 1"
+    );
+    Ok((
+        sql,
+        vec![
+            BoundValue::Str(document_id.to_string()),
+            BoundValue::Str(requested.to_string()),
+            BoundValue::Str(default.to_string()),
+        ],
+    ))
+}
+
+/// Localized list: one row per document — the requested-locale row, or the
+/// default-locale row when the document has no requested-locale row. Composes
+/// on top of the existing filter/sort/publish machinery. Binds: `$1`=requested,
+/// `$2`=default, then filter binds, then limit/offset.
+#[allow(clippy::too_many_arguments)]
+pub fn select_list_localized(
+    ct_name: &str,
+    filter: &Filter,
+    sort: &Sort,
+    limit: i64,
+    offset: i64,
+    publish: PublishFilter,
+    requested: &str,
+    default: &str,
+) -> Result<SqlAndBinds, DmlError> {
+    let table = table_name(ct_name)?;
+    let col = quote_ident(&sort.column)?;
+    let dir = sort.dir.as_sql();
+
+    let mut binds: Vec<BoundValue> = vec![
+        BoundValue::Str(requested.to_string()),
+        BoundValue::Str(default.to_string()),
+    ];
+    let locale_pred = format!(
+        "(\"locale\" = $1 OR (\"locale\" = $2 AND NOT EXISTS (\
+         SELECT 1 FROM {table} d WHERE d.\"document_id\" = {table}.\"document_id\" AND d.\"locale\" = $1)))"
+    );
+
+    let (where_frag, filter_binds) = render_where(filter, binds.len() + 1)?;
+    binds.extend(filter_binds);
+
+    let mut where_sql = if where_frag.is_empty() {
+        format!(" WHERE {locale_pred}")
+    } else {
+        let stripped = where_frag.trim_start_matches(" WHERE ");
+        format!(" WHERE {locale_pred} AND {stripped}")
+    };
+
+    let publish_pred = match publish {
+        PublishFilter::Published => Some("\"published_at\" IS NOT NULL"),
+        PublishFilter::Draft => Some("\"published_at\" IS NULL"),
+        PublishFilter::All => None,
+    };
+    if let Some(pred) = publish_pred {
+        where_sql = format!("{where_sql} AND {pred}");
+    }
+
+    let limit_ph = binds.len() + 1;
+    let offset_ph = binds.len() + 2;
+    binds.push(BoundValue::I64(limit));
+    binds.push(BoundValue::I64(offset));
+
+    let sql = format!(
+        "SELECT * FROM {table}{where_sql} ORDER BY {col} {dir}, \"id\" {dir} LIMIT ${limit_ph} OFFSET ${offset_ph}"
+    );
+    Ok((sql, binds))
+}
+
+/// Row `id` for an exact `(document_id, locale)` pair — no fallback. Used by
+/// localized update/delete which must target the intended locale or 404.
+/// Caller binds `$1`=document_id (uuid), `$2`=locale (text). Returns only the
+/// SQL string (no BoundValue vec) — same pattern as `select_by_ids_sql`.
+pub fn select_row_id_exact(ct_name: &str) -> Result<String, DmlError> {
+    let table = table_name(ct_name)?;
+    Ok(format!(
+        "SELECT \"id\" FROM {table} WHERE \"document_id\" = $1::uuid AND \"locale\" = $2"
     ))
 }
 
@@ -798,6 +902,107 @@ SELECT $1::uuid, x.asset, x.ord::int FROM UNNEST($2::uuid[]) WITH ORDINALITY AS 
                 BoundValue::I64(25),
             ]
         );
+    }
+
+    #[test]
+    fn select_by_document_filters_document_and_locale() {
+        let id = Uuid::new_v4();
+        let (sql, binds) = super::select_by_document("post", id, "fr", "en").unwrap();
+        assert!(
+            sql.starts_with("SELECT * FROM \"ct_post\" WHERE \"document_id\" = $1::uuid"),
+            "got: {sql}"
+        );
+        assert!(sql.contains("\"locale\" IN ($2, $3)"), "got: {sql}");
+        assert!(
+            sql.contains("ORDER BY (\"locale\" = $2) DESC"),
+            "got: {sql}"
+        );
+        assert!(sql.ends_with("LIMIT 1"), "got: {sql}");
+        assert_eq!(
+            binds,
+            vec![
+                BoundValue::Str(id.to_string()),
+                BoundValue::Str("fr".into()),
+                BoundValue::Str("en".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn list_locale_filter_appends_clause() {
+        let s = Sort {
+            column: "created_at".into(),
+            dir: SortDir::Desc,
+        };
+        let (sql, binds) = super::select_list_localized(
+            "post",
+            &Filter::None,
+            &s,
+            25,
+            0,
+            PublishFilter::All,
+            "fr",
+            "en",
+        )
+        .unwrap();
+        assert!(sql.contains("\"locale\" = $1"), "got: {sql}");
+        assert!(sql.contains("NOT EXISTS"), "got: {sql}");
+        assert_eq!(binds[0], BoundValue::Str("fr".into()));
+        assert_eq!(binds[1], BoundValue::Str("en".into()));
+        assert!(sql.contains("ORDER BY \"created_at\" DESC"), "got: {sql}");
+        assert!(sql.contains("LIMIT"), "got: {sql}");
+    }
+
+    #[test]
+    fn list_localized_published_filter_composes() {
+        let s = Sort {
+            column: "created_at".into(),
+            dir: SortDir::Desc,
+        };
+        let (sql, _) = super::select_list_localized(
+            "post",
+            &Filter::None,
+            &s,
+            10,
+            0,
+            PublishFilter::Published,
+            "fr",
+            "en",
+        )
+        .unwrap();
+        assert!(sql.contains("\"published_at\" IS NOT NULL"), "got: {sql}");
+    }
+
+    #[test]
+    fn select_row_id_exact_builds_query() {
+        let sql = super::select_row_id_exact("post").unwrap();
+        assert_eq!(
+            sql,
+            "SELECT \"id\" FROM \"ct_post\" WHERE \"document_id\" = $1::uuid AND \"locale\" = $2"
+        );
+    }
+
+    #[test]
+    fn insert_allows_localization_columns() {
+        let mut c = ct(vec![field("title", FieldKind::String)]);
+        c.options = json!({ "localized": true });
+        let mut vals = BTreeMap::new();
+        vals.insert("title".into(), BoundValue::Str("Hi".into()));
+        vals.insert("locale".into(), BoundValue::Str("fr".into()));
+        vals.insert("document_id".into(), BoundValue::Uuid(Uuid::nil()));
+        let (sql, _) = insert(&c, &vals).unwrap();
+        assert!(sql.contains("\"document_id\""), "got: {sql}");
+        assert!(sql.contains("\"locale\""), "got: {sql}");
+    }
+
+    #[test]
+    fn update_allows_localization_columns() {
+        let mut c = ct(vec![field("title", FieldKind::String)]);
+        c.options = json!({ "localized": true });
+        let mut vals = BTreeMap::new();
+        vals.insert("locale".into(), BoundValue::Str("fr".into()));
+        let (sql, _) = update(&c, Uuid::nil(), &vals).unwrap();
+        assert!(sql.contains("\"locale\" = $1"), "got: {sql}");
     }
 
     #[test]
