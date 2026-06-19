@@ -15,7 +15,7 @@ async fn make_widget(
 ) -> Result<Json<Value>, ApiError> {
     let mut body = Map::new();
     body.insert("title".into(), json!("from-custom-route"));
-    let rec = content_api::create_entry(&st, &principal, &req_ctx, "widget", body).await?;
+    let rec = content_api::create_entry(&st, &principal, &req_ctx, "widget", body, None).await?;
     Ok(Json(rec))
 }
 

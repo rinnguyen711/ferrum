@@ -23,6 +23,8 @@ pub struct ListParams {
     pub cursor: Option<String>,
     #[serde(rename = "withCount", default)]
     pub with_count: Option<bool>,
+    #[serde(default)]
+    pub locale: Option<String>,
 }
 
 #[derive(Debug)]
@@ -149,6 +151,7 @@ mod tests {
                 status: None,
                 cursor: None,
                 with_count: None,
+                locale: None,
             },
             50,
         )
@@ -168,6 +171,7 @@ mod tests {
                 status: None,
                 cursor: None,
                 with_count: None,
+                locale: None,
             },
             100,
         )
@@ -188,6 +192,7 @@ mod tests {
                 status: None,
                 cursor: None,
                 with_count: None,
+                locale: None,
             },
             100,
         );
@@ -206,6 +211,7 @@ mod tests {
                 status: None,
                 cursor: None,
                 with_count: None,
+                locale: None,
             },
             100,
         );
@@ -266,6 +272,7 @@ mod tests {
                 status: None,
                 cursor: Some("abc".into()),
                 with_count: Some(false),
+                locale: None,
             },
             100,
         )
@@ -293,6 +300,7 @@ mod tests {
                 status: None,
                 cursor: Some("abc".into()),
                 with_count: Some(true),
+                locale: None,
             },
             100,
         )

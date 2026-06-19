@@ -69,6 +69,12 @@ pub fn body_to_binds(
     for sys in &["id", "created_at", "updated_at", "published_at"] {
         body.remove(*sys);
     }
+    // Localization columns are server-managed; a client cannot set them as
+    // fields (locale is selected via ?locale=, document_id is generated or
+    // carried over). Strip them so they never reach body_to_binds' field loop.
+    for sys in rustapi_core::LOCALIZATION_COLUMNS {
+        body.remove(sys);
+    }
 
     let allowed: std::collections::HashSet<&str> =
         ct.fields.iter().map(|f| f.name.as_str()).collect();
@@ -324,6 +330,13 @@ pub fn row_to_json(ct: &ContentType, row: &PgRow) -> Result<Value, Error> {
         );
     }
 
+    if ct.localized() {
+        let document_id: uuid::Uuid = row.try_get("document_id").map_err(decode)?;
+        obj.insert("document_id".into(), Value::String(document_id.to_string()));
+        let locale: String = row.try_get("locale").map_err(decode)?;
+        obj.insert("locale".into(), Value::String(locale));
+    }
+
     for f in &ct.fields {
         if is_system_column(&f.name) {
             continue;
@@ -360,6 +373,10 @@ pub fn row_to_csv_record(ct: &ContentType, obj: &Value) -> (Vec<String>, Vec<Str
     push("updated_at");
     if ct.draft_publish() {
         push("published_at");
+    }
+    if ct.localized() {
+        push("document_id");
+        push("locale");
     }
 
     for f in &ct.fields {
@@ -615,6 +632,39 @@ mod tests {
             .clone();
         let (binds, ..) = body_to_binds(&ct, body, true).unwrap();
         assert!(!binds.contains_key("published_at"));
+    }
+
+    #[test]
+    fn body_to_binds_strips_document_id_and_locale() {
+        let ct = ContentType {
+            id: Uuid::nil(),
+            name: "post".into(),
+            display_name: "Post".into(),
+            fields: vec![Field {
+                name: "title".into(),
+                kind: FieldKind::String,
+                required: false,
+                unique: false,
+                default: json!(null),
+                max_length: None,
+                kind_meta: json!({}),
+            }],
+            options: json!({ "localized": true }),
+            kind: rustapi_core::ContentTypeKind::Collection,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let body = serde_json::json!({
+            "title": "x",
+            "document_id": "00000000-0000-0000-0000-000000000000",
+            "locale": "fr"
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        let (binds, _, _, _, _) = body_to_binds(&ct, body, true).unwrap();
+        assert!(!binds.contains_key("document_id"));
+        assert!(!binds.contains_key("locale"));
     }
 
     fn ct_with_relation() -> ContentType {

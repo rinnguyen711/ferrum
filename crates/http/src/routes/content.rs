@@ -24,6 +24,8 @@ use uuid::Uuid;
 struct GetParams {
     #[serde(default)]
     populate: Option<String>,
+    #[serde(default)]
+    locale: Option<String>,
 }
 
 pub fn router() -> Router<AppState> {
@@ -100,6 +102,7 @@ pub(crate) async fn list_entries(
     params: ListParams,
     populate: Option<&str>,
     raw_query: &str,
+    locale: Option<&str>,
 ) -> Result<Value, Error> {
     let ct = authorize_collection(state, principal, Action::ContentRead, ct_name).await?;
     let status = params.status.clone();
@@ -122,7 +125,18 @@ pub(crate) async fn list_entries(
     // read the last row's sort value for nextCursor).
     let sort_kind = sort_column_kind(&ct, &opts.sort.column);
 
-    let keyset_mode = opts.cursor.is_some();
+    // Localized lists resolve the requested locale up-front (422 on unknown)
+    // and force offset paging — keyset over the locale-collapsed result set is
+    // deferred. `requested_locale` doubles as the meta.locale echo.
+    let requested_locale = if ct.localized() {
+        Some(state.locales.resolve(locale).await.ok_or_else(|| {
+            Error::Validation(rustapi_core::ValidationErrors::single("unknown locale"))
+        })?)
+    } else {
+        None
+    };
+
+    let keyset_mode = opts.cursor.is_some() && requested_locale.is_none();
 
     // Reject a non-scalar sort column before decoding the cursor, so the caller
     // gets a clear "cannot use X" message rather than a generic "invalid
@@ -137,20 +151,38 @@ pub(crate) async fn list_entries(
     // Decode cursor up-front if present (400 on bad/mismatched token).
     // "first" is the sentinel for "start keyset paging from the beginning"
     // (no prior page, so after = None). Any other value is a real token.
-    let after = match opts.cursor.as_deref() {
-        None => None,
-        Some("first") => None, // start keyset paging from the beginning
-        Some(tok) => {
-            let (val, id) = crate::cursor::decode(tok, &opts.sort, sort_kind).map_err(|_| {
-                Error::Validation(ValidationErrors::single(
-                    "invalid cursor (use a nextCursor token from a previous response, or `first` to start)",
-                ))
-            })?;
-            Some((val, id))
+    // Only decode the cursor in keyset mode; localized lists force offset mode
+    // and ignore any cursor param rather than 400 on a stale token.
+    let after = if keyset_mode {
+        match opts.cursor.as_deref() {
+            None => None,
+            Some("first") => None, // start keyset paging from the beginning
+            Some(tok) => {
+                let (val, id) = crate::cursor::decode(tok, &opts.sort, sort_kind).map_err(|_| {
+                    Error::Validation(ValidationErrors::single(
+                        "invalid cursor (use a nextCursor token from a previous response, or `first` to start)",
+                    ))
+                })?;
+                Some((val, id))
+            }
         }
+    } else {
+        None
     };
 
-    let (list_sql, list_binds) = if keyset_mode {
+    let (list_sql, list_binds) = if let Some(requested) = requested_locale.as_deref() {
+        let default = state.locales.default_code().await;
+        rustapi_sql::select_list_localized(
+            &ct.name,
+            &filter,
+            &opts.sort,
+            opts.page_size as i64,
+            offset,
+            publish,
+            requested,
+            &default,
+        )
+    } else if keyset_mode {
         rustapi_sql::select_list_keyset_status(
             &ct.name,
             &filter,
@@ -225,6 +257,9 @@ pub(crate) async fn list_entries(
     if keyset_mode {
         meta.insert("nextCursor".into(), json!(next_cursor));
     }
+    if let Some(requested) = requested_locale {
+        meta.insert("locale".into(), json!(requested));
+    }
 
     Ok(json!({ "data": data, "meta": Value::Object(meta) }))
 }
@@ -235,10 +270,21 @@ pub async fn get_entry(
     ct_name: &str,
     id: Uuid,
     populate: Option<&str>,
+    locale: Option<&str>,
 ) -> Result<Value, Error> {
     let ct = authorize_collection(state, principal, Action::ContentRead, ct_name).await?;
-    let (sql, binds) = rustapi_sql::select_by_id(&ct.name, id)
-        .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
+    let (sql, binds) = if ct.localized() {
+        // `id` is the document_id here. Read the requested-locale row, falling
+        // back to the default-locale row when absent.
+        let requested = state.locales.resolve(locale).await.ok_or_else(|| {
+            Error::Validation(rustapi_core::ValidationErrors::single("unknown locale"))
+        })?;
+        let default = state.locales.default_code().await;
+        rustapi_sql::select_by_document(&ct.name, id, &requested, &default)
+    } else {
+        rustapi_sql::select_by_id(&ct.name, id)
+    }
+    .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
     let q = bind_all(sqlx::query(&sql), &binds);
     let row = q.fetch_optional(&state.pool).await.map_err(|e| db(e).0)?;
     let row = row.ok_or(Error::NotFound)?;
@@ -269,8 +315,29 @@ pub async fn create_entry(
     req_ctx: &rustapi_core::RequestContext,
     ct_name: &str,
     body: Map<String, Value>,
+    locale: Option<&str>,
 ) -> Result<Value, Error> {
     let ct = authorize_collection(state, principal, Action::ContentWrite, ct_name).await?;
+
+    // For localized types: resolve the target locale (422 on unknown) and read
+    // an optional client-supplied document_id BEFORE body_to_binds strips the
+    // localization columns. Both are injected into the binds below.
+    let (requested_locale, provided_doc_id) = if ct.localized() {
+        let requested = state.locales.resolve(locale).await.ok_or_else(|| {
+            Error::Validation(rustapi_core::ValidationErrors::single("unknown locale"))
+        })?;
+        let doc_id = match body.get("document_id") {
+            Some(Value::String(s)) => Some(Uuid::parse_str(s).map_err(|_| {
+                Error::Validation(rustapi_core::ValidationErrors::single(
+                    "invalid document_id uuid",
+                ))
+            })?),
+            _ => None,
+        };
+        (Some(requested), doc_id)
+    } else {
+        (None, None)
+    };
 
     let ctx = WriteContext {
         content_type: &ct.name,
@@ -282,7 +349,14 @@ pub async fn create_entry(
         .await
         .map_err(|e| e.0)?;
 
-    let (binds_map, checks, links, media_checks, media_links) = body_to_binds(&ct, body, true)?;
+    let (mut binds_map, checks, links, media_checks, media_links) = body_to_binds(&ct, body, true)?;
+    if let Some(requested) = requested_locale {
+        binds_map.insert("locale".into(), rustapi_core::BoundValue::Str(requested));
+        binds_map.insert(
+            "document_id".into(),
+            rustapi_core::BoundValue::Uuid(provided_doc_id.unwrap_or_else(uuid::Uuid::new_v4)),
+        );
+    }
     verify_relation_targets_exist(state, &checks)
         .await
         .map_err(|e| e.0)?;
@@ -350,12 +424,36 @@ pub async fn update_entry(
     ct_name: &str,
     id: Uuid,
     body: Map<String, Value>,
+    locale: Option<&str>,
 ) -> Result<Value, Error> {
     let ct = authorize_collection(state, principal, Action::ContentWrite, ct_name).await?;
 
+    // For localized types, `id` is the document_id; resolve the exact row id for
+    // the requested locale (no default fallback on writes — 404 if that locale
+    // row is absent). For non-localized types `id` is already the row id.
+    let row_id = if ct.localized() {
+        let requested = state.locales.resolve(locale).await.ok_or_else(|| {
+            Error::Validation(rustapi_core::ValidationErrors::single("unknown locale"))
+        })?;
+        let sql = rustapi_sql::select_row_id_exact(&ct.name)
+            .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
+        let found: Option<Uuid> = sqlx::query_scalar::<_, Uuid>(&sql)
+            .bind(id)
+            .bind(&requested)
+            .fetch_optional(&state.pool)
+            .await
+            .map_err(|e| db(e).0)?;
+        found.ok_or(Error::NotFound)?
+    } else {
+        id
+    };
+
     // Snapshot the prior record (best-effort) so the handler can build a
     // field-level audit diff. Populate is omitted to keep the diff scalar.
-    let prior = get_entry(state, principal, ct_name, id, None).await.ok();
+    // Pass `locale` through so the snapshot reads the same locale row.
+    let prior = get_entry(state, principal, ct_name, id, None, locale)
+        .await
+        .ok();
 
     let ctx = WriteContext {
         content_type: &ct.name,
@@ -406,7 +504,7 @@ pub async fn update_entry(
         }
     }
 
-    let (sql, binds) = rustapi_sql::update(&ct, id, &binds_map)
+    let (sql, binds) = rustapi_sql::update(&ct, row_id, &binds_map)
         .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
 
     let mut tx = state.pool.begin().await.map_err(|e| db(e).0)?;
@@ -419,10 +517,10 @@ pub async fn update_entry(
         Some(r) => r,
         None => return Err(Error::NotFound), // tx rolls back on drop
     };
-    write_links(&mut tx, &ct.name, &links, id)
+    write_links(&mut tx, &ct.name, &links, row_id)
         .await
         .map_err(|e| e.0)?;
-    write_media_links(&mut tx, &ct.name, &media_links, id)
+    write_media_links(&mut tx, &ct.name, &media_links, row_id)
         .await
         .map_err(|e| e.0)?;
     tx.commit().await.map_err(|e| db(e).0)?;
@@ -458,9 +556,28 @@ pub async fn delete_entry(
     req_ctx: &rustapi_core::RequestContext,
     ct_name: &str,
     id: Uuid,
+    locale: Option<&str>,
 ) -> Result<(), Error> {
-    authorize_collection(state, principal, Action::ContentDelete, ct_name).await?;
-    let (sql, binds) = rustapi_sql::delete(ct_name, id)
+    let ct = authorize_collection(state, principal, Action::ContentDelete, ct_name).await?;
+    // Localized: `id` is the document_id; resolve the exact locale row (no
+    // fallback) and delete that. Non-localized: `id` is the row id.
+    let row_id = if ct.localized() {
+        let requested = state.locales.resolve(locale).await.ok_or_else(|| {
+            Error::Validation(rustapi_core::ValidationErrors::single("unknown locale"))
+        })?;
+        let sql = rustapi_sql::select_row_id_exact(&ct.name)
+            .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
+        let found: Option<Uuid> = sqlx::query_scalar::<_, Uuid>(&sql)
+            .bind(id)
+            .bind(&requested)
+            .fetch_optional(&state.pool)
+            .await
+            .map_err(|e| db(e).0)?;
+        found.ok_or(Error::NotFound)?
+    } else {
+        id
+    };
+    let (sql, binds) = rustapi_sql::delete(ct_name, row_id)
         .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
     let q = bind_all(sqlx::query(&sql), &binds);
     let result = q.execute(&state.pool).await.map_err(|e| db(e).0)?;
@@ -500,6 +617,7 @@ async fn list(
     axum::extract::Extension(principal): axum::extract::Extension<Principal>,
 ) -> Result<Json<Value>, ApiError> {
     let populate = params.populate.clone();
+    let locale = params.locale.clone();
     let raw_query = raw_query.as_deref().unwrap_or("").to_string();
     Ok(Json(
         list_entries(
@@ -509,6 +627,7 @@ async fn list(
             params,
             populate.as_deref(),
             &raw_query,
+            locale.as_deref(),
         )
         .await
         .map_err(ApiError)?,
@@ -518,13 +637,21 @@ async fn list(
 async fn create(
     State(state): State<AppState>,
     Path(ct_name): Path<String>,
+    Query(params): Query<GetParams>,
     axum::extract::Extension(principal): axum::extract::Extension<Principal>,
     axum::extract::Extension(ctx): axum::extract::Extension<rustapi_core::RequestContext>,
     Json(body): Json<Map<String, Value>>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
-    let record = create_entry(&state, &principal, &ctx, &ct_name, body)
-        .await
-        .map_err(ApiError)?;
+    let record = create_entry(
+        &state,
+        &principal,
+        &ctx,
+        &ct_name,
+        body,
+        params.locale.as_deref(),
+    )
+    .await
+    .map_err(ApiError)?;
     Ok((StatusCode::CREATED, Json(record)))
 }
 
@@ -535,34 +662,58 @@ async fn get_one(
     axum::extract::Extension(principal): axum::extract::Extension<Principal>,
 ) -> Result<Json<Value>, ApiError> {
     Ok(Json(
-        get_entry(&state, &principal, &ct_name, id, params.populate.as_deref())
-            .await
-            .map_err(ApiError)?,
+        get_entry(
+            &state,
+            &principal,
+            &ct_name,
+            id,
+            params.populate.as_deref(),
+            params.locale.as_deref(),
+        )
+        .await
+        .map_err(ApiError)?,
     ))
 }
 
 async fn update(
     State(state): State<AppState>,
     Path((ct_name, id)): Path<(String, Uuid)>,
+    Query(params): Query<GetParams>,
     axum::extract::Extension(principal): axum::extract::Extension<Principal>,
     axum::extract::Extension(ctx): axum::extract::Extension<rustapi_core::RequestContext>,
     Json(body): Json<Map<String, Value>>,
 ) -> Result<Json<Value>, ApiError> {
-    let record = update_entry(&state, &principal, &ctx, &ct_name, id, body)
-        .await
-        .map_err(ApiError)?;
+    let record = update_entry(
+        &state,
+        &principal,
+        &ctx,
+        &ct_name,
+        id,
+        body,
+        params.locale.as_deref(),
+    )
+    .await
+    .map_err(ApiError)?;
     Ok(Json(record))
 }
 
 async fn delete_one(
     State(state): State<AppState>,
     Path((ct_name, id)): Path<(String, Uuid)>,
+    Query(params): Query<GetParams>,
     axum::extract::Extension(principal): axum::extract::Extension<Principal>,
     axum::extract::Extension(ctx): axum::extract::Extension<rustapi_core::RequestContext>,
 ) -> Result<StatusCode, ApiError> {
-    delete_entry(&state, &principal, &ctx, &ct_name, id)
-        .await
-        .map_err(ApiError)?;
+    delete_entry(
+        &state,
+        &principal,
+        &ctx,
+        &ct_name,
+        id,
+        params.locale.as_deref(),
+    )
+    .await
+    .map_err(ApiError)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
