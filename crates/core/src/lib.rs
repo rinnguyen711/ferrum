@@ -5,6 +5,7 @@ pub mod content_type;
 pub mod error;
 pub mod event;
 pub mod field;
+pub mod locale;
 pub mod principal;
 pub mod reserved;
 pub mod system;
@@ -21,5 +22,6 @@ pub use field::{
     BoundValue, Cardinality, CoerceError, ComponentMeta, EnumMeta, Field, FieldError, FieldKind,
     RelationMeta,
 };
+pub use locale::{is_valid_locale_tag, LOCALIZATION_COLUMNS};
 pub use principal::{action_to_scope, role_allows, verb_to_action, Action, Principal, PERM_VERBS};
 pub use system::{is_system_column, SystemColumn, SYSTEM_COLUMNS};
