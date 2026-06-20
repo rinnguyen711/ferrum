@@ -37,7 +37,7 @@ export interface ContentType {
   name: string;
   display_name: string;
   fields: Field[];
-  options?: { draft_publish?: boolean; managed?: boolean; [key: string]: unknown };
+  options?: { draft_publish?: boolean; managed?: boolean; localized?: boolean; [key: string]: unknown };
   kind: ContentTypeKind;
   created_at: string;
   updated_at: string;
@@ -70,12 +70,14 @@ export type Entry = {
   created_at: string;
   updated_at: string;
   published_at?: string | null;
+  document_id?: string;
+  locale?: string;
   [field: string]: unknown;
 };
 
 export interface ListResponse<T> {
   data: T[];
-  meta: { page: number; pageSize: number; total: number };
+  meta: { page: number; pageSize: number; total: number; locale?: string };
 }
 
 export interface Health {
@@ -98,6 +100,10 @@ export interface EnumMeta {
 
 export function draftPublishEnabled(ct: ContentType): boolean {
   return ct.options?.draft_publish === true;
+}
+
+export function localizedEnabled(ct: ContentType): boolean {
+  return ct.options?.localized === true;
 }
 
 export function managedType(ct: ContentType): boolean {
