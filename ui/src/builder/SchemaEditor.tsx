@@ -7,7 +7,7 @@ import {
   deleteContentType, getContentType, listContentTypes, listComponents,
 } from "../api/endpoints";
 import { ApiError } from "../api/client";
-import { draftPublishEnabled, enumValues, managedType } from "../api/types";
+import { draftPublishEnabled, localizedEnabled, enumValues, managedType } from "../api/types";
 import type { FieldKind } from "../api/types";
 import { useBuilderDraft } from "./BuilderDraftContext";
 import { blankField, type Draft, type DraftField } from "./draftModel";
@@ -300,6 +300,28 @@ export function SchemaEditor() {
           onClick={() => {
             clearBanner();
             setTypeDraft((d) => ({ ...d, draft_publish: !d.draft_publish }));
+          }}
+        >
+          <span className="rs-toggle-knob" />
+        </button>
+      </div>
+
+      <div className="rs-setting-row" style={{ marginBottom: 16 }}>
+        <div className="rs-setting-meta">
+          <strong>Enable localization</strong>
+          <span>Entries can have a separate version per locale. Existing entries become the default locale.</span>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-label="Enable localization"
+          className={"rs-toggle" + (draft.localized ? " is-on" : "")}
+          disabled={isManaged || (draft.mode === "existing" && (draft.serverSnapshot ? localizedEnabled(draft.serverSnapshot) : false))}
+          title={isManaged ? "Managed by a schema file" : (draft.mode === "existing" && (draft.serverSnapshot ? localizedEnabled(draft.serverSnapshot) : false) ? "Cannot be disabled" : undefined)}
+          aria-checked={draft.localized}
+          onClick={() => {
+            clearBanner();
+            setTypeDraft((d) => ({ ...d, localized: !d.localized }));
           }}
         >
           <span className="rs-toggle-knob" />

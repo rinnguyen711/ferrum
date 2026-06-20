@@ -47,7 +47,7 @@ export interface NewContentType {
   name: string;
   display_name: string;
   fields: Field[];
-  options?: { draft_publish?: boolean };
+  options?: { draft_publish?: boolean; localized?: boolean };
   kind?: ContentTypeKind;
 }
 
@@ -62,7 +62,7 @@ export interface PatchContentType {
   add_fields: Field[];
   drop_fields: string[];
   extend_enum_values: EnumExtension[];
-  options?: { draft_publish?: boolean };
+  options?: { draft_publish?: boolean; localized?: boolean };
 }
 
 export type Entry = {
