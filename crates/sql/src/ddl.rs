@@ -86,6 +86,13 @@ pub fn add_published_at_column(ct_name: &str) -> Result<String, DdlError> {
 ///
 /// `default_locale` is validated by the caller (LocaleRegistry default is
 /// always a valid tag); it is single-quote-escaped here defensively.
+///
+/// v1 limitation: this only adds the `(document_id, locale)` dimension. Unlike
+/// `create_table` for a born-localized type, it does NOT rewrite existing
+/// per-column `UNIQUE` constraints to the scoped
+/// `UNIQUE (document_id, locale, <col>)` form — a column that was globally
+/// unique stays globally unique after localizing, so two locales of one
+/// document cannot share that column's value. Over-strict, never under-strict.
 pub fn localize_table(ct_name: &str, default_locale: &str) -> Result<String, DdlError> {
     let table = table_name(ct_name)?;
     let loc = default_locale.replace('\'', "''");
