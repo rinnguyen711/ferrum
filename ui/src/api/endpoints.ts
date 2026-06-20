@@ -65,6 +65,7 @@ interface ListOpts {
   sort?: string;
   populate?: string;
   status?: "published" | "draft" | "all";
+  locale?: string;
   /** Pre-built `filters[field][$op]` → value pairs (see FiltersMenu.serializeFilters). */
   filters?: [string, string][];
 }
@@ -76,43 +77,69 @@ export function listEntries(type: string, opts: ListOpts = {}): Promise<ListResp
   if (opts.sort) q.set("sort", opts.sort);
   if (opts.populate) q.set("populate", opts.populate);
   if (opts.status) q.set("status", opts.status);
+  if (opts.locale) q.set("locale", opts.locale);
   for (const [k, v] of opts.filters ?? []) q.append(k, v);
   const qs = q.toString();
   return apiFetch<ListResponse<Entry>>(`/api/${encodeURIComponent(type)}${qs ? `?${qs}` : ""}`);
 }
 
-export function getEntry(type: string, id: string, opts: { populate?: string } = {}): Promise<Entry> {
-  const qs = opts.populate ? `?populate=${encodeURIComponent(opts.populate)}` : "";
-  return apiFetch<Entry>(`/api/${encodeURIComponent(type)}/${encodeURIComponent(id)}${qs}`);
+export function getEntry(
+  type: string,
+  id: string,
+  opts: { populate?: string; locale?: string } = {},
+): Promise<Entry> {
+  const q = new URLSearchParams();
+  if (opts.populate) q.set("populate", opts.populate);
+  if (opts.locale) q.set("locale", opts.locale);
+  const qs = q.toString();
+  return apiFetch<Entry>(`/api/${encodeURIComponent(type)}/${encodeURIComponent(id)}${qs ? `?${qs}` : ""}`);
 }
 
-export function createEntry(type: string, body: Record<string, unknown>): Promise<Entry> {
-  return apiFetch<Entry>(`/api/${encodeURIComponent(type)}`, { method: "POST", body });
+export function createEntry(
+  type: string,
+  body: Record<string, unknown>,
+  opts: { locale?: string } = {},
+): Promise<Entry> {
+  const qs = opts.locale ? `?locale=${encodeURIComponent(opts.locale)}` : "";
+  return apiFetch<Entry>(`/api/${encodeURIComponent(type)}${qs}`, { method: "POST", body });
 }
 
-export function updateEntry(type: string, id: string, body: Record<string, unknown>): Promise<Entry> {
-  return apiFetch<Entry>(`/api/${encodeURIComponent(type)}/${encodeURIComponent(id)}`, {
+export function updateEntry(
+  type: string,
+  id: string,
+  body: Record<string, unknown>,
+  opts: { locale?: string } = {},
+): Promise<Entry> {
+  const qs = opts.locale ? `?locale=${encodeURIComponent(opts.locale)}` : "";
+  return apiFetch<Entry>(`/api/${encodeURIComponent(type)}/${encodeURIComponent(id)}${qs}`, {
     method: "PUT",
     body,
   });
 }
 
-export function deleteEntry(type: string, id: string): Promise<void> {
-  return apiFetch<void>(`/api/${encodeURIComponent(type)}/${encodeURIComponent(id)}`, {
+export function deleteEntry(
+  type: string,
+  id: string,
+  opts: { locale?: string } = {},
+): Promise<void> {
+  const qs = opts.locale ? `?locale=${encodeURIComponent(opts.locale)}` : "";
+  return apiFetch<void>(`/api/${encodeURIComponent(type)}/${encodeURIComponent(id)}${qs}`, {
     method: "DELETE",
   });
 }
 
-export function publishEntry(type: string, id: string): Promise<Entry> {
+export function publishEntry(type: string, id: string, opts: { locale?: string } = {}): Promise<Entry> {
+  const qs = opts.locale ? `?locale=${encodeURIComponent(opts.locale)}` : "";
   return apiFetch<Entry>(
-    `/api/${encodeURIComponent(type)}/${encodeURIComponent(id)}/publish`,
+    `/api/${encodeURIComponent(type)}/${encodeURIComponent(id)}/publish${qs}`,
     { method: "POST" },
   );
 }
 
-export function unpublishEntry(type: string, id: string): Promise<Entry> {
+export function unpublishEntry(type: string, id: string, opts: { locale?: string } = {}): Promise<Entry> {
+  const qs = opts.locale ? `?locale=${encodeURIComponent(opts.locale)}` : "";
   return apiFetch<Entry>(
-    `/api/${encodeURIComponent(type)}/${encodeURIComponent(id)}/unpublish`,
+    `/api/${encodeURIComponent(type)}/${encodeURIComponent(id)}/unpublish${qs}`,
     { method: "POST" },
   );
 }

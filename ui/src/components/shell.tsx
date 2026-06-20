@@ -260,7 +260,7 @@ function SettingsPanel() {
         { label: "API tokens", to: "/settings/api-tokens" },
         { label: "Media storage", to: "/settings/media" },
         { label: "Webhooks", to: "/settings/webhooks" },
-        { label: "Internationalization" },
+        { label: "Internationalization", to: "/settings/locales" },
       ],
     },
     {

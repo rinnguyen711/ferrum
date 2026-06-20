@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Icons } from "../components/icons";
 import { getToken } from "../auth";
 import { Avatar, StatusBadge } from "../components/shell";
@@ -18,8 +18,9 @@ import {
   deleteEntry, getContentType, listContentTypes, listEntries,
   publishEntry, unpublishEntry,
 } from "../api/endpoints";
+import { listLocales } from "../api/locales";
 import type { ContentType, Entry, Field } from "../api/types";
-import { draftPublishEnabled, relationMeta } from "../api/types";
+import { draftPublishEnabled, localizedEnabled, relationMeta } from "../api/types";
 import { relTime, relationLabel, shortId, initials, AVATAR_NEUTRAL } from "../util";
 
 const STATUS_TABS: [string, string][] = [
@@ -57,6 +58,10 @@ export function ContentList() {
 
   const ct = schema.data;
   const dp = ct ? draftPublishEnabled(ct) : false;
+  const loc = ct ? localizedEnabled(ct) : false;
+  const localesRes = useResource(() => (loc ? listLocales() : Promise.resolve([])), [loc]);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedLocale = searchParams.get("locale") ?? "";
   const populate = ct
     ? ct.fields.filter((f) => f.kind === "relation").map((f) => f.name).join(",")
     : "";
@@ -77,6 +82,13 @@ export function ContentList() {
     setStatusFilter("all");
     setSortKey("updated");
   }, [type]);
+
+  useEffect(() => {
+    if (!loc) return;
+    if (selectedLocale) return;
+    const def = localesRes.data?.find((l) => l.is_default) ?? localesRes.data?.[0];
+    if (def) setSearchParams((p) => { p.set("locale", def.code); return p; }, { replace: true });
+  }, [loc, selectedLocale, localesRes.data, setSearchParams]);
 
   const hasStatus = !!ct?.fields.some((f) => f.name === "status" && f.kind === "enum");
   const titleField = ct?.fields.find((f) => ["title", "name"].includes(f.name))?.name;
@@ -105,9 +117,10 @@ export function ContentList() {
         pageSize,
         sort,
         status: dp ? publishFilter : undefined,
+        locale: loc ? selectedLocale || undefined : undefined,
         filters: JSON.parse(debouncedPairs) as [string, string][],
       }),
-    [type, populate, dp, publishFilter, debouncedPairs, page, pageSize, sort],
+    [type, populate, dp, publishFilter, debouncedPairs, page, pageSize, sort, loc, selectedLocale],
   );
 
   const [selected, setSelected] = useState<string[]>([]);
@@ -322,6 +335,14 @@ export function ContentList() {
     }
   };
 
+  const editorPath = (e: Entry): string => {
+    if (loc && e.document_id) {
+      const q = selectedLocale ? `?locale=${encodeURIComponent(selectedLocale)}` : "";
+      return `/content/${type}/${e.document_id}${q}`;
+    }
+    return `/content/${type}/${e.id}`;
+  };
+
   return (
     <div className="rs-cm">
       {flash && (
@@ -331,7 +352,10 @@ export function ContentList() {
           ) : (
             <>
               Entry{" "}
-              <Link className="rs-cm-flash-link" to={`/content/${type}/${flash.id}`}>
+              <Link
+                className="rs-cm-flash-link"
+                to={`/content/${type}/${flash.id}${loc && selectedLocale ? `?locale=${encodeURIComponent(selectedLocale)}` : ""}`}
+              >
                 #{shortId(flash.id)}
               </Link>{" "}
               has been {flash.verb} successfully.
@@ -418,6 +442,22 @@ export function ContentList() {
           >
             <Icons.sort size={15} /> {sortKey === "title" ? "Title" : "Last update"}
           </button>
+        )}
+        {loc && localesRes.data && localesRes.data.length > 0 && (
+          <select
+            className="rs-input rs-input--sm"
+            value={selectedLocale}
+            onChange={(e) =>
+              setSearchParams((p) => { p.set("locale", e.target.value); return p; })
+            }
+            aria-label="Locale"
+          >
+            {localesRes.data.map((l) => (
+              <option key={l.code} value={l.code}>
+                {l.code} — {l.name}
+              </option>
+            ))}
+          </select>
         )}
         <div className="rs-spacer" />
         <div className="rs-pop-anchor">
@@ -523,6 +563,7 @@ export function ContentList() {
               </th>
               {colVisible("id") && <th className="rs-col-id">ID</th>}
               {dp && <th>Status</th>}
+              {loc && <th>Locale</th>}
               {cols.map((f) => <th key={f.name}>{f.name}</th>)}
               {colVisible("updated") && <th>Updated</th>}
             </tr>
@@ -532,7 +573,7 @@ export function ContentList() {
               <tr
                 key={e.id}
                 className={selected.includes(e.id) ? "is-selected" : ""}
-                onClick={() => navigate(`/content/${type}/${e.id}`)}
+                onClick={() => navigate(editorPath(e))}
               >
                 <td className="rs-col-check" onClick={(ev) => ev.stopPropagation()}>
                   <Checkbox checked={selected.includes(e.id)} onChange={() => toggle(e.id)} />
@@ -541,6 +582,14 @@ export function ContentList() {
                 {dp && (
                   <td>
                     <StatusBadge status={e.published_at ? "published" : "draft"} />
+                  </td>
+                )}
+                {loc && (
+                  <td className="rs-mono">
+                    {String(e.locale ?? "")}
+                    {e.locale && selectedLocale && e.locale !== selectedLocale && (
+                      <span className="rs-cell-muted"> (fallback)</span>
+                    )}
                   </td>
                 )}
                 {cols.map((f) => <td key={f.name}>{renderCell(e, f)}</td>)}

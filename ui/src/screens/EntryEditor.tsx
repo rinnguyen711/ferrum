@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Notice, LoadingState, EmptyState, EditorBar } from "../components/ui";
 import { StatusBadge } from "../components/shell";
 import { useResource } from "../hooks/useResource";
@@ -12,7 +12,8 @@ import {
   unpublishEntry,
   updateEntry,
 } from "../api/endpoints";
-import { draftPublishEnabled, coerceFieldValue } from "../api/types";
+import { draftPublishEnabled, coerceFieldValue, localizedEnabled } from "../api/types";
+import { listLocales, type Locale } from "../api/locales";
 import { ApiError } from "../api/client";
 
 export function EntryEditor() {
@@ -22,9 +23,16 @@ export function EntryEditor() {
   const onBack = () => navigate(`/content/${type}`);
 
   const schema = useResource(() => getContentType(type), [type]);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const loc = schema.data ? localizedEnabled(schema.data) : false;
+  const localesRes = useResource(() => (loc ? listLocales() : Promise.resolve([] as Locale[])), [loc]);
+  const requestedLocale = searchParams.get("locale") ?? "";
   const existing = useResource(
-    () => (isNew ? Promise.resolve(null) : getEntry(type, id)),
-    [type, id, isNew],
+    () =>
+      isNew
+        ? Promise.resolve(null)
+        : getEntry(type, id, loc ? { locale: requestedLocale || undefined } : {}),
+    [type, id, isNew, loc, requestedLocale],
   );
 
   const [form, setForm] = useState<Record<string, unknown>>({});
@@ -48,6 +56,24 @@ export function EntryEditor() {
       setForm(seed);
     }
   }, [schema.data, existing.data, isNew]);
+
+  // For localized types: the locale actually served (may differ from requested
+  // when the backend fell back to the default-locale row).
+  const servedLocale = (existing.data?.locale as string | undefined) ?? requestedLocale;
+  // A translation for the requested locale is "missing" when the server served
+  // a different locale (fallback) — the user is about to create a new one.
+  const missingTranslation =
+    loc && !isNew && requestedLocale !== "" && servedLocale !== requestedLocale;
+
+  // When the requested locale has no translation yet, blank the form so the
+  // translator starts from an empty row instead of the fallback's values.
+  useEffect(() => {
+    if (missingTranslation && schema.data) {
+      const blank: Record<string, unknown> = {};
+      for (const f of schema.data.fields) blank[f.name] = "";
+      setForm(blank);
+    }
+  }, [missingTranslation, schema.data]);
 
   if (schema.loading || existing.loading) return <LoadingState />;
   if (schema.error) return <EmptyState>Couldn't load type. {schema.error.message}</EmptyState>;
@@ -76,10 +102,10 @@ export function EntryEditor() {
     }
   };
 
-  const save = async (publishAfter = false) => {
-    setSaving(true);
-    setFieldErrors({});
-    setBanner(null);
+  // Build the request body from the form, applying per-kind coercion (media
+  // single/multiple, integer/float Number(), json parse, component coerce).
+  // Returns null if a JSON field fails to parse, after setting the field error.
+  const buildBody = (): Record<string, unknown> | null => {
     // Build a body: omit empty strings (treated as "no value"); coerce numbers.
     const body: Record<string, unknown> = {};
     for (const f of ct.fields) {
@@ -98,8 +124,7 @@ export function EntryEditor() {
           body[f.name] = typeof v === "string" ? JSON.parse(v) : v;
         } catch {
           setFieldErrors((e) => ({ ...e, [f.name]: "Invalid JSON" }));
-          setSaving(false);
-          return;
+          return null;
         }
       } else if (f.kind === "component") {
         // coerce nested number sub-fields (inputs emit strings) before sending
@@ -108,13 +133,48 @@ export function EntryEditor() {
         body[f.name] = v;
       }
     }
+    return body;
+  };
+
+  const createTranslation = async () => {
+    if (!ct) return;
+    setSaving(true);
+    setFieldErrors({});
+    setBanner(null);
+    const body = buildBody();
+    if (!body) {
+      setSaving(false);
+      return;
+    }
+    body.document_id = id;
+    try {
+      await createEntry(type, body, { locale: requestedLocale });
+      navigate(`/content/${type}?locale=${encodeURIComponent(requestedLocale)}`, {
+        state: { flash: "created", flashId: id },
+      });
+    } catch (e) {
+      setBanner(e instanceof ApiError ? e.message : "Couldn't create translation.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const save = async (publishAfter = false) => {
+    setSaving(true);
+    setFieldErrors({});
+    setBanner(null);
+    const body = buildBody();
+    if (!body) {
+      setSaving(false);
+      return;
+    }
     try {
       if (isNew) {
-        const created = await createEntry(type, body);
+        const created = await createEntry(type, body, loc ? { locale: requestedLocale || undefined } : {});
         if (publishAfter) await publishEntry(type, created.id);
         navigate(`/content/${type}`, { state: { flash: "created", flashId: created.id } });
       } else {
-        await updateEntry(type, id, body);
+        await updateEntry(type, id, body, loc ? { locale: requestedLocale || undefined } : {});
         navigate(`/content/${type}`, { state: { flash: "saved", flashId: id } });
       }
     } catch (e) {
@@ -142,40 +202,79 @@ export function EntryEditor() {
     }
   };
 
+  const switchLocale = (code: string) =>
+    setSearchParams((p) => {
+      p.set("locale", code);
+      return p;
+    });
+
+  const localeSwitcher =
+    loc && localesRes.data && localesRes.data.length > 0 ? (
+      <select
+        className="rs-input rs-input--sm"
+        value={requestedLocale || servedLocale}
+        onChange={(e) => switchLocale(e.target.value)}
+        aria-label="Locale"
+      >
+        {localesRes.data.map((l) => (
+          <option key={l.code} value={l.code}>
+            {l.code} — {l.name}
+          </option>
+        ))}
+      </select>
+    ) : null;
+
   return (
     <div className="rs-editor">
       <EditorBar
         onBack={onBack}
         title={isNew ? `Create ${ct.display_name}` : `Edit ${ct.display_name}`}
-        status={dp && !isNew ? <StatusBadge status={isPublished ? "published" : "draft"} /> : undefined}
-        actions={
+        status={
           <>
-            {dp && !isNew && (
-              <button
-                className={"rs-btn " + (isPublished ? "rs-btn--ghost" : "rs-btn--primary")}
-                onClick={togglePublish}
-                disabled={publishing}
-              >
-                {publishing ? "…" : isPublished ? "Unpublish" : "Publish"}
-              </button>
-            )}
-            <button
-              className={"rs-btn " + (dp && isNew ? "rs-btn--ghost" : "rs-btn--primary")}
-              onClick={() => save(false)}
-              disabled={saving}
-            >
-              {saving ? "Saving…" : isNew ? "Create" : "Save"}
-            </button>
-            {dp && isNew && (
-              <button className="rs-btn rs-btn--primary" onClick={() => save(true)} disabled={saving}>
-                {saving ? "…" : "Create & Publish"}
-              </button>
-            )}
+            {dp && !isNew && <StatusBadge status={isPublished ? "published" : "draft"} />}
+            {localeSwitcher}
           </>
+        }
+        actions={
+          missingTranslation ? (
+            <button className="rs-btn rs-btn--primary" onClick={createTranslation} disabled={saving}>
+              {saving ? "Creating…" : `Create ${requestedLocale} translation`}
+            </button>
+          ) : (
+            <>
+              {dp && !isNew && (
+                <button
+                  className={"rs-btn " + (isPublished ? "rs-btn--ghost" : "rs-btn--primary")}
+                  onClick={togglePublish}
+                  disabled={publishing}
+                >
+                  {publishing ? "…" : isPublished ? "Unpublish" : "Publish"}
+                </button>
+              )}
+              <button
+                className={"rs-btn " + (dp && isNew ? "rs-btn--ghost" : "rs-btn--primary")}
+                onClick={() => save(false)}
+                disabled={saving}
+              >
+                {saving ? "Saving…" : isNew ? "Create" : "Save"}
+              </button>
+              {dp && isNew && (
+                <button className="rs-btn rs-btn--primary" onClick={() => save(true)} disabled={saving}>
+                  {saving ? "…" : "Create & Publish"}
+                </button>
+              )}
+            </>
+          )
         }
       />
 
       {banner && <div style={{ margin: "0 24px" }}><Notice>{banner}</Notice></div>}
+
+      {missingTranslation && (
+        <div style={{ margin: "0 24px" }}>
+          <Notice>No translation for “{requestedLocale}” yet. Fill the fields and create one.</Notice>
+        </div>
+      )}
 
       <div className="rs-editor-body">
         <div className="rs-editor-main">

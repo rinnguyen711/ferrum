@@ -2,7 +2,7 @@ import type {
   Component, ContentType, ContentTypeKind, Field, FieldKind, NewContentType,
   PatchContentType, EnumExtension, UpdateComponent,
 } from "../api/types";
-import { draftPublishEnabled, enumValues, relationMeta, mediaMeta } from "../api/types";
+import { draftPublishEnabled, localizedEnabled, enumValues, relationMeta, mediaMeta } from "../api/types";
 import type { IconKey } from "../components/icons";
 
 export const KINDS: FieldKind[] = [
@@ -61,6 +61,7 @@ export interface Draft {
   fields: DraftField[];
   mode: "new" | "existing";
   draft_publish: boolean;
+  localized: boolean;
   kind: ContentTypeKind;
   serverSnapshot?: ContentType;  // existing only — diff baseline
 }
@@ -110,7 +111,7 @@ export function deriveApiId(display: string): string {
 }
 
 export function newDraft(name: string, display_name: string, kind: ContentTypeKind = "collection"): Draft {
-  return { name, display_name, fields: [], mode: "new", draft_publish: true, kind };
+  return { name, display_name, fields: [], mode: "new", draft_publish: true, localized: false, kind };
 }
 
 export function fieldToDraftField(f: Field): DraftField {
@@ -142,6 +143,7 @@ export function seedFromContentType(ct: ContentType): Draft {
     fields,
     mode: "existing",
     draft_publish: draftPublishEnabled(ct),
+    localized: localizedEnabled(ct),
     kind: ct.kind,
     serverSnapshot: ct,
   };
@@ -200,7 +202,7 @@ export function toNewContentType(draft: Draft): NewContentType {
     name: draft.name,
     display_name: draft.display_name,
     fields: draft.fields.map(draftFieldToField),
-    options: { draft_publish: draft.draft_publish },
+    options: { draft_publish: draft.draft_publish, localized: draft.localized },
     kind: draft.kind,
   };
 }
@@ -218,10 +220,16 @@ export function diffToPatch(draft: Draft): PatchContentType {
     patch.display_name = draft.display_name;
   }
 
-  // Only send options when enabling D&P (false → true). Disabling is rejected by server.
+  // Only send options when enabling D&P or localization (false → true).
+  // Disabling either is rejected by the server, so never send false.
   const snapDraftPublish = draftPublishEnabled(snap);
-  if (draft.draft_publish && !snapDraftPublish) {
-    patch.options = { draft_publish: true };
+  const snapLocalized = localizedEnabled(snap);
+  const enableDp = draft.draft_publish && !snapDraftPublish;
+  const enableLoc = draft.localized && !snapLocalized;
+  if (enableDp || enableLoc) {
+    patch.options = {};
+    if (enableDp) patch.options.draft_publish = true;
+    if (enableLoc) patch.options.localized = true;
   }
 
   for (const d of draft.fields) {
