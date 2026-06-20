@@ -110,6 +110,32 @@ type Media {
 `size_bytes` is exposed via the `JSON` scalar because it is a 64-bit integer and
 GraphQL's `Int` is 32-bit.
 
+## Localization
+
+When a content type is [localized](rest-api.md#localization), both collection
+queries take an optional `locale` argument, and the object type exposes
+`document_id` and `locale` as selectable `String` fields:
+
+```graphql
+posts(locale: "fr"): PostList!
+post(id: UUID!, locale: String): Post
+```
+
+```graphql
+{
+  posts(locale: "fr") {
+    data { id document_id locale title }
+    meta { total }
+  }
+}
+```
+
+Behavior matches REST: the requested locale is resolved (an unknown code is an
+error), the list returns one row per document with default-locale fallback, and
+each row's `locale` field reports the code actually served. An omitted `locale`
+uses the default. The argument is accepted on non-localized types too, where it
+is a no-op.
+
 ## Single types
 
 [Single types](../concepts/single-types.md) are **not** exposed as collection
