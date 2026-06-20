@@ -102,34 +102,10 @@ export function EntryEditor() {
     }
   };
 
-  const createTranslation = async () => {
-    if (!ct) return;
-    setSaving(true);
-    setFieldErrors({});
-    setBanner(null);
-    const body: Record<string, unknown> = { document_id: id };
-    for (const f of ct.fields) {
-      const v = form[f.name];
-      if (v === "" || v === undefined) continue;
-      if (f.kind === "integer" || f.kind === "float") body[f.name] = Number(v);
-      else body[f.name] = v;
-    }
-    try {
-      await createEntry(type, body, { locale: requestedLocale });
-      navigate(`/content/${type}?locale=${encodeURIComponent(requestedLocale)}`, {
-        state: { flash: "created", flashId: id },
-      });
-    } catch (e) {
-      setBanner(e instanceof ApiError ? e.message : "Couldn't create translation.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const save = async (publishAfter = false) => {
-    setSaving(true);
-    setFieldErrors({});
-    setBanner(null);
+  // Build the request body from the form, applying per-kind coercion (media
+  // single/multiple, integer/float Number(), json parse, component coerce).
+  // Returns null if a JSON field fails to parse, after setting the field error.
+  const buildBody = (): Record<string, unknown> | null => {
     // Build a body: omit empty strings (treated as "no value"); coerce numbers.
     const body: Record<string, unknown> = {};
     for (const f of ct.fields) {
@@ -148,8 +124,7 @@ export function EntryEditor() {
           body[f.name] = typeof v === "string" ? JSON.parse(v) : v;
         } catch {
           setFieldErrors((e) => ({ ...e, [f.name]: "Invalid JSON" }));
-          setSaving(false);
-          return;
+          return null;
         }
       } else if (f.kind === "component") {
         // coerce nested number sub-fields (inputs emit strings) before sending
@@ -157,6 +132,41 @@ export function EntryEditor() {
       } else {
         body[f.name] = v;
       }
+    }
+    return body;
+  };
+
+  const createTranslation = async () => {
+    if (!ct) return;
+    setSaving(true);
+    setFieldErrors({});
+    setBanner(null);
+    const body = buildBody();
+    if (!body) {
+      setSaving(false);
+      return;
+    }
+    body.document_id = id;
+    try {
+      await createEntry(type, body, { locale: requestedLocale });
+      navigate(`/content/${type}?locale=${encodeURIComponent(requestedLocale)}`, {
+        state: { flash: "created", flashId: id },
+      });
+    } catch (e) {
+      setBanner(e instanceof ApiError ? e.message : "Couldn't create translation.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const save = async (publishAfter = false) => {
+    setSaving(true);
+    setFieldErrors({});
+    setBanner(null);
+    const body = buildBody();
+    if (!body) {
+      setSaving(false);
+      return;
     }
     try {
       if (isNew) {
