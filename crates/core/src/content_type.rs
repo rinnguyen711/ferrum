@@ -68,6 +68,14 @@ impl ContentType {
             .unwrap_or(false)
     }
 
+    /// Whether localization is enabled. Absent/invalid `options` → false.
+    pub fn localized(&self) -> bool {
+        self.options
+            .get("localized")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    }
+
     /// Whether this type is managed by a schema file (TOML sync). Absent/invalid
     /// `options` → false. Managed types are read-only in the UI/API.
     pub fn managed(&self) -> bool {
@@ -79,17 +87,24 @@ impl ContentType {
 }
 
 impl NewContentType {
-    /// Resolve effective options for create: `draft_publish` defaults to false
-    /// when the client omitted it. Returns the caller's options object with
-    /// `draft_publish` filled in, preserving any extra keys (e.g. `managed`).
+    /// Resolve effective options for create: `draft_publish` and `localized`
+    /// default to false when the client omitted them. Returns the caller's
+    /// options object with both filled in, preserving any extra keys
+    /// (e.g. `managed`).
     pub fn resolved_options(&self) -> serde_json::Value {
         let dp = self
             .options
             .get("draft_publish")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
+        let loc = self
+            .options
+            .get("localized")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         let mut obj = self.options.as_object().cloned().unwrap_or_default();
         obj.insert("draft_publish".into(), serde_json::Value::Bool(dp));
+        obj.insert("localized".into(), serde_json::Value::Bool(loc));
         serde_json::Value::Object(obj)
     }
 
@@ -340,6 +355,43 @@ mod tests {
         assert!(json.contains("\"single\""));
         let rt: ContentType = serde_json::from_str(&json).unwrap();
         assert_eq!(rt.kind, ContentTypeKind::Single);
+    }
+
+    #[test]
+    fn localized_defaults_and_reads() {
+        let mut ct = ContentType {
+            id: Uuid::nil(),
+            name: "post".into(),
+            display_name: "Post".into(),
+            fields: vec![field("title")],
+            options: json!({}),
+            kind: ContentTypeKind::Collection,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        assert!(!ct.localized());
+        ct.options = json!({ "localized": true });
+        assert!(ct.localized());
+    }
+
+    #[test]
+    fn resolved_options_fills_localized() {
+        let nct = NewContentType {
+            name: "post".into(),
+            display_name: "Post".into(),
+            fields: vec![field("title")],
+            options: json!({ "localized": true }),
+            kind: ContentTypeKind::Collection,
+        };
+        assert_eq!(nct.resolved_options()["localized"], json!(true));
+        let nct2 = NewContentType {
+            name: "post".into(),
+            display_name: "Post".into(),
+            fields: vec![field("title")],
+            options: json!({}),
+            kind: ContentTypeKind::Collection,
+        };
+        assert_eq!(nct2.resolved_options()["localized"], json!(false));
     }
 }
 

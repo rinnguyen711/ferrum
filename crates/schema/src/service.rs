@@ -22,6 +22,19 @@ pub(crate) fn published_at_transition(was_enabled: bool, now_enabled: bool) -> R
     }
 }
 
+/// Decide what to do with a `localized` option flip. `Ok(true)` means run the
+/// `localize_table` DDL; `Ok(false)` means no change. De-localizing
+/// (true→false) is unsupported in v1 and rejected with a validation error.
+pub(crate) fn localize_transition(was_localized: bool, now_localized: bool) -> Result<bool, Error> {
+    match (was_localized, now_localized) {
+        (false, true) => Ok(true),
+        (true, false) => Err(Error::Validation(rustapi_core::ValidationErrors::single(
+            "de-localizing a content type is not supported",
+        ))),
+        _ => Ok(false),
+    }
+}
+
 #[derive(Clone)]
 pub struct SchemaService {
     pool: PgPool,
@@ -235,6 +248,36 @@ impl SchemaService {
                 .execute(&mut *tx)
                 .await
                 .map_err(map_db_err)?;
+        }
+
+        let was_localized = existing.localized();
+        let now_localized = new_options
+            .get("localized")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if localize_transition(was_localized, now_localized)? {
+            // Read the default locale directly from the `_locales` table; the
+            // schema service has no LocaleRegistry. Fall back to "en" if unset.
+            let default_code = sqlx::query_scalar::<_, String>(
+                "SELECT code FROM \"_locales\" WHERE is_default LIMIT 1",
+            )
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(map_db_err)?
+            .unwrap_or_else(|| "en".to_string());
+
+            let ddl = rustapi_sql::ddl::localize_table(name, &default_code)
+                .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
+            // localize_table returns 7 `;`-separated statements. The only
+            // interpolated value is the validated default-locale tag (no `;`),
+            // so splitting on `;` is safe. Run each on the same transaction so
+            // the ALTER+UPDATE+SET NOT NULL are atomic.
+            for stmt in ddl.split(';').map(str::trim).filter(|s| !s.is_empty()) {
+                sqlx::query(stmt)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_db_err)?;
+            }
         }
 
         let now = Utc::now();
@@ -530,6 +573,15 @@ mod tests {
         assert!(!published_at_transition(true, true).unwrap());
         assert!(!published_at_transition(false, false).unwrap());
         assert!(published_at_transition(true, false).is_err());
+    }
+
+    #[test]
+    fn localize_transition_rules() {
+        assert!(localize_transition(false, true).unwrap());
+        assert!(!localize_transition(true, true).unwrap());
+        assert!(!localize_transition(false, false).unwrap());
+        let err = localize_transition(true, false).unwrap_err();
+        assert_validation_msg(&err, "de-localizing a content type is not supported");
     }
 
     #[tokio::test]

@@ -85,3 +85,181 @@ curl "http://localhost:8080/api/article?sort=views:desc"
 ```
 
 Any stored field can be used as the sort key. In keyset mode the sort key is always paired with `id` as a tiebreaker to guarantee stable, gap-free paging.
+
+## Localization
+
+A content type can opt into localization. A localized entry exists as one row per locale, and all of a translation set's rows share a stable `document_id`. Reads accept a `?locale=<code>` selector and fall back to the default locale when a translation is missing.
+
+### Registering locales
+
+Locales live in a global registry, managed under `/admin/locales` (admin token required). The database seeds one default locale, `en` (English).
+
+List the registered locales:
+
+```http
+GET /admin/locales
+```
+
+```json
+{
+  "data": [
+    { "code": "en", "name": "English", "is_default": true, "position": 0 }
+  ]
+}
+```
+
+Add or update a locale with `POST /admin/locales`. The body takes `code`, `name`, and optional `position` and `is_default`. A `code` must be a lowercase locale tag (`fr`, `pt-br`); anything else returns `422`.
+
+```http
+POST /admin/locales
+Content-Type: application/json
+
+{ "code": "fr", "name": "French", "position": 1 }
+```
+
+Setting `is_default: true` flips the default to this locale and clears the previous one in the same transaction — exactly one locale is the default at any time.
+
+Delete a locale by code:
+
+```http
+DELETE /admin/locales/fr
+```
+
+You cannot delete the default locale — `DELETE /admin/locales/en` returns `422` while `en` is the default. Reassign the default first.
+
+### Enabling localization on a type
+
+Set the `localized` option to `true` when you create the content type:
+
+```http
+POST /admin/content-types
+Content-Type: application/json
+
+{
+  "name": "post",
+  "fields": [
+    { "name": "title", "kind": "string", "required": true },
+    { "name": "slug", "kind": "slug", "unique": true }
+  ],
+  "options": { "localized": true }
+}
+```
+
+You can also localize an existing type by `PATCH`ing its options. Existing rows are backfilled to the default locale — each row's `document_id` is set to its own `id`, and its `locale` to the default code:
+
+```http
+PATCH /admin/content-types/post
+Content-Type: application/json
+
+{ "options": { "localized": true } }
+```
+
+Localizing scopes any unique field constraint (such as a unique `slug`) to `(document_id, locale, <field>)`, so two locales of the same document can share a slug while duplicates within one locale are still rejected.
+
+> De-localizing a type (turning `localized` back to `false`) is unsupported in v1 and is rejected — it would drop locale rows ambiguously.
+
+### Reading localized entries
+
+Add `?locale=<code>` to the list and get endpoints. For a localized type the path id is the **`document_id`** (the stable cross-locale handle), not the per-locale row id.
+
+Get one document in a locale:
+
+```http
+GET /api/post/01hw8c.../?locale=fr
+```
+
+The served row carries its own `document_id` and `locale` columns, so the response tells you which locale was served:
+
+```json
+{
+  "id": "01hw9a...",
+  "document_id": "01hw8c...",
+  "locale": "fr",
+  "title": "Bonjour",
+  "slug": "bonjour"
+}
+```
+
+If the requested locale has no row for that document, the read falls back to the default-locale row, and the `locale` field reports the code actually served (so you can detect the fallback):
+
+```http
+GET /api/post/01hw8c.../?locale=de
+```
+
+```json
+{
+  "document_id": "01hw8c...",
+  "locale": "en",
+  "title": "Hello"
+}
+```
+
+A locale that is not in the registry returns `422`. Passing `?locale=` to a non-localized type is a no-op, not an error.
+
+List endpoints return one row per document — the requested-locale row where it exists, otherwise the default-locale fallback row. The list `meta` echoes the requested locale:
+
+```http
+GET /api/post?locale=fr
+```
+
+```json
+{
+  "data": [
+    { "document_id": "01hw8c...", "locale": "fr", "title": "Bonjour" },
+    { "document_id": "01hw7b...", "locale": "en", "title": "Second post" }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 25,
+    "total": 2,
+    "locale": "fr"
+  }
+}
+```
+
+Localized lists use offset pagination only — keyset/cursor paging over the locale-collapsed result set is deferred. A `?cursor=` on a localized list is ignored and offset paging is used.
+
+### Writing translations
+
+`POST /api/<type>?locale=<code>` creates a row in that locale. To add a translation to an existing document, reuse its `document_id` in the body. Omit `document_id` to start a brand-new document (a fresh `document_id` is assigned).
+
+Create the source (English) entry — no `document_id`, so a new document is started:
+
+```http
+POST /api/post?locale=en
+Content-Type: application/json
+
+{ "title": "Hello", "slug": "hello" }
+```
+
+Add the French translation to the same document by reusing its `document_id`:
+
+```http
+POST /api/post?locale=fr
+Content-Type: application/json
+
+{ "title": "Bonjour", "slug": "bonjour", "document_id": "01hw8c..." }
+```
+
+- An unknown locale returns `422`.
+- A duplicate `(document_id, locale)` — the same document already has a row in that locale — returns `409`.
+
+Updates and deletes target the **exact** `(document_id, locale)` row with no fallback. The path id is the `document_id`; the `?locale=` selects the row. If that locale row does not exist, the write returns `404` (it does not silently fall back to the default).
+
+```http
+PUT /api/post/01hw8c.../?locale=fr
+Content-Type: application/json
+
+{ "title": "Bonjour le monde", "slug": "bonjour" }
+```
+
+```http
+DELETE /api/post/01hw8c.../?locale=fr
+```
+
+### Limitations (v1)
+
+- Publish/unpublish is per row: `POST /api/<type>/:id/publish` is keyed by the content-type **row id** and takes no `?locale=`. Target the specific locale's row id to publish that translation; locales publish independently.
+- Localized lists use offset pagination only (no keyset cursor).
+- De-localizing a type is unsupported.
+- Relations target a specific locale **row**, not a document — cross-locale relation resolution is out of scope for v1.

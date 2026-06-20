@@ -33,7 +33,10 @@ pub fn router() -> Router<AppState> {
             "/admin/media/folders",
             get(list_folders).post(create_folder),
         )
-        .route("/admin/media/folders/asset-counts", get(folder_asset_counts))
+        .route(
+            "/admin/media/folders/asset-counts",
+            get(folder_asset_counts),
+        )
         .route(
             "/admin/media/folders/:id",
             axum::routing::patch(update_folder).delete(delete_folder),

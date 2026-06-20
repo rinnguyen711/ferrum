@@ -19,9 +19,10 @@ pub use ddl::{
     drop_table, DdlError,
 };
 pub use dml::{
-    count, count_status, delete, delete_links, delete_media_links, insert, insert_links,
-    insert_media_links, publish, render_where, select_by_id, select_by_ids_sql, select_list,
-    select_list_keyset_status, select_list_status, unpublish, update, DmlError, PublishFilter,
+    count, count_localized, count_status, delete, delete_links, delete_media_links, insert,
+    insert_links, insert_media_links, publish, render_where, select_by_document, select_by_id,
+    select_by_ids_sql, select_list, select_list_keyset_status, select_list_localized,
+    select_list_status, select_row_id_exact, unpublish, update, DmlError, PublishFilter,
     SqlAndBinds,
 };
 pub use filter::{op_allows_kind, Condition, Filter, FilterValue, Op};
@@ -36,6 +37,9 @@ pub use webhooks::{
 };
 
 pub mod audit;
+
+pub mod locales;
+pub use locales::Locale;
 
 pub mod roles;
 pub use roles::{

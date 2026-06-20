@@ -252,6 +252,7 @@ pub fn list_field(ct_name: String) -> impl Fn(ResolverContext) -> FieldFuture + 
         let page = opt_u32(&ctx, "page");
         let page_size = opt_u32(&ctx, "pageSize");
         let sort = opt_string(&ctx, "sort");
+        let locale = opt_string(&ctx, "locale");
         let raw_query = ctx
             .args
             .get("filters")
@@ -281,11 +282,19 @@ pub fn list_field(ct_name: String) -> impl Fn(ResolverContext) -> FieldFuture + 
                 status: None,
                 cursor: None,
                 with_count: None,
+                locale: None,
             };
-            let env =
-                content::list_entries(&st, &pr, &ct_name, params, populate.as_deref(), &raw_query)
-                    .await
-                    .map_err(gql_err)?;
+            let env = content::list_entries(
+                &st,
+                &pr,
+                &ct_name,
+                params,
+                populate.as_deref(),
+                &raw_query,
+                locale.as_deref(),
+            )
+            .await
+            .map_err(gql_err)?;
             Ok(Some(FieldValue::value(json_to_gql(env))))
         })
     }
@@ -298,6 +307,7 @@ pub fn get_field(ct_name: String) -> impl Fn(ResolverContext) -> FieldFuture + C
         let st = app_state(&ctx);
         let pr = principal(&ctx);
         let id = id_arg(&ctx);
+        let locale = opt_string(&ctx, "locale");
         // For get-one the entry fields are directly under the field (no `data`).
         let selected = selected_field_names(ctx.look_ahead());
         FieldFuture::new(async move {
@@ -310,7 +320,16 @@ pub fn get_field(ct_name: String) -> impl Fn(ResolverContext) -> FieldFuture + C
                 .get(&ct_name)
                 .await
                 .and_then(|ct| populate_arg(&selected, &ct));
-            match content::get_entry(&st, &pr, &ct_name, id, populate.as_deref()).await {
+            match content::get_entry(
+                &st,
+                &pr,
+                &ct_name,
+                id,
+                populate.as_deref(),
+                locale.as_deref(),
+            )
+            .await
+            {
                 Ok(entry) => Ok(Some(FieldValue::value(json_to_gql(entry)))),
                 Err(Error::NotFound) => Ok(None),
                 Err(e) => Err(gql_err(e)),
@@ -333,9 +352,10 @@ pub fn create_field(ct_name: String) -> impl Fn(ResolverContext) -> FieldFuture 
             // GraphQL writes carry no RequestContext (no IP/UA middleware), so
             // pass a default ctx — IP/UA/request_id render as "—" in the UI.
             // The core emits the audit entry.
-            let entry = content::create_entry(&st, &pr, &RequestContext::default(), &ct_name, body)
-                .await
-                .map_err(gql_err)?;
+            let entry =
+                content::create_entry(&st, &pr, &RequestContext::default(), &ct_name, body, None)
+                    .await
+                    .map_err(gql_err)?;
             Ok(Some(FieldValue::value(json_to_gql(entry))))
         })
     }
@@ -354,10 +374,17 @@ pub fn update_field(ct_name: String) -> impl Fn(ResolverContext) -> FieldFuture 
             let pr = pr?;
             let id = id?;
             let body = body?;
-            let entry =
-                content::update_entry(&st, &pr, &RequestContext::default(), &ct_name, id, body)
-                    .await
-                    .map_err(gql_err)?;
+            let entry = content::update_entry(
+                &st,
+                &pr,
+                &RequestContext::default(),
+                &ct_name,
+                id,
+                body,
+                None,
+            )
+            .await
+            .map_err(gql_err)?;
             Ok(Some(FieldValue::value(json_to_gql(entry))))
         })
     }
@@ -374,7 +401,7 @@ pub fn delete_field(ct_name: String) -> impl Fn(ResolverContext) -> FieldFuture 
             let st = st?;
             let pr = pr?;
             let id = id?;
-            content::delete_entry(&st, &pr, &RequestContext::default(), &ct_name, id)
+            content::delete_entry(&st, &pr, &RequestContext::default(), &ct_name, id, None)
                 .await
                 .map_err(gql_err)?;
             Ok(Some(FieldValue::value(GqlValue::from(true))))

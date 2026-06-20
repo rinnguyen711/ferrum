@@ -11,6 +11,7 @@ pub mod audit;
 pub mod components;
 pub mod content;
 pub mod health;
+pub mod locales;
 pub mod media;
 pub mod roles;
 pub mod schema;
@@ -38,6 +39,7 @@ pub fn build_router(state: AppState, extra: Vec<Router<AppState>>) -> Router {
         .merge(audit::router())
         .merge(webhooks::router())
         .merge(roles::router())
+        .merge(locales::router())
         .merge(auth::protected_router());
 
     // GraphQL surface — behind require_auth (NOT public). Single route

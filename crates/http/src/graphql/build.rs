@@ -79,6 +79,23 @@ fn build_output_object(ct: &ContentType) -> Object {
             TypeRef::named_nn(scalars::DATETIME_SCALAR),
             resolve::json_field_resolver("updated_at"),
         ));
+    // Localized types carry localization metadata in their row JSON (inserted by
+    // row_to_json, mirroring the REST surface). Expose them as selectable String
+    // fields so clients can read which locale a row resolved to. Non-localized
+    // types don't have these columns, so don't register the fields there.
+    if ct.localized() {
+        object = object
+            .field(Field::new(
+                "document_id",
+                TypeRef::named(TypeRef::STRING),
+                resolve::json_field_resolver("document_id"),
+            ))
+            .field(Field::new(
+                "locale",
+                TypeRef::named(TypeRef::STRING),
+                resolve::json_field_resolver("locale"),
+            ));
+    }
     for field in &ct.fields {
         object = object.field(Field::new(
             &field.name,
@@ -266,7 +283,8 @@ pub fn build_schema(types: &[ContentType]) -> Result<Schema, SchemaError> {
             .argument(InputValue::new(
                 "filters",
                 TypeRef::named(scalars::JSON_SCALAR),
-            )),
+            ))
+            .argument(InputValue::new("locale", TypeRef::named(TypeRef::STRING))),
         );
         query = query.field(
             Field::new(
@@ -277,7 +295,8 @@ pub fn build_schema(types: &[ContentType]) -> Result<Schema, SchemaError> {
             .argument(InputValue::new(
                 "id",
                 TypeRef::named_nn(scalars::UUID_SCALAR),
-            )),
+            ))
+            .argument(InputValue::new("locale", TypeRef::named(TypeRef::STRING))),
         );
 
         // Mutation: create / update / delete.

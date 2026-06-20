@@ -7,6 +7,7 @@ pub mod entry;
 pub mod error;
 pub mod filter;
 pub mod graphql;
+pub mod locale_registry;
 pub mod media;
 pub mod media_embed;
 pub mod middleware;

@@ -13,19 +13,36 @@ pub enum DdlError {
 /// `CREATE TABLE ct_<name> ( ... )`
 pub fn create_table(ct: &ContentType) -> Result<String, DdlError> {
     let table = table_name(&ct.name)?;
+    let localized = ct.localized();
     let mut cols: Vec<String> = vec![
         r#""id" UUID PRIMARY KEY DEFAULT gen_random_uuid()"#.into(),
         r#""created_at" TIMESTAMPTZ NOT NULL DEFAULT now()"#.into(),
         r#""updated_at" TIMESTAMPTZ NOT NULL DEFAULT now()"#.into(),
     ];
+    if localized {
+        cols.push(r#""document_id" uuid NOT NULL"#.into());
+        cols.push(r#""locale" text NOT NULL"#.into());
+    }
+    let mut scoped_unique: Vec<String> = Vec::new();
     for f in &ct.fields {
         if !f.is_stored_column() {
             continue;
         }
-        cols.push(column_def(&ct.name, f)?);
+        cols.push(column_def_localized(
+            &ct.name,
+            f,
+            localized,
+            &mut scoped_unique,
+        )?);
     }
     if ct.draft_publish() {
         cols.push(r#""published_at" TIMESTAMPTZ"#.into());
+    }
+    if localized {
+        cols.push(r#"UNIQUE ("document_id", "locale")"#.into());
+        for u in scoped_unique {
+            cols.push(u);
+        }
     }
     let body = cols.join(", ");
     Ok(format!("CREATE TABLE {table} ({body})"))
@@ -48,7 +65,7 @@ pub fn add_column(ct_name: &str, field: &Field) -> Result<String, DdlError> {
         ))));
     }
     let table = table_name(ct_name)?;
-    let def = column_def(ct_name, field)?;
+    let def = column_def(ct_name, field, false)?;
     Ok(format!("ALTER TABLE {table} ADD COLUMN {def}"))
 }
 
@@ -59,6 +76,35 @@ pub fn add_published_at_column(ct_name: &str) -> Result<String, DdlError> {
     let table = table_name(ct_name)?;
     Ok(format!(
         "ALTER TABLE {table} ADD COLUMN \"published_at\" TIMESTAMPTZ"
+    ))
+}
+
+/// Build the multi-statement DDL that turns a non-localized table into a
+/// localized one. Existing rows become the default-locale row of their own
+/// document (`document_id = id`, `locale = <default>`). Returns a single
+/// string of `;`-separated statements (executed together by the caller).
+///
+/// `default_locale` is validated by the caller (LocaleRegistry default is
+/// always a valid tag); it is single-quote-escaped here defensively.
+///
+/// v1 limitation: this only adds the `(document_id, locale)` dimension. Unlike
+/// `create_table` for a born-localized type, it does NOT rewrite existing
+/// per-column `UNIQUE` constraints to the scoped
+/// `UNIQUE (document_id, locale, <col>)` form — a column that was globally
+/// unique stays globally unique after localizing, so two locales of one
+/// document cannot share that column's value. Over-strict, never under-strict.
+pub fn localize_table(ct_name: &str, default_locale: &str) -> Result<String, DdlError> {
+    let table = table_name(ct_name)?;
+    let loc = default_locale.replace('\'', "''");
+    let uniq = quote_ident(&format!("{ct_name}_document_locale_uniq"))?;
+    Ok(format!(
+        "ALTER TABLE {table} ADD COLUMN \"document_id\" uuid; \
+         ALTER TABLE {table} ADD COLUMN \"locale\" text; \
+         UPDATE {table} SET \"document_id\" = \"id\", \"locale\" = '{loc}'; \
+         ALTER TABLE {table} ALTER COLUMN \"document_id\" SET NOT NULL; \
+         ALTER TABLE {table} ALTER COLUMN \"locale\" SET NOT NULL; \
+         ALTER TABLE {table} ADD CONSTRAINT {uniq} UNIQUE (\"document_id\", \"locale\"); \
+         CREATE INDEX ON {table} (\"document_id\")"
     ))
 }
 
@@ -156,9 +202,35 @@ pub fn drop_media_join_table(ct: &str, field: &str) -> Result<String, DdlError> 
     Ok(format!("DROP TABLE {jt}"))
 }
 
-fn column_def(ct_name: &str, f: &Field) -> Result<String, DdlError> {
+/// Wraps `column_def`. When the type is localized and the field carries a
+/// per-column `UNIQUE` — either a scalar field with `unique = true` or a
+/// one-to-one relation (whose uniqueness comes from its cardinality, not
+/// `f.unique`) — the per-column `UNIQUE` is suppressed in `column_def` and a
+/// table-level `UNIQUE ("document_id","locale","<col>")` is recorded in
+/// `scoped` instead, so two locales of the same document may share a value
+/// (e.g. a slug) and the same document may exist in multiple locales.
+fn column_def_localized(
+    ct_name: &str,
+    f: &Field,
+    localized: bool,
+    scoped: &mut Vec<String>,
+) -> Result<String, DdlError> {
+    use rustapi_core::Cardinality;
+    let is_one_to_one = f
+        .relation_meta()
+        .is_some_and(|m| m.cardinality == Cardinality::OneToOne);
+    let should_scope = localized && (f.unique || is_one_to_one);
+    let def = column_def(ct_name, f, should_scope)?;
+    if should_scope {
+        let col = quote_ident(&f.physical_column())?;
+        scoped.push(format!("UNIQUE (\"document_id\", \"locale\", {col})"));
+    }
+    Ok(def)
+}
+
+fn column_def(ct_name: &str, f: &Field, suppress_unique: bool) -> Result<String, DdlError> {
     if f.kind == FieldKind::Relation {
-        return relation_column_def(f);
+        return relation_column_def(f, suppress_unique);
     }
     if f.kind == FieldKind::Media {
         let col = quote_ident(&f.physical_column())?;
@@ -177,7 +249,11 @@ fn column_def(ct_name: &str, f: &Field) -> Result<String, DdlError> {
             String::new()
         };
         let not_null = if f.required { " NOT NULL" } else { "" };
-        let unique = if f.unique { " UNIQUE" } else { "" };
+        let unique = if f.unique && !suppress_unique {
+            " UNIQUE"
+        } else {
+            ""
+        };
         let values_lit = meta
             .values
             .iter()
@@ -208,7 +284,11 @@ fn column_def(ct_name: &str, f: &Field) -> Result<String, DdlError> {
             String::new()
         };
         let not_null = if f.required { " NOT NULL" } else { "" };
-        let unique = if f.unique { " UNIQUE" } else { "" };
+        let unique = if f.unique && !suppress_unique {
+            " UNIQUE"
+        } else {
+            ""
+        };
         return Ok(format!("{col} text{default_clause}{not_null}{unique}"));
     }
     let col = quote_ident(&f.name)?;
@@ -221,13 +301,13 @@ fn column_def(ct_name: &str, f: &Field) -> Result<String, DdlError> {
     if f.required {
         s.push_str(" NOT NULL");
     }
-    if f.unique {
+    if f.unique && !suppress_unique {
         s.push_str(" UNIQUE");
     }
     Ok(s)
 }
 
-fn relation_column_def(f: &Field) -> Result<String, DdlError> {
+fn relation_column_def(f: &Field, suppress_unique: bool) -> Result<String, DdlError> {
     use rustapi_core::Cardinality;
     let meta = f
         .relation_meta()
@@ -235,7 +315,7 @@ fn relation_column_def(f: &Field) -> Result<String, DdlError> {
     let col = quote_ident(&f.physical_column())?;
     let target = table_name(&meta.target)?;
     let not_null = if f.required { " NOT NULL" } else { "" };
-    let unique = if meta.cardinality == Cardinality::OneToOne {
+    let unique = if meta.cardinality == Cardinality::OneToOne && !suppress_unique {
         " UNIQUE"
     } else {
         ""
@@ -712,11 +792,134 @@ PRIMARY KEY (\"post_id\", \"asset_id\"))"
     }
 
     #[test]
+    fn create_table_emits_localization_columns_when_localized() {
+        let mut c = ct(vec![field("title", FieldKind::String)]);
+        c.options = json!({ "localized": true });
+        let sql = create_table(&c).unwrap();
+        assert!(sql.contains("\"document_id\" uuid NOT NULL"), "got: {sql}");
+        assert!(sql.contains("\"locale\" text NOT NULL"), "got: {sql}");
+        assert!(
+            sql.contains("UNIQUE (\"document_id\", \"locale\")"),
+            "got: {sql}"
+        );
+    }
+
+    #[test]
+    fn create_table_omits_localization_columns_when_not_localized() {
+        let sql = create_table(&ct(vec![field("title", FieldKind::String)])).unwrap();
+        assert!(!sql.contains("document_id"), "got: {sql}");
+        assert!(!sql.contains("\"locale\""), "got: {sql}");
+    }
+
+    #[test]
+    fn localized_scopes_unique_field_to_document_and_locale() {
+        let mut f = field("slug", FieldKind::String);
+        f.unique = true;
+        let mut c = ct(vec![f]);
+        c.options = json!({ "localized": true });
+        let sql = create_table(&c).unwrap();
+        assert!(!sql.contains("\"slug\" VARCHAR(255) UNIQUE"), "got: {sql}");
+        assert!(
+            sql.contains("UNIQUE (\"document_id\", \"locale\", \"slug\")"),
+            "got: {sql}"
+        );
+    }
+
+    #[test]
+    fn localized_unique_default_with_unique_substring_not_corrupted() {
+        // A unique String field whose DEFAULT contains " UNIQUE" must keep its
+        // default intact AND be scoped (no global UNIQUE left on the column).
+        let mut f = field("code", FieldKind::String);
+        f.unique = true;
+        f.default = json!("x UNIQUE");
+        let mut c = ct(vec![f]);
+        c.options = json!({ "localized": true });
+        let sql = create_table(&c).unwrap();
+        assert!(sql.contains("DEFAULT 'x UNIQUE'"), "default mangled: {sql}");
+        // No standalone per-column UNIQUE on the code column:
+        assert!(
+            !sql.contains("'x UNIQUE' NOT NULL UNIQUE"),
+            "global unique left: {sql}"
+        );
+        assert!(
+            sql.contains("UNIQUE (\"document_id\", \"locale\", \"code\")"),
+            "got: {sql}"
+        );
+    }
+
+    #[test]
+    fn localized_one_to_one_relation_is_scoped_not_global() {
+        let mut f = field("profile", FieldKind::Relation);
+        f.kind_meta = json!({"target":"profile","cardinality":"one_to_one"});
+        let mut c = ct(vec![f]);
+        c.options = json!({ "localized": true });
+        let sql = create_table(&c).unwrap();
+        // FK column present but NOT globally UNIQUE:
+        assert!(sql.contains("\"profile_id\" uuid"), "got: {sql}");
+        assert!(
+            !sql.contains("\"profile_id\" uuid UNIQUE"),
+            "global unique left: {sql}"
+        );
+        assert!(
+            sql.contains("UNIQUE (\"document_id\", \"locale\", \"profile_id\")"),
+            "got: {sql}"
+        );
+    }
+
+    #[test]
+    fn non_localized_one_to_one_still_global_unique() {
+        // Regression guard: non-localized one-to-one keeps its global UNIQUE.
+        let mut f = field("profile", FieldKind::Relation);
+        f.kind_meta = json!({"target":"profile","cardinality":"one_to_one"});
+        let sql = create_table(&ct(vec![f])).unwrap();
+        assert!(sql.contains("\"profile_id\" uuid UNIQUE"), "got: {sql}");
+    }
+
+    #[test]
     fn add_published_at_column_builds_alter() {
         let sql = add_published_at_column("post").unwrap();
         assert_eq!(
             sql,
             "ALTER TABLE \"ct_post\" ADD COLUMN \"published_at\" TIMESTAMPTZ"
         );
+    }
+
+    #[test]
+    fn localize_existing_builds_add_backfill_notnull_unique() {
+        let sql = localize_table("post", "en").unwrap();
+        assert!(
+            sql.contains("ADD COLUMN \"document_id\" uuid"),
+            "got: {sql}"
+        );
+        assert!(sql.contains("ADD COLUMN \"locale\" text"), "got: {sql}");
+        assert!(
+            sql.contains("UPDATE \"ct_post\" SET \"document_id\" = \"id\", \"locale\" = 'en'"),
+            "got: {sql}"
+        );
+        assert!(
+            sql.contains("ALTER COLUMN \"document_id\" SET NOT NULL"),
+            "got: {sql}"
+        );
+        assert!(
+            sql.contains("ALTER COLUMN \"locale\" SET NOT NULL"),
+            "got: {sql}"
+        );
+        assert!(
+            sql.contains(
+                "ADD CONSTRAINT \"post_document_locale_uniq\" UNIQUE (\"document_id\", \"locale\")"
+            ),
+            "got: {sql}"
+        );
+    }
+
+    #[test]
+    fn localize_table_escapes_default_locale() {
+        let sql = localize_table("post", "pt-br").unwrap();
+        assert!(sql.contains("\"locale\" = 'pt-br'"), "got: {sql}");
+    }
+
+    #[test]
+    fn localize_table_rejects_bad_table_name() {
+        assert!(localize_table("Bad Name", "en").is_err());
     }
 }

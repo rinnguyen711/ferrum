@@ -7,6 +7,8 @@ pub const RESERVED_FIELD_NAMES: &[&str] = &[
     "created_at",
     "updated_at",
     "published_at",
+    "document_id",
+    "locale",
     "select",
     "from",
     "where",
@@ -66,5 +68,13 @@ mod tests {
     #[test]
     fn published_at_is_reserved() {
         assert!(is_reserved("published_at"));
+    }
+
+    #[test]
+    fn localization_columns_are_reserved() {
+        // A user field named `document_id`/`locale` would collide with the
+        // columns added to localized content types — reject them up front.
+        assert!(is_reserved("document_id"));
+        assert!(is_reserved("locale"));
     }
 }
