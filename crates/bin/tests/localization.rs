@@ -437,14 +437,11 @@ async fn per_locale_publish_independence() {
 // 9. GraphQL locale matches REST: list with locale "fr" returns the fr row,
 //    falling back to en where fr is absent.
 //
-// NOTE: the GraphQL output object (`build_output_object`) exposes only `id`,
-// `created_at`, `updated_at`, and the user-defined content fields. The
-// localization metadata columns `document_id` and `locale` (and `published_at`)
-// are NOT registered as selectable GraphQL fields, even for localized types —
-// selecting them errors "Unknown field". This is a GraphQL-surface gap, not a
-// data bug: the resolver DOES apply the locale (verified below via `title`,
-// which is the locale-resolved value). We therefore prove locale resolution
-// through the visible `title` field rather than the unexposed `locale` column.
+// For localized types the GraphQL output object (`build_output_object`) now
+// registers `document_id` and `locale` as selectable String fields, mirroring
+// the REST surface (row_to_json). We assert locale resolution both directly via
+// the `locale` field (A's row resolves to "fr", B falls back to "en") and via
+// the locale-resolved `title` value.
 // ---------------------------------------------------------------------------
 #[tokio::test]
 async fn graphql_locale_matches_rest() {
@@ -465,11 +462,12 @@ async fn graphql_locale_matches_rest() {
     // Document B: en only.
     post_post(&app, "en", json!({"title": "B-en", "slug": "b-en"})).await;
 
-    // GraphQL: posts(locale: "fr"). Select only fields the schema exposes.
+    // GraphQL: posts(locale: "fr"). document_id/locale are now selectable on
+    // localized types, so read them directly.
     let r = app
         .admin(app.client.post(app.url("/api/graphql")))
         .json(&json!({
-            "query": "{ posts(locale:\"fr\"){ data{ id title } meta{ total } } }",
+            "query": "{ posts(locale:\"fr\"){ data{ id document_id locale title } meta{ total } } }",
             "variables": {}
         }))
         .send()
@@ -481,12 +479,8 @@ async fn graphql_locale_matches_rest() {
     // One row per document (locale-collapsed), matching REST.
     assert_eq!(body["data"]["posts"]["meta"]["total"], 2, "{body}");
 
-    let titles: Vec<&str> = body["data"]["posts"]["data"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter_map(|r| r["title"].as_str())
-        .collect();
+    let rows = body["data"]["posts"]["data"].as_array().unwrap();
+    let titles: Vec<&str> = rows.iter().filter_map(|r| r["title"].as_str()).collect();
     // A resolves to its fr title; B falls back to its en title — same resolution
     // as the REST `list_returns_one_row_per_document` test.
     assert!(titles.contains(&"A-fr"), "GraphQL A resolves fr: {body}");
@@ -497,6 +491,25 @@ async fn graphql_locale_matches_rest() {
     assert!(
         !titles.contains(&"A-en"),
         "fr row must shadow en row: {body}"
+    );
+
+    // The newly-exposed `locale` field reflects the resolved locale per row:
+    // A's row resolved to fr, B fell back to en. document_id matches doc_a for A.
+    let row_a = rows
+        .iter()
+        .find(|r| r["document_id"] == json!(doc_a))
+        .unwrap_or_else(|| panic!("document A present with selectable document_id: {body}"));
+    assert_eq!(row_a["locale"], "fr", "A's row resolved to fr: {body}");
+    assert_eq!(row_a["title"], "A-fr", "{body}");
+
+    let row_b = rows
+        .iter()
+        .find(|r| r["title"] == json!("B-en"))
+        .unwrap_or_else(|| panic!("document B present: {body}"));
+    assert_eq!(row_b["locale"], "en", "B falls back to en: {body}");
+    assert!(
+        row_b["document_id"].is_string(),
+        "B exposes a document_id: {body}"
     );
 }
 
