@@ -352,7 +352,10 @@ export function ContentList() {
           ) : (
             <>
               Entry{" "}
-              <Link className="rs-cm-flash-link" to={`/content/${type}/${flash.id}`}>
+              <Link
+                className="rs-cm-flash-link"
+                to={`/content/${type}/${flash.id}${loc && selectedLocale ? `?locale=${encodeURIComponent(selectedLocale)}` : ""}`}
+              >
                 #{shortId(flash.id)}
               </Link>{" "}
               has been {flash.verb} successfully.
