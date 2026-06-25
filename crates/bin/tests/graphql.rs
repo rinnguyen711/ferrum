@@ -880,3 +880,27 @@ async fn graphql_cursor_with_non_scalar_sort_is_bad_user_input() {
         "{body}"
     );
 }
+
+#[tokio::test]
+async fn graphql_offset_paging_still_works() {
+    let app = TestApp::spawn().await;
+    make_article(&app).await;
+    seed_articles(&app, 3).await;
+
+    let body = gql(
+        &app,
+        "query{ articles(page:1, pageSize:2, sort:\"title:asc\") \
+            { data{ title } meta{ page total nextCursor } } }",
+        json!({}),
+    )
+    .await;
+
+    assert_eq!(body["data"]["articles"]["data"].as_array().unwrap().len(), 2, "{body}");
+    assert_eq!(body["data"]["articles"]["meta"]["page"], 1, "{body}");
+    assert_eq!(body["data"]["articles"]["meta"]["total"], 3, "{body}");
+    // offset mode → no cursor token
+    assert!(
+        body["data"]["articles"]["meta"]["nextCursor"].is_null(),
+        "offset mode should not emit nextCursor: {body}"
+    );
+}
