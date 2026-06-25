@@ -240,6 +240,11 @@ pub fn build_schema(types: &[ContentType]) -> Result<Schema, SchemaError> {
             "total",
             TypeRef::named_nn(TypeRef::INT),
             resolve::json_field_resolver("total"),
+        ))
+        .field(Field::new(
+            "nextCursor",
+            TypeRef::named(TypeRef::STRING),
+            resolve::json_field_resolver("nextCursor"),
         ));
     builder = builder.register(meta);
 
@@ -284,6 +289,7 @@ pub fn build_schema(types: &[ContentType]) -> Result<Schema, SchemaError> {
                 "filters",
                 TypeRef::named(scalars::JSON_SCALAR),
             ))
+            .argument(InputValue::new("cursor", TypeRef::named(TypeRef::STRING)))
             .argument(InputValue::new("locale", TypeRef::named(TypeRef::STRING))),
         );
         query = query.field(
@@ -390,6 +396,22 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
+    }
+
+    #[test]
+    fn list_field_has_cursor_arg_and_meta_has_next_cursor() {
+        let schema = build_schema(&[article()]).expect("build");
+        let sdl = schema.sdl();
+        // list query exposes a cursor argument
+        assert!(
+            sdl.contains("cursor: String"),
+            "list field should accept a cursor arg: {sdl}"
+        );
+        // Meta envelope exposes nextCursor (nullable String)
+        assert!(
+            sdl.contains("nextCursor: String"),
+            "Meta should expose nextCursor: {sdl}"
+        );
     }
 
     #[test]
