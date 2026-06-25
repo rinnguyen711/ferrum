@@ -780,3 +780,67 @@ async fn graphql_cursor_first_returns_page_and_next_cursor() {
         "full page should carry a nextCursor token: {body}"
     );
 }
+
+#[tokio::test]
+async fn graphql_cursor_paginates_to_end_without_overlap() {
+    let app = TestApp::spawn().await;
+    make_article(&app).await;
+    seed_articles(&app, 5).await;
+
+    // Page 1
+    let p1 = gql(
+        &app,
+        "query{ articles(cursor:\"first\", pageSize:2, sort:\"title:asc\") \
+            { data{ title } meta{ nextCursor } } }",
+        json!({}),
+    )
+    .await;
+    let tok1 = p1["data"]["articles"]["meta"]["nextCursor"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let t1: Vec<String> = p1["data"]["articles"]["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["title"].as_str().unwrap().to_string())
+        .collect();
+
+    // Page 2 — pass the token back via a variable (avoids quoting issues)
+    let p2 = gql(
+        &app,
+        "query($c:String){ articles(cursor:$c, pageSize:2, sort:\"title:asc\") \
+            { data{ title } meta{ nextCursor } } }",
+        json!({ "c": tok1 }),
+    )
+    .await;
+    let t2: Vec<String> = p2["data"]["articles"]["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["title"].as_str().unwrap().to_string())
+        .collect();
+
+    // No overlap between page 1 and page 2.
+    for title in &t1 {
+        assert!(!t2.contains(title), "page2 overlaps page1 on {title}");
+    }
+
+    // Page 3 — final, 1 row of 5, short page → nextCursor null.
+    let tok2 = p2["data"]["articles"]["meta"]["nextCursor"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let p3 = gql(
+        &app,
+        "query($c:String){ articles(cursor:$c, pageSize:2, sort:\"title:asc\") \
+            { data{ title } meta{ nextCursor } } }",
+        json!({ "c": tok2 }),
+    )
+    .await;
+    assert_eq!(p3["data"]["articles"]["data"].as_array().unwrap().len(), 1, "{p3}");
+    assert!(
+        p3["data"]["articles"]["meta"]["nextCursor"].is_null(),
+        "last/short page should have null nextCursor: {p3}"
+    );
+}
