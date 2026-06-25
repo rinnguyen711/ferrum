@@ -838,7 +838,11 @@ async fn graphql_cursor_paginates_to_end_without_overlap() {
         json!({ "c": tok2 }),
     )
     .await;
-    assert_eq!(p3["data"]["articles"]["data"].as_array().unwrap().len(), 1, "{p3}");
+    assert_eq!(
+        p3["data"]["articles"]["data"].as_array().unwrap().len(),
+        1,
+        "{p3}"
+    );
     assert!(
         p3["data"]["articles"]["meta"]["nextCursor"].is_null(),
         "last/short page should have null nextCursor: {p3}"
@@ -895,7 +899,11 @@ async fn graphql_offset_paging_still_works() {
     )
     .await;
 
-    assert_eq!(body["data"]["articles"]["data"].as_array().unwrap().len(), 2, "{body}");
+    assert_eq!(
+        body["data"]["articles"]["data"].as_array().unwrap().len(),
+        2,
+        "{body}"
+    );
     assert_eq!(body["data"]["articles"]["meta"]["page"], 1, "{body}");
     assert_eq!(body["data"]["articles"]["meta"]["total"], 3, "{body}");
     // offset mode → no cursor token
