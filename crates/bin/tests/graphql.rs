@@ -844,3 +844,39 @@ async fn graphql_cursor_paginates_to_end_without_overlap() {
         "last/short page should have null nextCursor: {p3}"
     );
 }
+
+#[tokio::test]
+async fn graphql_cursor_with_non_scalar_sort_is_bad_user_input() {
+    let app = TestApp::spawn().await;
+    // Article variant with a json field (non-scalar, not keyset-sortable).
+    let r = app
+        .admin(app.client.post(app.url("/admin/content-types")))
+        .json(&json!({
+            "name": "article", "display_name": "Article",
+            "fields": [
+                {"name": "title", "kind": "string", "required": true},
+                {"name": "blob", "kind": "json"}
+            ]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 201, "{}", r.text().await.unwrap());
+
+    let body = gql(
+        &app,
+        "query{ articles(cursor:\"first\", sort:\"blob:asc\") \
+            { data{ title } } }",
+        json!({}),
+    )
+    .await;
+
+    assert!(
+        body["data"]["articles"].is_null(),
+        "errored field should null its data: {body}"
+    );
+    assert_eq!(
+        body["errors"][0]["extensions"]["code"], "BAD_USER_INPUT",
+        "{body}"
+    );
+}
