@@ -26,6 +26,22 @@ async fn make_article(app: &TestApp) {
     assert_eq!(r.status(), 201, "{}", r.text().await.unwrap());
 }
 
+/// Create `n` articles titled "a{i}". Returns nothing; entries exist after.
+async fn seed_articles(app: &TestApp, n: usize) {
+    for i in 0..n {
+        let body = gql(
+            app,
+            "mutation($t:String!){ createArticle(data:{title:$t}){ id } }",
+            json!({ "t": format!("a{i:03}") }),
+        )
+        .await;
+        assert!(
+            body["data"]["createArticle"]["id"].is_string(),
+            "seed failed: {body}"
+        );
+    }
+}
+
 /// POST a graphql op as the admin; assert HTTP 200; return parsed body.
 async fn gql(app: &TestApp, query: &str, variables: Value) -> Value {
     let r = app
@@ -737,4 +753,30 @@ async fn unique_violation_maps_to_conflict_code() {
     )
     .await;
     assert_eq!(b["errors"][0]["extensions"]["code"], "CONFLICT", "{b}");
+}
+
+// ---------------------------------------------------------------------------
+// Cursor pagination (Tasks 1-2) — first exercise of cursor:"first" + nextCursor.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn graphql_cursor_first_returns_page_and_next_cursor() {
+    let app = TestApp::spawn().await;
+    make_article(&app).await;
+    seed_articles(&app, 5).await;
+
+    let body = gql(
+        &app,
+        "query{ articles(cursor:\"first\", pageSize:2, sort:\"title:asc\") \
+            { data{ title } meta{ nextCursor } } }",
+        json!({}),
+    )
+    .await;
+
+    let data = &body["data"]["articles"]["data"];
+    assert_eq!(data.as_array().unwrap().len(), 2, "{body}");
+    assert!(
+        body["data"]["articles"]["meta"]["nextCursor"].is_string(),
+        "full page should carry a nextCursor token: {body}"
+    );
 }
