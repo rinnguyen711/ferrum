@@ -55,6 +55,68 @@ type ArticleList {
 type Meta { page: Int! pageSize: Int! total: Int! }
 ```
 
+## Pagination
+
+Collection queries support two pagination modes — offset (the default) and
+keyset/cursor — mirroring the [REST list behavior](rest-api.md#pagination).
+The same caveats apply, so the cursor token is opaque: don't parse it, just
+echo it back.
+
+### Offset pagination
+
+Pass `page` and `pageSize` to jump to any page. `meta.total` is the full row
+count, and `meta.nextCursor` is `null`.
+
+```graphql
+{
+  articles(page: 2, pageSize: 25, sort: "views:desc") {
+    data { id title views }
+    meta { page pageSize total nextCursor }
+  }
+}
+```
+
+### Keyset pagination
+
+Pass `cursor: "first"` to start a keyset traversal. Each response carries a
+`meta.nextCursor` token; pass it back as `cursor` on the next request. Keep
+following until `nextCursor` is `null`, which marks the last page. In keyset
+mode `total` is not returned.
+
+```graphql
+{
+  articles(cursor: "first", pageSize: 25, sort: "views:desc") {
+    data { id title views }
+    meta { nextCursor }
+  }
+}
+```
+
+Follow-up request — substitute the token from the previous `meta.nextCursor`:
+
+```graphql
+{
+  articles(cursor: "eyJ2aWV3cyI6MzA4LCJpZCI6Ii4uLiJ9", pageSize: 25, sort: "views:desc") {
+    data { id title views }
+    meta { nextCursor }
+  }
+}
+```
+
+`nextCursor` is `null` in offset mode and on the last (short) page.
+
+### Caveats
+
+- **Keyset needs a scalar sort column.** The `sort` field must be a scalar
+  kind: `string`/`text`, `integer`, `float`, `boolean`, `datetime`, or `uuid`.
+  Sorting on a non-scalar field (such as a `json` field) together with a
+  `cursor` returns a GraphQL error with `extensions.code` set to
+  `BAD_USER_INPUT`.
+- **`locale` forces offset mode.** Requesting a `locale` on a localized type
+  collapses to one row per document, which keyset paging can't traverse, so a
+  `cursor` is ignored and offset paging is used. See
+  [localized lists](rest-api.md#reading-localized-entries).
+
 ## Mutations
 
 Each collection type gets three mutations:

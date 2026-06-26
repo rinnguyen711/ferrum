@@ -26,6 +26,22 @@ async fn make_article(app: &TestApp) {
     assert_eq!(r.status(), 201, "{}", r.text().await.unwrap());
 }
 
+/// Create `n` articles titled "a{i}". Returns nothing; entries exist after.
+async fn seed_articles(app: &TestApp, n: usize) {
+    for i in 0..n {
+        let body = gql(
+            app,
+            "mutation($t:String!){ createArticle(data:{title:$t}){ id } }",
+            json!({ "t": format!("a{i:03}") }),
+        )
+        .await;
+        assert!(
+            body["data"]["createArticle"]["id"].is_string(),
+            "seed failed: {body}"
+        );
+    }
+}
+
 /// POST a graphql op as the admin; assert HTTP 200; return parsed body.
 async fn gql(app: &TestApp, query: &str, variables: Value) -> Value {
     let r = app
@@ -737,4 +753,162 @@ async fn unique_violation_maps_to_conflict_code() {
     )
     .await;
     assert_eq!(b["errors"][0]["extensions"]["code"], "CONFLICT", "{b}");
+}
+
+// ---------------------------------------------------------------------------
+// Cursor pagination (Tasks 1-2) — first exercise of cursor:"first" + nextCursor.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn graphql_cursor_first_returns_page_and_next_cursor() {
+    let app = TestApp::spawn().await;
+    make_article(&app).await;
+    seed_articles(&app, 5).await;
+
+    let body = gql(
+        &app,
+        "query{ articles(cursor:\"first\", pageSize:2, sort:\"title:asc\") \
+            { data{ title } meta{ nextCursor } } }",
+        json!({}),
+    )
+    .await;
+
+    let data = &body["data"]["articles"]["data"];
+    assert_eq!(data.as_array().unwrap().len(), 2, "{body}");
+    assert!(
+        body["data"]["articles"]["meta"]["nextCursor"].is_string(),
+        "full page should carry a nextCursor token: {body}"
+    );
+}
+
+#[tokio::test]
+async fn graphql_cursor_paginates_to_end_without_overlap() {
+    let app = TestApp::spawn().await;
+    make_article(&app).await;
+    seed_articles(&app, 5).await;
+
+    // Page 1
+    let p1 = gql(
+        &app,
+        "query{ articles(cursor:\"first\", pageSize:2, sort:\"title:asc\") \
+            { data{ title } meta{ nextCursor } } }",
+        json!({}),
+    )
+    .await;
+    let tok1 = p1["data"]["articles"]["meta"]["nextCursor"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let t1: Vec<String> = p1["data"]["articles"]["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["title"].as_str().unwrap().to_string())
+        .collect();
+
+    // Page 2 — pass the token back via a variable (avoids quoting issues)
+    let p2 = gql(
+        &app,
+        "query($c:String){ articles(cursor:$c, pageSize:2, sort:\"title:asc\") \
+            { data{ title } meta{ nextCursor } } }",
+        json!({ "c": tok1 }),
+    )
+    .await;
+    let t2: Vec<String> = p2["data"]["articles"]["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["title"].as_str().unwrap().to_string())
+        .collect();
+
+    // No overlap between page 1 and page 2.
+    for title in &t1 {
+        assert!(!t2.contains(title), "page2 overlaps page1 on {title}");
+    }
+
+    // Page 3 — final, 1 row of 5, short page → nextCursor null.
+    let tok2 = p2["data"]["articles"]["meta"]["nextCursor"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let p3 = gql(
+        &app,
+        "query($c:String){ articles(cursor:$c, pageSize:2, sort:\"title:asc\") \
+            { data{ title } meta{ nextCursor } } }",
+        json!({ "c": tok2 }),
+    )
+    .await;
+    assert_eq!(
+        p3["data"]["articles"]["data"].as_array().unwrap().len(),
+        1,
+        "{p3}"
+    );
+    assert!(
+        p3["data"]["articles"]["meta"]["nextCursor"].is_null(),
+        "last/short page should have null nextCursor: {p3}"
+    );
+}
+
+#[tokio::test]
+async fn graphql_cursor_with_non_scalar_sort_is_bad_user_input() {
+    let app = TestApp::spawn().await;
+    // Article variant with a json field (non-scalar, not keyset-sortable).
+    let r = app
+        .admin(app.client.post(app.url("/admin/content-types")))
+        .json(&json!({
+            "name": "article", "display_name": "Article",
+            "fields": [
+                {"name": "title", "kind": "string", "required": true},
+                {"name": "blob", "kind": "json"}
+            ]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 201, "{}", r.text().await.unwrap());
+
+    let body = gql(
+        &app,
+        "query{ articles(cursor:\"first\", sort:\"blob:asc\") \
+            { data{ title } } }",
+        json!({}),
+    )
+    .await;
+
+    assert!(
+        body["data"]["articles"].is_null(),
+        "errored field should null its data: {body}"
+    );
+    assert_eq!(
+        body["errors"][0]["extensions"]["code"], "BAD_USER_INPUT",
+        "{body}"
+    );
+}
+
+#[tokio::test]
+async fn graphql_offset_paging_still_works() {
+    let app = TestApp::spawn().await;
+    make_article(&app).await;
+    seed_articles(&app, 3).await;
+
+    let body = gql(
+        &app,
+        "query{ articles(page:1, pageSize:2, sort:\"title:asc\") \
+            { data{ title } meta{ page total nextCursor } } }",
+        json!({}),
+    )
+    .await;
+
+    assert_eq!(
+        body["data"]["articles"]["data"].as_array().unwrap().len(),
+        2,
+        "{body}"
+    );
+    assert_eq!(body["data"]["articles"]["meta"]["page"], 1, "{body}");
+    assert_eq!(body["data"]["articles"]["meta"]["total"], 3, "{body}");
+    // offset mode → no cursor token
+    assert!(
+        body["data"]["articles"]["meta"]["nextCursor"].is_null(),
+        "offset mode should not emit nextCursor: {body}"
+    );
 }

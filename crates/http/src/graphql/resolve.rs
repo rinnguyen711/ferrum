@@ -253,6 +253,7 @@ pub fn list_field(ct_name: String) -> impl Fn(ResolverContext) -> FieldFuture + 
         let page_size = opt_u32(&ctx, "pageSize");
         let sort = opt_string(&ctx, "sort");
         let locale = opt_string(&ctx, "locale");
+        let cursor = opt_string(&ctx, "cursor");
         let raw_query = ctx
             .args
             .get("filters")
@@ -280,7 +281,7 @@ pub fn list_field(ct_name: String) -> impl Fn(ResolverContext) -> FieldFuture + 
                 sort,
                 populate: None,
                 status: None,
-                cursor: None,
+                cursor,
                 with_count: None,
                 locale: None,
             };
