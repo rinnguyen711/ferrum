@@ -70,7 +70,7 @@ export function Dashboard() {
     <div className="rs-dash">
       <div className="rs-dash-hero">
         <div>
-          <p className="rs-dash-eyebrow rs-mono">Rustapi · workspace</p>
+          <p className="rs-dash-eyebrow rs-mono">Ferrum · workspace</p>
           <h1>Welcome back</h1>
           <p className="rs-dash-sub">
             {types?.length ?? 0} content types registered. The API is{" "}

@@ -40,14 +40,14 @@ In `crates/http/src/state.rs`, the existing top imports are:
 
 ```rust
 use async_trait::async_trait;
-use rustapi_core::{role_allows, Action, Event, Principal};
+use ferrum_core::{role_allows, Action, Event, Principal};
 ```
 
-Change the `rustapi_core` line to also bring in `Error`, and add `serde_json`:
+Change the `ferrum_core` line to also bring in `Error`, and add `serde_json`:
 
 ```rust
 use async_trait::async_trait;
-use rustapi_core::{role_allows, Action, Error, Event, Principal};
+use ferrum_core::{role_allows, Action, Error, Event, Principal};
 use serde_json::{Map, Value};
 ```
 
@@ -151,7 +151,7 @@ pub use state::{
 In `crates/bin/src/main.rs`, update the import on line 4:
 
 ```rust
-use rustapi_http::{build_router, mount_studio, resolve_provider, secret_key_from_env, AppConfig, AppState, NoopHook, NoopSink, RoleAuthz};
+use ferrum_http::{build_router, mount_studio, resolve_provider, secret_key_from_env, AppConfig, AppState, NoopHook, NoopSink, RoleAuthz};
 ```
 
 Then in the `AppState { .. }` literal (around line 41), add `hooks` after `events`:
@@ -167,7 +167,7 @@ Then in the `AppState { .. }` literal (around line 41), add `hooks` after `event
 The harness `AppState` literal must also compile. In `crates/bin/tests/common/mod.rs`, update the import:
 
 ```rust
-use rustapi_http::{build_router, resolve_provider, secret_key_from_env, AppConfig, AppState, NoopHook, NoopSink, RoleAuthz};
+use ferrum_http::{build_router, resolve_provider, secret_key_from_env, AppConfig, AppState, NoopHook, NoopSink, RoleAuthz};
 ```
 
 This task adds the field; the harness will be refactored to inject a custom hook in Task 3, but it must compile now. In the `AppState { .. }` literal inside `spawn_with_docs`, add `hooks` after `events`:
@@ -180,7 +180,7 @@ This task adds the field; the harness will be refactored to inject a custom hook
 
 - [ ] **Step 7: Verify it compiles**
 
-Run: `cargo build -p rustapi-http -p rustapi`
+Run: `cargo build -p ferrum-http -p ferrum`
 Expected: builds clean (warnings about unused `NoopHook` in tests are acceptable until Task 3).
 
 - [ ] **Step 8: Commit**
@@ -321,7 +321,7 @@ In `update`, the tail currently reads:
 
 - [ ] **Step 6: Verify existing behavior is unchanged**
 
-Run: `cargo test -p rustapi --test integration_content`
+Run: `cargo test -p ferrum --test integration_content`
 Expected: all tests pass (NoopHook is a no-op; create/update unchanged).
 
 - [ ] **Step 7: Commit**
@@ -340,10 +340,10 @@ git commit -m "feat(http): invoke WriteHook around content create/update"
 
 - [ ] **Step 1: Add the `WriteHook` import to the harness**
 
-In `crates/bin/tests/common/mod.rs`, update the `rustapi_http` import (set in Task 1 Step 6) to also bring in `WriteHook`:
+In `crates/bin/tests/common/mod.rs`, update the `ferrum_http` import (set in Task 1 Step 6) to also bring in `WriteHook`:
 
 ```rust
-use rustapi_http::{build_router, resolve_provider, secret_key_from_env, AppConfig, AppState, NoopHook, NoopSink, RoleAuthz, WriteHook};
+use ferrum_http::{build_router, resolve_provider, secret_key_from_env, AppConfig, AppState, NoopHook, NoopSink, RoleAuthz, WriteHook};
 ```
 
 Add `use std::sync::Arc;` is already present.
@@ -398,7 +398,7 @@ to:
 
 - [ ] **Step 4: Verify the harness still compiles and existing tests pass**
 
-Run: `cargo test -p rustapi --test integration_content`
+Run: `cargo test -p ferrum --test integration_content`
 Expected: all tests pass (default `spawn` still wires `NoopHook`).
 
 - [ ] **Step 5: Commit**
@@ -435,7 +435,7 @@ async-trait.workspace = true
 
 Verify it resolves:
 
-Run: `cargo build -p rustapi --tests`
+Run: `cargo build -p ferrum --tests`
 Expected: builds (no test file yet referencing it is fine).
 
 - [ ] **Step 1: Write the failing test file with a transforming hook**
@@ -447,8 +447,8 @@ mod common;
 
 use async_trait::async_trait;
 use common::TestApp;
-use rustapi_core::{Error, ValidationErrors};
-use rustapi_http::{WriteContext, WriteHook, WriteOp};
+use ferrum_core::{Error, ValidationErrors};
+use ferrum_http::{WriteContext, WriteHook, WriteOp};
 use serde_json::{json, Map, Value};
 use std::sync::Arc;
 
@@ -574,7 +574,7 @@ async fn before_write_output_is_revalidated() {
 
 These pass once Tasks 1–3 are in place (the hook is exercised end-to-end).
 
-Run: `cargo test -p rustapi --test write_hooks before_write`
+Run: `cargo test -p ferrum --test write_hooks before_write`
 Expected: `before_write_transforms_body` PASS, `before_write_rejects_request` PASS, `before_write_output_is_revalidated` PASS.
 
 If `before_write_rejects_request` returns a status other than 422, check how
@@ -677,7 +677,7 @@ async fn write_context_reports_create_then_update() {
 
 - [ ] **Step 3: Run the full file**
 
-Run: `cargo test -p rustapi --test write_hooks`
+Run: `cargo test -p ferrum --test write_hooks`
 Expected: all six tests pass:
 `before_write_transforms_body`, `before_write_rejects_request`,
 `before_write_output_is_revalidated`,

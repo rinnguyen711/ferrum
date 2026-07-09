@@ -1,15 +1,15 @@
-//! Integration test for `rustapi migrate`.
-//! Spins two ephemeral Postgres containers: source (user tables) and target (Rustapi DB).
+//! Integration test for `ferrum migrate`.
+//! Spins two ephemeral Postgres containers: source (user tables) and target (Ferrum DB).
 
 mod common;
 use common::TestApp;
-use rustapi::migrate::{
+use ferrum::migrate::{
     apply::{apply_schema, copy_rows},
     inspect::{inspect_table, list_tables},
     map::Mapping,
     prompt::{ColumnDecision, TablePlan},
 };
-use rustapi_core::field::FieldKind;
+use ferrum_core::field::FieldKind;
 use sqlx::postgres::PgPoolOptions;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::postgres::Postgres as PgImage;

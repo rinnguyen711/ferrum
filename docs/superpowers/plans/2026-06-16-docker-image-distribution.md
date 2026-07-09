@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Let devs run rustapi from a published GHCR image instead of cloning the repo, via a manual multi-arch publish workflow, a standalone prod compose file, and updated docs.
+**Goal:** Let devs run ferrum from a published GHCR image instead of cloning the repo, via a manual multi-arch publish workflow, a standalone prod compose file, and updated docs.
 
-**Architecture:** The existing `Dockerfile` already builds a standalone, runnable image (distroless, UI embedded, sane env defaults). We add: (1) a manually-triggered GitHub Actions workflow that builds and pushes to `ghcr.io/<owner>/rustapi`, (2) additive OCI labels on the Dockerfile, (3) a `docker-compose.prod.yml` that pulls the image, (4) docs showing `docker run`. No binary or runtime behavior changes.
+**Architecture:** The existing `Dockerfile` already builds a standalone, runnable image (distroless, UI embedded, sane env defaults). We add: (1) a manually-triggered GitHub Actions workflow that builds and pushes to `ghcr.io/<owner>/ferrum`, (2) additive OCI labels on the Dockerfile, (3) a `docker-compose.prod.yml` that pulls the image, (4) docs showing `docker run`. No binary or runtime behavior changes.
 
 **Tech Stack:** GitHub Actions, `docker/build-push-action` + buildx + QEMU, GHCR, Docker Compose, mdBook.
 
@@ -37,14 +37,14 @@ Open `Dockerfile`. The runtime stage currently is:
 # ─── Stage 3: runtime ──────────────────────────────────────────────
 FROM gcr.io/distroless/cc-debian12:nonroot AS runtime
 WORKDIR /app
-COPY --from=rust /tmp/rustapi /usr/local/bin/rustapi
+COPY --from=rust /tmp/ferrum /usr/local/bin/ferrum
 COPY --from=ui /ui/dist /app/studio
-ENV RUSTAPI_BIND=0.0.0.0:8080 \
-    RUSTAPI_STUDIO_DIR=/app/studio \
-    RUSTAPI_LOG=info
+ENV FERRUM_BIND=0.0.0.0:8080 \
+    FERRUM_STUDIO_DIR=/app/studio \
+    FERRUM_LOG=info
 EXPOSE 8080
 USER nonroot
-ENTRYPOINT ["/usr/local/bin/rustapi"]
+ENTRYPOINT ["/usr/local/bin/ferrum"]
 ```
 
 Replace it with (adds three `ARG`s and OCI `LABEL`s before `ENV`; everything else unchanged):
@@ -53,7 +53,7 @@ Replace it with (adds three `ARG`s and OCI `LABEL`s before `ENV`; everything els
 # ─── Stage 3: runtime ──────────────────────────────────────────────
 FROM gcr.io/distroless/cc-debian12:nonroot AS runtime
 WORKDIR /app
-COPY --from=rust /tmp/rustapi /usr/local/bin/rustapi
+COPY --from=rust /tmp/ferrum /usr/local/bin/ferrum
 COPY --from=ui /ui/dist /app/studio
 
 # Provenance — populated by CI via --build-arg. Default to empty so local
@@ -64,26 +64,26 @@ ARG OCI_VERSION=""
 LABEL org.opencontainers.image.source=$OCI_SOURCE \
       org.opencontainers.image.revision=$OCI_REVISION \
       org.opencontainers.image.version=$OCI_VERSION \
-      org.opencontainers.image.title="rustapi" \
+      org.opencontainers.image.title="ferrum" \
       org.opencontainers.image.description="Headless CMS framework in Rust"
 
-ENV RUSTAPI_BIND=0.0.0.0:8080 \
-    RUSTAPI_STUDIO_DIR=/app/studio \
-    RUSTAPI_LOG=info
+ENV FERRUM_BIND=0.0.0.0:8080 \
+    FERRUM_STUDIO_DIR=/app/studio \
+    FERRUM_LOG=info
 EXPOSE 8080
 USER nonroot
-ENTRYPOINT ["/usr/local/bin/rustapi"]
+ENTRYPOINT ["/usr/local/bin/ferrum"]
 ```
 
 - [ ] **Step 2: Verify the image still builds**
 
-Run: `docker build -t rustapi:local .`
-Expected: build completes; final line `=> => naming to docker.io/library/rustapi:local`.
+Run: `docker build -t ferrum:local .`
+Expected: build completes; final line `=> => naming to docker.io/library/ferrum:local`.
 
 - [ ] **Step 3: Verify labels are present**
 
-Run: `docker inspect rustapi:local --format '{{json .Config.Labels}}'`
-Expected: JSON containing `org.opencontainers.image.title":"rustapi"` (source/revision/version present but empty for a local build).
+Run: `docker inspect ferrum:local --format '{{json .Config.Labels}}'`
+Expected: JSON containing `org.opencontainers.image.title":"ferrum"` (source/revision/version present but empty for a local build).
 
 - [ ] **Step 4: Commit**
 
@@ -162,7 +162,7 @@ jobs:
           context: .
           push: true
           platforms: ${{ steps.plat.outputs.platforms }}
-          tags: ghcr.io/${{ github.repository_owner }}/rustapi:${{ inputs.tag }}
+          tags: ghcr.io/${{ github.repository_owner }}/ferrum:${{ inputs.tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
@@ -197,32 +197,32 @@ Create `docker-compose.prod.yml` with exactly (mirrors `docker-compose.yml` but 
 ```yaml
 # Production-style compose: pulls the published image instead of building from
 # source. Replace <owner> with the GitHub owner once the image is published.
-# Set a real secret before `up`:  export RUSTAPI_JWT_SECRET=$(openssl rand -hex 32)
+# Set a real secret before `up`:  export FERRUM_JWT_SECRET=$(openssl rand -hex 32)
 services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: rustapi
-      POSTGRES_PASSWORD: rustapi
-      POSTGRES_DB: rustapi
+      POSTGRES_USER: ferrum
+      POSTGRES_PASSWORD: ferrum
+      POSTGRES_DB: ferrum
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U rustapi"]
+      test: ["CMD-SHELL", "pg_isready -U ferrum"]
       interval: 2s
       timeout: 3s
       retries: 20
     volumes:
       - pgdata:/var/lib/postgresql/data
 
-  rustapi:
-    image: ghcr.io/<owner>/rustapi:latest
+  ferrum:
+    image: ghcr.io/<owner>/ferrum:latest
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://rustapi:rustapi@postgres:5432/rustapi
-      RUSTAPI_JWT_SECRET: ${RUSTAPI_JWT_SECRET:?set RUSTAPI_JWT_SECRET to a 32+ char secret}
+      DATABASE_URL: postgres://ferrum:ferrum@postgres:5432/ferrum
+      FERRUM_JWT_SECRET: ${FERRUM_JWT_SECRET:?set FERRUM_JWT_SECRET to a 32+ char secret}
       # Optional: ship TOML content types by mounting a dir and pointing here.
-      # RUSTAPI_SCHEMA_DIR: /schema
+      # FERRUM_SCHEMA_DIR: /schema
     # volumes:
     #   - ./my-schema:/schema:ro
     ports:
@@ -234,12 +234,12 @@ volumes:
 
 - [ ] **Step 2: Validate compose parses and the required-var guard fires when secret is unset**
 
-Run: `env -u RUSTAPI_JWT_SECRET docker compose -f docker-compose.prod.yml config`
-Expected: command FAILS with an error mentioning `set RUSTAPI_JWT_SECRET to a 32+ char secret`.
+Run: `env -u FERRUM_JWT_SECRET docker compose -f docker-compose.prod.yml config`
+Expected: command FAILS with an error mentioning `set FERRUM_JWT_SECRET to a 32+ char secret`.
 
 - [ ] **Step 3: Validate compose parses when the secret is set**
 
-Run: `RUSTAPI_JWT_SECRET=$(openssl rand -hex 32) docker compose -f docker-compose.prod.yml config >/dev/null && echo "config ok"`
+Run: `FERRUM_JWT_SECRET=$(openssl rand -hex 32) docker compose -f docker-compose.prod.yml config >/dev/null && echo "config ok"`
 Expected: `config ok`.
 
 - [ ] **Step 4: Commit**
@@ -253,15 +253,15 @@ git commit -m "build: add standalone prod compose pulling published image"
 
 ### Task 4: End-to-end verify the locally-built image runs standalone
 
-This task uses the `rustapi:local` image from Task 1. It does NOT touch the user's dev DB — it runs its own throwaway Postgres container on port 5433.
+This task uses the `ferrum:local` image from Task 1. It does NOT touch the user's dev DB — it runs its own throwaway Postgres container on port 5433.
 
 **Files:** none (verification only).
 
 - [ ] **Step 1: Start a throwaway Postgres**
 
 ```bash
-docker run -d --name rustapi-verify-pg \
-  -e POSTGRES_USER=rustapi -e POSTGRES_PASSWORD=rustapi -e POSTGRES_DB=rustapi \
+docker run -d --name ferrum-verify-pg \
+  -e POSTGRES_USER=ferrum -e POSTGRES_PASSWORD=ferrum -e POSTGRES_DB=ferrum \
   -p 5433:5432 postgres:16-alpine
 ```
 Expected: prints a container id. Wait ~3s for it to accept connections.
@@ -270,18 +270,18 @@ Expected: prints a container id. Wait ~3s for it to accept connections.
 
 ```bash
 docker run --rm --network host \
-  -e DATABASE_URL=postgres://rustapi:rustapi@localhost:5433/rustapi \
-  rustapi:local
+  -e DATABASE_URL=postgres://ferrum:ferrum@localhost:5433/ferrum \
+  ferrum:local
 ```
-Expected: container exits non-zero; logs contain `RUSTAPI_JWT_SECRET must be set`.
+Expected: container exits non-zero; logs contain `FERRUM_JWT_SECRET must be set`.
 
 - [ ] **Step 3: Run the image the way the docs tell users to**
 
 ```bash
-docker run -d --name rustapi-verify --network host \
-  -e DATABASE_URL=postgres://rustapi:rustapi@localhost:5433/rustapi \
-  -e RUSTAPI_JWT_SECRET=$(openssl rand -hex 32) \
-  rustapi:local
+docker run -d --name ferrum-verify --network host \
+  -e DATABASE_URL=postgres://ferrum:ferrum@localhost:5433/ferrum \
+  -e FERRUM_JWT_SECRET=$(openssl rand -hex 32) \
+  ferrum:local
 sleep 4
 curl -s http://localhost:8080/healthz
 ```
@@ -299,7 +299,7 @@ Expected: `[201]` with a JSON body containing `"roles":["admin"]`.
 - [ ] **Step 5: Tear down verify containers**
 
 ```bash
-docker rm -f rustapi-verify rustapi-verify-pg
+docker rm -f ferrum-verify ferrum-verify-pg
 ```
 Expected: prints both container names. (Nothing to commit — verification only.)
 
@@ -315,7 +315,7 @@ Expected: prints both container names. (Nothing to commit — verification only.
 In `book/src/getting-started/installation.md`, replace the current intro (lines 3-5):
 
 ```markdown
-You can run Rustapi two ways: with Docker Compose for a one-command demo, or
+You can run Ferrum two ways: with Docker Compose for a one-command demo, or
 with cargo against your own Postgres. Start with Docker — it's the fastest path
 to a running server.
 ```
@@ -323,7 +323,7 @@ to a running server.
 with:
 
 ```markdown
-The fastest way to run Rustapi is the published Docker image — no clone, no
+The fastest way to run Ferrum is the published Docker image — no clone, no
 build. You can also build from source with Docker Compose, or run the backend
 directly with cargo.
 
@@ -334,9 +334,9 @@ give it a JWT secret (required, at least 32 characters):
 
 ```sh
 docker run -p 8080:8080 \
-  -e DATABASE_URL=postgres://USER:PASS@HOST:5432/rustapi \
-  -e RUSTAPI_JWT_SECRET=$(openssl rand -hex 32) \
-  ghcr.io/<owner>/rustapi:latest
+  -e DATABASE_URL=postgres://USER:PASS@HOST:5432/ferrum \
+  -e FERRUM_JWT_SECRET=$(openssl rand -hex 32) \
+  ghcr.io/<owner>/ferrum:latest
 ```
 
 The server listens on `http://localhost:8080`, with the admin UI at `/studio`.
@@ -350,7 +350,7 @@ To run the image and a database together, use the standalone compose file. Set a
 secret first, then start it:
 
 ```sh
-export RUSTAPI_JWT_SECRET=$(openssl rand -hex 32)
+export FERRUM_JWT_SECRET=$(openssl rand -hex 32)
 docker compose -f docker-compose.prod.yml up
 ```
 
@@ -406,20 +406,20 @@ git commit -m "docs: add published-image install path"
 In `README.md`, immediately after the `## Docker (quickest demo)` heading line (line 15), insert this block before the existing `docker compose up --build` instructions:
 
 ```markdown
-The quickest way to try Rustapi without cloning is the published image. Point it
+The quickest way to try Ferrum without cloning is the published image. Point it
 at a Postgres database and give it a JWT secret (required, 32+ chars):
 
 ```sh
 docker run -p 8080:8080 \
-  -e DATABASE_URL=postgres://USER:PASS@HOST:5432/rustapi \
-  -e RUSTAPI_JWT_SECRET=$(openssl rand -hex 32) \
-  ghcr.io/<owner>/rustapi:latest
+  -e DATABASE_URL=postgres://USER:PASS@HOST:5432/ferrum \
+  -e FERRUM_JWT_SECRET=$(openssl rand -hex 32) \
+  ghcr.io/<owner>/ferrum:latest
 ```
 
 Or run image + database together with the standalone compose file:
 
 ```sh
-export RUSTAPI_JWT_SECRET=$(openssl rand -hex 32)
+export FERRUM_JWT_SECRET=$(openssl rand -hex 32)
 docker compose -f docker-compose.prod.yml up
 ```
 
@@ -433,7 +433,7 @@ To build from source instead:
 
 - [ ] **Step 2: Confirm the README still renders sane**
 
-Run: `grep -n "ghcr.io/<owner>/rustapi" README.md`
+Run: `grep -n "ghcr.io/<owner>/ferrum" README.md`
 Expected: at least one matching line.
 
 - [ ] **Step 3: Commit**

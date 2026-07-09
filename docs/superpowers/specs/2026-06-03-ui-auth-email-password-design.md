@@ -12,7 +12,7 @@ against the real backend.
 
 ## Background
 
-Backend slice 1 (merged, `0fe6eaa`) removed `RUSTAPI_ADMIN_KEY` and the
+Backend slice 1 (merged, `0fe6eaa`) removed `FERRUM_ADMIN_KEY` and the
 `x-api-key` header entirely. The UI still authenticates with `x-api-key`, so
 studio login is currently broken against the new backend. The UI auth layer is
 well-isolated, so the migration is contained to a few seam files plus one small

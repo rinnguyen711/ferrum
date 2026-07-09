@@ -5,7 +5,7 @@ Status: roadmap (item #1 scheduled for implementation next)
 
 ## Context
 
-rustapi is a typed, runtime-schema headless CMS. It adapts well as a
+ferrum is a typed, runtime-schema headless CMS. It adapts well as a
 drop-in CRUD API + admin for the common headless-CMS shape: runtime schema
 CRUD, rich field kinds (relation, media, enum, json, email/url/slug),
 Strapi-style filters + pagination + populate, draft/publish, JWT auth,

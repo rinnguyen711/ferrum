@@ -5,7 +5,7 @@ Status: approved (design)
 
 ## Problem
 
-Today the only way to run rustapi is to clone the repo and
+Today the only way to run ferrum is to clone the repo and
 `docker compose up --build`, which builds the image from source. That's a
 contributor workflow, not a user one. Headless-CMS users expect "pull an image,
 point it at Postgres, run" (Strapi/Directus/Payload all ship images). We have no
@@ -14,20 +14,20 @@ pending name collision anyway).
 
 ## Goal
 
-Devs run rustapi without cloning:
+Devs run ferrum without cloning:
 
 ```sh
 docker run -p 8080:8080 \
   -e DATABASE_URL=postgres://... \
-  -e RUSTAPI_JWT_SECRET=$(openssl rand -hex 32) \
-  ghcr.io/<owner>/rustapi:latest
+  -e FERRUM_JWT_SECRET=$(openssl rand -hex 32) \
+  ghcr.io/<owner>/ferrum:latest
 ```
 
 …or via a standalone compose file that pulls the published image.
 
 ## Decisions
 
-- **Registry: GHCR** (`ghcr.io/<owner>/rustapi`). Free for public, native to
+- **Registry: GHCR** (`ghcr.io/<owner>/ferrum`). Free for public, native to
   GitHub Actions, auth via built-in `GITHUB_TOKEN` — no extra secrets.
 - **Owner is parameterized.** No git remote is configured yet. CI uses
   `${{ github.repository_owner }}`, so the image path self-resolves once the
@@ -37,7 +37,7 @@ docker run -p 8080:8080 \
   publish is a manual "Run workflow" click. Push/`v*`-tag triggers can be wired
   later; the workflow is written so that's a small change.
 - **JWT secret stays required.** The binary refuses to boot without
-  `RUSTAPI_JWT_SECRET` (min 32 chars) — see `crates/bin/src/config.rs:32`. We do
+  `FERRUM_JWT_SECRET` (min 32 chars) — see `crates/bin/src/config.rs:32`. We do
   NOT add a static default to the binary: a hardcoded default secret in
   open-source code is an auth-bypass vulnerability (anyone could forge admin
   JWTs against un-overridden deployments). Fail-closed is correct. The prod
@@ -50,9 +50,9 @@ needs no functional changes:
 
 - distroless `cc-debian12:nonroot` runtime
 - UI bundle embedded at `/app/studio`
-- defaults: `RUSTAPI_BIND=0.0.0.0:8080`, `RUSTAPI_STUDIO_DIR=/app/studio`,
-  `RUSTAPI_LOG=info`
-- no schema baked in — schema is opt-in via a `RUSTAPI_SCHEMA_DIR` mount
+- defaults: `FERRUM_BIND=0.0.0.0:8080`, `FERRUM_STUDIO_DIR=/app/studio`,
+  `FERRUM_LOG=info`
+- no schema baked in — schema is opt-in via a `FERRUM_SCHEMA_DIR` mount
 
 The only Dockerfile change is **additive OCI labels** for provenance
 (`org.opencontainers.image.source`, `.revision`, `.version`), populated from
@@ -81,7 +81,7 @@ File: `.github/workflows/docker-publish.yml`
   4. `docker/login-action` → `ghcr.io`, user `${{ github.actor }}`, password
      `${{ secrets.GITHUB_TOKEN }}`
   5. `docker/metadata-action` → image
-     `ghcr.io/${{ github.repository_owner }}/rustapi`, tag from input
+     `ghcr.io/${{ github.repository_owner }}/ferrum`, tag from input
   6. `docker/build-push-action`:
      - `platforms`: `linux/amd64` by default; `linux/amd64,linux/arm64` when
        `multiarch == true`
@@ -101,12 +101,12 @@ File: `docker-compose.prod.yml`
 
 Mirrors the dev `docker-compose.yml` structure, with these differences:
 
-- `rustapi` service uses `image: ghcr.io/<owner>/rustapi:latest`, not `build: .`.
-- **No schema volume / `RUSTAPI_SCHEMA_DIR`.** The image runs standalone; schema
+- `ferrum` service uses `image: ghcr.io/<owner>/ferrum:latest`, not `build: .`.
+- **No schema volume / `FERRUM_SCHEMA_DIR`.** The image runs standalone; schema
   is opt-in and the user adds a mount + env var if they want TOML schema sync. A
   commented stub shows how.
-- `RUSTAPI_JWT_SECRET` is a **required** var via
-  `${RUSTAPI_JWT_SECRET:?set RUSTAPI_JWT_SECRET to a 32+ char secret}` — no demo
+- `FERRUM_JWT_SECRET` is a **required** var via
+  `${FERRUM_JWT_SECRET:?set FERRUM_JWT_SECRET to a 32+ char secret}` — no demo
   default leaks into a prod-named file.
 - Postgres service stays the same: `postgres:16-alpine`, healthcheck, named
   `pgdata` volume.
@@ -127,14 +127,14 @@ Mirrors the dev `docker-compose.yml` structure, with these differences:
 The published image doesn't exist yet, so we verify the *command and env shape*
 against a **locally-built** image instead of a pulled one:
 
-1. `docker build -t rustapi:local .`
+1. `docker build -t ferrum:local .`
 2. Run it with the documented `docker run` flags against a throwaway Postgres
    (own container, NOT the user's dev DB), confirm `/healthz` is ok and
    `/auth/setup` works.
-3. Validate `docker-compose.prod.yml` with `image: rustapi:local` swapped in:
+3. Validate `docker-compose.prod.yml` with `image: ferrum:local` swapped in:
    `docker compose -f docker-compose.prod.yml config` (lint) and a real
    `up`/healthz round trip.
-4. Confirm the `:?` guard: `up` with `RUSTAPI_JWT_SECRET` unset must fail with a
+4. Confirm the `:?` guard: `up` with `FERRUM_JWT_SECRET` unset must fail with a
    clear message.
 5. `cd book && mdbook build` passes clean (no broken links, no leftover TODO).
 
@@ -147,6 +147,6 @@ first manual `workflow_dispatch` run on GitHub to confirm push.
 - Auto-build triggers on push/tag (deferred; workflow is structured to add them).
 - Docker Hub publishing.
 - crates.io / prebuilt standalone binaries / Helm chart.
-- Opt-in `RUSTAPI_JWT_SECRET=generate` auto-secret mode (noted as a possible
+- Opt-in `FERRUM_JWT_SECRET=generate` auto-secret mode (noted as a possible
   future DX improvement; not part of this work).
 - Any change to the binary's secret-handling behavior.

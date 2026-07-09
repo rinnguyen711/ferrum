@@ -6,7 +6,7 @@ use crate::state::AppState;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::{Extension, Json};
-use rustapi_core::{Error, Principal, ValidationErrors};
+use ferrum_core::{Error, Principal, ValidationErrors};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -63,7 +63,7 @@ pub async fn setup(
 /// POST /auth/login — verify creds, return a signed JWT.
 pub async fn login(
     State(state): State<AppState>,
-    Extension(ctx): Extension<rustapi_core::RequestContext>,
+    Extension(ctx): Extension<ferrum_core::RequestContext>,
     Json(body): Json<Credentials>,
 ) -> Result<Json<Value>, ApiError> {
     let found = users::find_by_email(&state.pool, &body.email)
@@ -83,9 +83,9 @@ pub async fn login(
     let user = match (ok, found) {
         (true, Some(u)) => u,
         _ => {
-            let entry = rustapi_core::AuditEntry::new(
+            let entry = ferrum_core::AuditEntry::new(
                 "auth.login_failed",
-                rustapi_core::Actor::system(body.email.clone()),
+                ferrum_core::Actor::system(body.email.clone()),
             )
             .target("session", body.email.clone(), body.email.clone())
             .failed()
@@ -106,10 +106,10 @@ pub async fn login(
     )
     .map_err(anyhow_internal)?;
 
-    let success = rustapi_core::AuditEntry::new(
+    let success = ferrum_core::AuditEntry::new(
         "auth.login",
-        rustapi_core::Actor {
-            kind: rustapi_core::ActorKind::User,
+        ferrum_core::Actor {
+            kind: ferrum_core::ActorKind::User,
             id: Some(user.id),
             label: user.email.clone(),
         },

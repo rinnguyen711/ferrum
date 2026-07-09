@@ -1,7 +1,7 @@
 //! In-memory cache of the locale set, mirroring `RoleRegistry`. Hydrated at
 //! boot from `_locales` and reloaded on every mutation.
 
-use rustapi_sql::Locale;
+use ferrum_sql::Locale;
 use tokio::sync::RwLock;
 
 #[derive(Debug, Default)]

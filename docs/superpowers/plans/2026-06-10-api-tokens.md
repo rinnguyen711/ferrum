@@ -243,7 +243,7 @@ git commit -m "feat(core): Principal::ApiToken variant + action_to_scope"
 In `crates/http/src/state.rs`, update the import and `RoleAuthz`:
 
 ```rust
-use rustapi_core::{action_to_scope, role_allows, Action, Error, Event, Principal};
+use ferrum_core::{action_to_scope, role_allows, Action, Error, Event, Principal};
 ```
 
 Replace the `RoleAuthz` impl:
@@ -421,7 +421,7 @@ git commit -m "feat(sql): api_tokens — insert, list, delete, lookup_by_hash"
 
 - [ ] **Step 1: Add `sha2` dep to `crates/http/Cargo.toml`**
 
-The `sha2` hashing is done in `rustapi_sql::hash_token`, so `crates/http` just needs `rustapi_sql` (already a dep). No Cargo change needed — skip to Step 2.
+The `sha2` hashing is done in `ferrum_sql::hash_token`, so `crates/http` just needs `ferrum_sql` (already a dep). No Cargo change needed — skip to Step 2.
 
 - [ ] **Step 2: Replace `require_auth` in `crates/http/src/middleware/auth.rs`**
 
@@ -436,8 +436,8 @@ use axum::http::HeaderMap;
 use axum::middleware::Next;
 use axum::response::Response;
 use chrono::Utc;
-use rustapi_core::{Error, Principal};
-use rustapi_sql::lookup_by_hash;
+use ferrum_core::{Error, Principal};
+use ferrum_sql::lookup_by_hash;
 
 pub async fn require_auth(
     State(state): State<AppState>,
@@ -522,8 +522,8 @@ use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Extension, Json, Router};
 use chrono::{DateTime, Utc};
-use rustapi_core::{Action, Error, Principal};
-use rustapi_sql::{delete_token, insert_token, list_tokens};
+use ferrum_core::{Action, Error, Principal};
+use ferrum_sql::{delete_token, insert_token, list_tokens};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -589,12 +589,12 @@ async fn create(
 
     if body.scopes.is_empty() {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::field("scopes", "at least one scope is required"),
+            ferrum_core::ValidationErrors::field("scopes", "at least one scope is required"),
         )));
     }
     if body.name.trim().is_empty() {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::field("name", "name is required"),
+            ferrum_core::ValidationErrors::field("name", "name is required"),
         )));
     }
 
@@ -636,7 +636,7 @@ fn generate_bytes() -> [u8; 32] {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
     // Use rand if available; otherwise fall back to uuid entropy.
-    // rustapi already depends on `uuid` with the `v4` feature which uses
+    // ferrum already depends on `uuid` with the `v4` feature which uses
     // getrandom internally — borrow that entropy via two v4 UUIDs.
     let a = uuid::Uuid::new_v4();
     let b = uuid::Uuid::new_v4();

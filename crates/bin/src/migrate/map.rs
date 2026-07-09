@@ -1,4 +1,4 @@
-use rustapi_core::field::FieldKind;
+use ferrum_core::field::FieldKind;
 
 /// Inferred mapping for a single source column.
 #[derive(Debug, Clone, PartialEq)]
@@ -50,7 +50,7 @@ pub fn infer(pg_type: &str, udt_name: &str, is_fk: bool) -> Mapping {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustapi_core::field::FieldKind;
+    use ferrum_core::field::FieldKind;
 
     #[test]
     fn text_variants_map_to_string() {

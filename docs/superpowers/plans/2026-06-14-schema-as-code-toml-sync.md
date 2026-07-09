@@ -4,7 +4,7 @@
 
 **Goal:** Sync content types from declarative TOML file(s) into the database on server startup, with TOML as the source of truth for the types it defines.
 
-**Architecture:** A new `rustapi_schema::sync` module loads + parses TOML into existing `NewContentType` values, computes a pure diff against the live registry, and applies create/patch/delete actions through the existing transactional `SchemaService`. Synced types are flagged `managed` in their `options` jsonb; the HTTP layer rejects edits to managed types (409) and the admin UI greys them out. The legacy demo seed is removed entirely.
+**Architecture:** A new `ferrum_schema::sync` module loads + parses TOML into existing `NewContentType` values, computes a pure diff against the live registry, and applies create/patch/delete actions through the existing transactional `SchemaService`. Synced types are flagged `managed` in their `options` jsonb; the HTTP layer rejects edits to managed types (409) and the admin UI greys them out. The legacy demo seed is removed entirely.
 
 **Tech Stack:** Rust (axum, sqlx, serde, `toml` crate), React + TypeScript admin UI. Tests via `cargo test` (unit + testcontainers integration) and `pnpm typecheck`.
 
@@ -19,7 +19,7 @@
 - Modify: `crates/schema/Cargo.toml` — add `toml` dependency.
 - Modify: `Cargo.toml` (workspace) — add `toml` to `[workspace.dependencies]`.
 - Modify: `crates/core/src/content_type.rs` — add `ContentType::managed()` helper.
-- Modify: `crates/bin/src/config.rs` — add `schema_path`, `schema_sync_mode`; remove `seed`/`RUSTAPI_SEED`.
+- Modify: `crates/bin/src/config.rs` — add `schema_path`, `schema_sync_mode`; remove `seed`/`FERRUM_SEED`.
 - Modify: `crates/bin/src/main.rs` — replace seed call with sync call; drop `mod seed`.
 - Delete: `crates/bin/src/seed.rs`.
 - Modify: `crates/http/src/routes/schema.rs` — managed-type guard in `patch_one`/`delete_one`.
@@ -53,7 +53,7 @@ toml.workspace = true
 
 - [ ] **Step 3: Verify it builds**
 
-Run: `cargo build -p rustapi-schema`
+Run: `cargo build -p ferrum-schema`
 Expected: compiles clean (toml unused-import warning is fine until Task 3).
 
 - [ ] **Step 4: Commit**
@@ -96,7 +96,7 @@ fn managed_defaults_and_reads() {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cargo test -p rustapi-core managed_defaults_and_reads`
+Run: `cargo test -p ferrum-core managed_defaults_and_reads`
 Expected: FAIL — `no method named managed found`.
 
 - [ ] **Step 3: Add the helper**
@@ -116,7 +116,7 @@ In `impl ContentType`, directly after the `draft_publish` method (after line 70)
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cargo test -p rustapi-core managed_defaults_and_reads`
+Run: `cargo test -p ferrum-core managed_defaults_and_reads`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -157,7 +157,7 @@ Create `crates/schema/src/sync.rs`:
 //! the database to match on startup. See
 //! docs/superpowers/specs/2026-06-14-schema-as-code-toml-sync-design.md.
 
-use rustapi_core::{ContentType, Error, Field, NewContentType, ValidationErrors};
+use ferrum_core::{ContentType, Error, Field, NewContentType, ValidationErrors};
 use serde::Deserialize;
 
 /// How aggressively sync reconciles the DB toward the TOML.
@@ -171,7 +171,7 @@ pub enum SyncMode {
 }
 
 impl SyncMode {
-    /// Parse from the `RUSTAPI_SCHEMA_SYNC` env value. Unknown/empty → Additive.
+    /// Parse from the `FERRUM_SCHEMA_SYNC` env value. Unknown/empty → Additive.
     pub fn from_env_str(s: &str) -> Self {
         match s.trim().to_ascii_lowercase().as_str() {
             "full" => SyncMode::Full,
@@ -194,7 +194,7 @@ struct TomlContentType {
     name: String,
     display_name: String,
     #[serde(default)]
-    kind: rustapi_core::ContentTypeKind,
+    kind: ferrum_core::ContentTypeKind,
     #[serde(default)]
     options: serde_json::Value,
     #[serde(default, rename = "field")]
@@ -223,7 +223,7 @@ pub(crate) fn parse_toml(doc: &str) -> Result<Vec<NewContentType>, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustapi_core::FieldKind;
+    use ferrum_core::FieldKind;
 
     #[test]
     fn parses_type_with_fields() {
@@ -260,7 +260,7 @@ options = { draft_publish = true }
 
 - [ ] **Step 3: Run tests to verify they pass**
 
-Run: `cargo test -p rustapi-schema sync::tests`
+Run: `cargo test -p ferrum-schema sync::tests`
 Expected: PASS (`parses_type_with_fields`, `sync_mode_from_env`).
 
 Note: `ContentType` import is unused at this step — allow the warning; consumed in Task 4.
@@ -350,7 +350,7 @@ pub(crate) fn plan_sync(
                 if mode == SyncMode::Full {
                     for f in &existing.fields {
                         if !des_fields.contains_key(f.name.as_str())
-                            && !rustapi_core::is_system_column(&f.name)
+                            && !ferrum_core::is_system_column(&f.name)
                         {
                             drop_fields.push(f.name.clone());
                         }
@@ -416,7 +416,7 @@ Then add to `mod tests`:
             display_name: name.into(),
             fields,
             options: json!({}),
-            kind: rustapi_core::ContentTypeKind::Collection,
+            kind: ferrum_core::ContentTypeKind::Collection,
         }
     }
 
@@ -427,7 +427,7 @@ Then add to `mod tests`:
             display_name: name.into(),
             fields,
             options: if managed { json!({ "managed": true }) } else { json!({}) },
-            kind: rustapi_core::ContentTypeKind::Collection,
+            kind: ferrum_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -518,8 +518,8 @@ Then add to `mod tests`:
 
 - [ ] **Step 2: Run tests to verify they fail/compile-error first**
 
-Run: `cargo test -p rustapi-schema sync::tests`
-Expected: at first this won't compile because `rustapi_core::is_system_column` may not be re-exported. If the compiler reports `is_system_column` not found, do Step 3.
+Run: `cargo test -p ferrum-schema sync::tests`
+Expected: at first this won't compile because `ferrum_core::is_system_column` may not be re-exported. If the compiler reports `is_system_column` not found, do Step 3.
 
 - [ ] **Step 3: Ensure `is_system_column` is reachable from core**
 
@@ -537,7 +537,7 @@ pub use system::is_system_column;
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo test -p rustapi-schema sync::tests`
+Run: `cargo test -p ferrum-schema sync::tests`
 Expected: PASS — all diff tests green.
 
 - [ ] **Step 5: Commit**
@@ -718,7 +718,7 @@ pub async fn sync_from_path(
                 if add_fields.is_empty() && drop_fields.is_empty() && !options_changed {
                     continue;
                 }
-                let patch = rustapi_core::PatchContentType {
+                let patch = ferrum_core::PatchContentType {
                     display_name: None,
                     add_fields,
                     drop_fields,
@@ -736,7 +736,7 @@ pub async fn sync_from_path(
                 if let Some(existing) = schemas.registry().get(&name).await {
                     let mut obj = existing.options.as_object().cloned().unwrap_or_default();
                     obj.remove("managed");
-                    let patch = rustapi_core::PatchContentType {
+                    let patch = ferrum_core::PatchContentType {
                         display_name: None,
                         add_fields: vec![],
                         drop_fields: vec![],
@@ -758,12 +758,12 @@ pub async fn sync_from_path(
 
 - [ ] **Step 3: Run unit tests to verify they pass**
 
-Run: `cargo test -p rustapi-schema sync::tests`
+Run: `cargo test -p ferrum-schema sync::tests`
 Expected: PASS including `order_creates_places_target_before_dependent`.
 
 - [ ] **Step 4: Build the whole schema crate**
 
-Run: `cargo build -p rustapi-schema`
+Run: `cargo build -p ferrum-schema`
 Expected: clean build (no unused `ContentType`/`SchemaService` warnings now).
 
 - [ ] **Step 5: Commit**
@@ -786,10 +786,10 @@ In `crates/bin/src/config.rs`, in the `Config` struct, delete the `seed` field a
 
 ```rust
     /// Path to a schema TOML file or a directory of `*.toml`. Unset = sync off.
-    /// `RUSTAPI_SCHEMA_DIR` wins over `RUSTAPI_SCHEMA_FILE` if both are set.
+    /// `FERRUM_SCHEMA_DIR` wins over `FERRUM_SCHEMA_FILE` if both are set.
     pub schema_path: Option<String>,
-    /// Reconcile aggressiveness. `RUSTAPI_SCHEMA_SYNC`: additive (default) | full.
-    pub schema_sync_mode: rustapi_schema::SyncMode,
+    /// Reconcile aggressiveness. `FERRUM_SCHEMA_SYNC`: additive (default) | full.
+    pub schema_sync_mode: ferrum_schema::SyncMode,
 ```
 
 - [ ] **Step 2: Update `from_env`**
@@ -797,37 +797,37 @@ In `crates/bin/src/config.rs`, in the `Config` struct, delete the `seed` field a
 In `from_env`, delete the `seed` block (lines 48-52). Before the `Ok(Self { ... })`, add:
 
 ```rust
-        let schema_path = std::env::var("RUSTAPI_SCHEMA_DIR")
+        let schema_path = std::env::var("FERRUM_SCHEMA_DIR")
             .ok()
             .filter(|s| !s.is_empty())
             .or_else(|| {
-                std::env::var("RUSTAPI_SCHEMA_FILE")
+                std::env::var("FERRUM_SCHEMA_FILE")
                     .ok()
                     .filter(|s| !s.is_empty())
             });
-        let schema_sync_mode = std::env::var("RUSTAPI_SCHEMA_SYNC")
+        let schema_sync_mode = std::env::var("FERRUM_SCHEMA_SYNC")
             .ok()
-            .map(|s| rustapi_schema::SyncMode::from_env_str(&s))
+            .map(|s| ferrum_schema::SyncMode::from_env_str(&s))
             .unwrap_or_default();
 ```
 
 In the `Ok(Self { ... })` literal, remove `seed,` and add `schema_path,` and `schema_sync_mode,`.
 
-- [ ] **Step 3: Confirm `rustapi-schema` is a dep of the bin crate**
+- [ ] **Step 3: Confirm `ferrum-schema` is a dep of the bin crate**
 
-Run: `grep -n "rustapi-schema" crates/bin/Cargo.toml`
-Expected: a line present (main.rs already imports it). If missing, add `rustapi-schema = { path = "../schema" }` under `[dependencies]`.
+Run: `grep -n "ferrum-schema" crates/bin/Cargo.toml`
+Expected: a line present (main.rs already imports it). If missing, add `ferrum-schema = { path = "../schema" }` under `[dependencies]`.
 
 - [ ] **Step 4: Build the bin crate (expect a known break in main.rs)**
 
-Run: `cargo build -p rustapi 2>&1 | head -30`
+Run: `cargo build -p ferrum 2>&1 | head -30`
 Expected: FAIL — `main.rs` and `seed.rs` still reference `cfg.seed` / the seed module. Fixed in Task 7. Confirm `config.rs` itself has no errors (errors should point at `main.rs`/`seed.rs`, not `config.rs`).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add crates/bin/src/config.rs crates/bin/Cargo.toml
-git commit -m "feat(bin): config for RUSTAPI_SCHEMA_DIR/FILE/SYNC, drop RUSTAPI_SEED"
+git commit -m "feat(bin): config for FERRUM_SCHEMA_DIR/FILE/SYNC, drop FERRUM_SEED"
 ```
 
 ---
@@ -846,7 +846,7 @@ git rm crates/bin/src/seed.rs
 
 - [ ] **Step 2: Remove the seed import and module from `main.rs`**
 
-In `crates/bin/src/main.rs`, delete `use rustapi::seed;` (line 3). Check whether `seed` is declared as a module in the bin library root rather than `main.rs`:
+In `crates/bin/src/main.rs`, delete `use ferrum::seed;` (line 3). Check whether `seed` is declared as a module in the bin library root rather than `main.rs`:
 
 Run: `grep -rn "mod seed\|pub mod seed" crates/bin/src/`
 
@@ -866,7 +866,7 @@ with:
 
 ```rust
     if let Some(path) = &cfg.schema_path {
-        rustapi_schema::sync::sync_from_path(&schemas, path, cfg.schema_sync_mode)
+        ferrum_schema::sync::sync_from_path(&schemas, path, cfg.schema_sync_mode)
             .await
             .context("schema sync")?;
         registry
@@ -881,7 +881,7 @@ with:
 
 - [ ] **Step 4: Build the bin crate**
 
-Run: `cargo build -p rustapi`
+Run: `cargo build -p ferrum`
 Expected: clean build.
 
 - [ ] **Step 5: Workspace check**
@@ -933,7 +933,7 @@ In `delete_one`, after the `confirm` check block (after line 125, before `state.
 
 - [ ] **Step 3: Build the http crate**
 
-Run: `cargo build -p rustapi-http`
+Run: `cargo build -p ferrum-http`
 Expected: clean. (`Error` and `state.schemas.registry()` are already in scope — `Error` is imported at line 9-12; `registry()` is used elsewhere in this file.)
 
 - [ ] **Step 4: Commit**
@@ -956,7 +956,7 @@ git commit -m "feat(http): reject PATCH/DELETE on schema-file-managed content ty
 Create `examples/schema/blog/author.toml`:
 
 ```toml
-# Blog preset — Author. Synced via RUSTAPI_SCHEMA_DIR=examples/schema/blog
+# Blog preset — Author. Synced via FERRUM_SCHEMA_DIR=examples/schema/blog
 [[content_type]]
 name = "author"
 display_name = "Author"
@@ -1028,7 +1028,7 @@ Add a test to `crates/schema/src/sync.rs` `mod tests` that loads the dir (relati
 
 - [ ] **Step 4: Run the fixture test**
 
-Run: `cargo test -p rustapi-schema sync::tests::blog_preset_parses_and_orders`
+Run: `cargo test -p ferrum-schema sync::tests::blog_preset_parses_and_orders`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1060,8 +1060,8 @@ Create `crates/schema/tests/sync_it.rs`. Replace the `setup_pool()` body with th
 ```rust
 //! End-to-end TOML sync against an ephemeral Postgres (testcontainers).
 
-use rustapi_schema::{SchemaRegistry, SchemaService, SyncMode};
-use rustapi_schema::sync::sync_from_path;
+use ferrum_schema::{SchemaRegistry, SchemaService, SyncMode};
+use ferrum_schema::sync::sync_from_path;
 use sqlx::PgPool;
 use std::io::Write;
 
@@ -1133,11 +1133,11 @@ async fn additive_ignores_db_only_field_full_drops_it() {
     sync_from_path(&svc, path, SyncMode::Additive).await.unwrap();
 
     // Add a field to `author` via the service (simulates a UI edit / extra column).
-    let patch = rustapi_core::PatchContentType {
+    let patch = ferrum_core::PatchContentType {
         display_name: None,
-        add_fields: vec![rustapi_core::Field {
+        add_fields: vec![ferrum_core::Field {
             name: "nickname".into(),
-            kind: rustapi_core::FieldKind::String,
+            kind: ferrum_core::FieldKind::String,
             required: false,
             unique: false,
             default: serde_json::Value::Null,
@@ -1184,7 +1184,7 @@ Also ensure `tokio` test macros and `testcontainers` are available as dev-deps t
 
 - [ ] **Step 4: Run the integration tests (Docker must be running)**
 
-Run: `cargo test -p rustapi-schema --test sync_it`
+Run: `cargo test -p ferrum-schema --test sync_it`
 Expected: PASS (spawns ephemeral Postgres). If `setup_pool` still has `todo!()`, replace it with the real harness from Step 1 first.
 
 - [ ] **Step 5: Commit**
@@ -1254,7 +1254,7 @@ git commit -m "feat(ui): lock schema-file-managed content types in the builder"
 
 - [ ] **Step 1: Document the feature**
 
-In `README.md`, in the environment-variables section, add `RUSTAPI_SCHEMA_DIR`, `RUSTAPI_SCHEMA_FILE`, `RUSTAPI_SCHEMA_SYNC`. Add a short "Schema as code" section covering: TOML format (point to `examples/schema/blog/`), `additive` vs `full`, that synced types are read-only in the UI, that **rename is not supported** (change in UI or drop+add in full mode, with data loss), and that a sync error aborts boot. Note `RUSTAPI_SEED` was removed.
+In `README.md`, in the environment-variables section, add `FERRUM_SCHEMA_DIR`, `FERRUM_SCHEMA_FILE`, `FERRUM_SCHEMA_SYNC`. Add a short "Schema as code" section covering: TOML format (point to `examples/schema/blog/`), `additive` vs `full`, that synced types are read-only in the UI, that **rename is not supported** (change in UI or drop+add in full mode, with data loss), and that a sync error aborts boot. Note `FERRUM_SEED` was removed.
 
 - [ ] **Step 2: Commit**
 
@@ -1284,9 +1284,9 @@ Expected: clean.
 
 - [ ] **Step 4: Manual smoke (optional but recommended)**
 
-With Docker Postgres + `DATABASE_URL`/`RUSTAPI_JWT_SECRET` set:
+With Docker Postgres + `DATABASE_URL`/`FERRUM_JWT_SECRET` set:
 
-Run: `RUSTAPI_SCHEMA_DIR=examples/schema/blog cargo run -p rustapi`
+Run: `FERRUM_SCHEMA_DIR=examples/schema/blog cargo run -p ferrum`
 Expected: log line `schema sync complete` with `created=2`; `/admin/content-types` lists `author` + `post`; PATCH on `post` returns 409.
 
 - [ ] **Step 5: Final commit (only if fmt changed files)**

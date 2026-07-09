@@ -1,4 +1,4 @@
-/* ============ Rustapi CMS — design tokens + components ============ */
+/* ============ Ferrum CMS — design tokens + components ============ */
 :root {
   --ui-font: "IBM Plex Sans", system-ui, sans-serif;
   --mono-font: "IBM Plex Mono", ui-monospace, monospace;
@@ -851,7 +851,7 @@ select.rs-input { appearance: none; background-image: url("data:image/svg+xml,%3
   cursor: not-allowed;
 }
 
-/* ── Users & roles (ported from design/rustapi/styles.css) ──────────── */
+/* ── Users & roles (ported from design/ferrum/styles.css) ──────────── */
 .rs-rolebar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
 .rs-rolebar-item { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px 7px 11px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); font-size: 12.5px; box-shadow: var(--shadow-sm); cursor: pointer; }
 .rs-rolebar-item.is-active { border-color: var(--accent); }

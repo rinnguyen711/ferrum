@@ -1,6 +1,6 @@
-/* Rustapi docs theme — maps mdBook theme variables onto the DESIGN.md token set.
+/* Ferrum docs theme — maps mdBook theme variables onto the DESIGN.md token set.
    Source of truth for these values: /DESIGN.md. Use tokens, never re-enter a hex
-   a token already covers. Only `.light` (rustapi light) and `.navy` (rustapi dark)
+   a token already covers. Only `.light` (ferrum light) and `.navy` (ferrum dark)
    are themed; coal/rust/ayu fall back to mdBook defaults. */
 
 @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap");

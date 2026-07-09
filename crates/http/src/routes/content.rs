@@ -11,9 +11,9 @@ use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
-use rustapi_core::{Action, ContentType, Error, Event, Principal, ValidationErrors};
-use rustapi_schema::bind::{bind_all, bind_all_as};
-use rustapi_sql::PublishFilter;
+use ferrum_core::{Action, ContentType, Error, Event, Principal, ValidationErrors};
+use ferrum_schema::bind::{bind_all, bind_all_as};
+use ferrum_sql::PublishFilter;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use sqlx::Row;
@@ -65,7 +65,7 @@ async fn ensure(
 // ---------------------------------------------------------------------------
 // Shared, non-axum entry CRUD core. The REST handlers below are thin wrappers
 // over these; GraphQL resolvers (Task 3+) call the same functions. These
-// return `rustapi_core::Error` directly so both surfaces map errors as they
+// return `ferrum_core::Error` directly so both surfaces map errors as they
 // see fit. Behavior is identical to the previous inline handler bodies.
 // ---------------------------------------------------------------------------
 
@@ -87,8 +87,8 @@ async fn authorize_collection(
         .get(ct_name)
         .await
         .ok_or(Error::NotFound)?;
-    if ct.kind == rustapi_core::ContentTypeKind::Single {
-        return Err(Error::Validation(rustapi_core::ValidationErrors::single(
+    if ct.kind == ferrum_core::ContentTypeKind::Single {
+        return Err(Error::Validation(ferrum_core::ValidationErrors::single(
             "use /api/single-types/:name for single types",
         )));
     }
@@ -130,7 +130,7 @@ pub(crate) async fn list_entries(
     // deferred. `requested_locale` doubles as the meta.locale echo.
     let requested_locale = if ct.localized() {
         Some(state.locales.resolve(locale).await.ok_or_else(|| {
-            Error::Validation(rustapi_core::ValidationErrors::single("unknown locale"))
+            Error::Validation(ferrum_core::ValidationErrors::single("unknown locale"))
         })?)
     } else {
         None
@@ -172,7 +172,7 @@ pub(crate) async fn list_entries(
 
     let (list_sql, list_binds) = if let Some(requested) = requested_locale.as_deref() {
         let default = state.locales.default_code().await;
-        rustapi_sql::select_list_localized(
+        ferrum_sql::select_list_localized(
             &ct.name,
             &filter,
             &opts.sort,
@@ -183,7 +183,7 @@ pub(crate) async fn list_entries(
             &default,
         )
     } else if keyset_mode {
-        rustapi_sql::select_list_keyset_status(
+        ferrum_sql::select_list_keyset_status(
             &ct.name,
             &filter,
             &opts.sort,
@@ -192,7 +192,7 @@ pub(crate) async fn list_entries(
             publish,
         )
     } else {
-        rustapi_sql::select_list_status(
+        ferrum_sql::select_list_status(
             &ct.name,
             &filter,
             &opts.sort,
@@ -242,9 +242,9 @@ pub(crate) async fn list_entries(
         // use the same locale predicate or it overcounts multi-locale documents.
         let (count_sql, count_binds) = if let Some(requested) = requested_locale.as_deref() {
             let default = state.locales.default_code().await;
-            rustapi_sql::count_localized(&ct.name, &filter, publish, requested, &default)
+            ferrum_sql::count_localized(&ct.name, &filter, publish, requested, &default)
         } else {
-            rustapi_sql::count_status(&ct.name, &filter, publish)
+            ferrum_sql::count_status(&ct.name, &filter, publish)
         }
         .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
         let cq = bind_all_as(sqlx::query_as::<_, (i64,)>(&count_sql), &count_binds);
@@ -284,12 +284,12 @@ pub async fn get_entry(
         // `id` is the document_id here. Read the requested-locale row, falling
         // back to the default-locale row when absent.
         let requested = state.locales.resolve(locale).await.ok_or_else(|| {
-            Error::Validation(rustapi_core::ValidationErrors::single("unknown locale"))
+            Error::Validation(ferrum_core::ValidationErrors::single("unknown locale"))
         })?;
         let default = state.locales.default_code().await;
-        rustapi_sql::select_by_document(&ct.name, id, &requested, &default)
+        ferrum_sql::select_by_document(&ct.name, id, &requested, &default)
     } else {
-        rustapi_sql::select_by_id(&ct.name, id)
+        ferrum_sql::select_by_id(&ct.name, id)
     }
     .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
     let q = bind_all(sqlx::query(&sql), &binds);
@@ -319,7 +319,7 @@ pub async fn get_entry(
 pub async fn create_entry(
     state: &AppState,
     principal: &Principal,
-    req_ctx: &rustapi_core::RequestContext,
+    req_ctx: &ferrum_core::RequestContext,
     ct_name: &str,
     body: Map<String, Value>,
     locale: Option<&str>,
@@ -331,11 +331,11 @@ pub async fn create_entry(
     // localization columns. Both are injected into the binds below.
     let (requested_locale, provided_doc_id) = if ct.localized() {
         let requested = state.locales.resolve(locale).await.ok_or_else(|| {
-            Error::Validation(rustapi_core::ValidationErrors::single("unknown locale"))
+            Error::Validation(ferrum_core::ValidationErrors::single("unknown locale"))
         })?;
         let doc_id = match body.get("document_id") {
             Some(Value::String(s)) => Some(Uuid::parse_str(s).map_err(|_| {
-                Error::Validation(rustapi_core::ValidationErrors::single(
+                Error::Validation(ferrum_core::ValidationErrors::single(
                     "invalid document_id uuid",
                 ))
             })?),
@@ -358,10 +358,10 @@ pub async fn create_entry(
 
     let (mut binds_map, checks, links, media_checks, media_links) = body_to_binds(&ct, body, true)?;
     if let Some(requested) = requested_locale {
-        binds_map.insert("locale".into(), rustapi_core::BoundValue::Str(requested));
+        binds_map.insert("locale".into(), ferrum_core::BoundValue::Str(requested));
         binds_map.insert(
             "document_id".into(),
-            rustapi_core::BoundValue::Uuid(provided_doc_id.unwrap_or_else(uuid::Uuid::new_v4)),
+            ferrum_core::BoundValue::Uuid(provided_doc_id.unwrap_or_else(uuid::Uuid::new_v4)),
         );
     }
     verify_relation_targets_exist(state, &checks)
@@ -377,7 +377,7 @@ pub async fn create_entry(
         .await
         .map_err(|e| e.0)?;
 
-    let (sql, binds) = rustapi_sql::insert(&ct, &binds_map)
+    let (sql, binds) = ferrum_sql::insert(&ct, &binds_map)
         .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
 
     let mut tx = state.pool.begin().await.map_err(|e| db(e).0)?;
@@ -427,7 +427,7 @@ pub async fn create_entry(
 pub async fn update_entry(
     state: &AppState,
     principal: &Principal,
-    req_ctx: &rustapi_core::RequestContext,
+    req_ctx: &ferrum_core::RequestContext,
     ct_name: &str,
     id: Uuid,
     body: Map<String, Value>,
@@ -440,9 +440,9 @@ pub async fn update_entry(
     // row is absent). For non-localized types `id` is already the row id.
     let row_id = if ct.localized() {
         let requested = state.locales.resolve(locale).await.ok_or_else(|| {
-            Error::Validation(rustapi_core::ValidationErrors::single("unknown locale"))
+            Error::Validation(ferrum_core::ValidationErrors::single("unknown locale"))
         })?;
-        let sql = rustapi_sql::select_row_id_exact(&ct.name)
+        let sql = ferrum_sql::select_row_id_exact(&ct.name)
             .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
         let found: Option<Uuid> = sqlx::query_scalar::<_, Uuid>(&sql)
             .bind(id)
@@ -500,18 +500,18 @@ pub async fn update_entry(
             continue;
         }
         if !binds_map.contains_key(&f.name) && !f.required {
-            let null_kind = if f.kind == rustapi_core::FieldKind::Relation
-                || f.kind == rustapi_core::FieldKind::Media
+            let null_kind = if f.kind == ferrum_core::FieldKind::Relation
+                || f.kind == ferrum_core::FieldKind::Media
             {
-                rustapi_core::FieldKind::Uuid
+                ferrum_core::FieldKind::Uuid
             } else {
                 f.kind
             };
-            binds_map.insert(f.name.clone(), rustapi_core::BoundValue::Null(null_kind));
+            binds_map.insert(f.name.clone(), ferrum_core::BoundValue::Null(null_kind));
         }
     }
 
-    let (sql, binds) = rustapi_sql::update(&ct, row_id, &binds_map)
+    let (sql, binds) = ferrum_sql::update(&ct, row_id, &binds_map)
         .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
 
     let mut tx = state.pool.begin().await.map_err(|e| db(e).0)?;
@@ -560,7 +560,7 @@ pub async fn update_entry(
 pub async fn delete_entry(
     state: &AppState,
     principal: &Principal,
-    req_ctx: &rustapi_core::RequestContext,
+    req_ctx: &ferrum_core::RequestContext,
     ct_name: &str,
     id: Uuid,
     locale: Option<&str>,
@@ -570,9 +570,9 @@ pub async fn delete_entry(
     // fallback) and delete that. Non-localized: `id` is the row id.
     let row_id = if ct.localized() {
         let requested = state.locales.resolve(locale).await.ok_or_else(|| {
-            Error::Validation(rustapi_core::ValidationErrors::single("unknown locale"))
+            Error::Validation(ferrum_core::ValidationErrors::single("unknown locale"))
         })?;
-        let sql = rustapi_sql::select_row_id_exact(&ct.name)
+        let sql = ferrum_sql::select_row_id_exact(&ct.name)
             .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
         let found: Option<Uuid> = sqlx::query_scalar::<_, Uuid>(&sql)
             .bind(id)
@@ -584,7 +584,7 @@ pub async fn delete_entry(
     } else {
         id
     };
-    let (sql, binds) = rustapi_sql::delete(ct_name, row_id)
+    let (sql, binds) = ferrum_sql::delete(ct_name, row_id)
         .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
     let q = bind_all(sqlx::query(&sql), &binds);
     let result = q.execute(&state.pool).await.map_err(|e| db(e).0)?;
@@ -646,7 +646,7 @@ async fn create(
     Path(ct_name): Path<String>,
     Query(params): Query<GetParams>,
     axum::extract::Extension(principal): axum::extract::Extension<Principal>,
-    axum::extract::Extension(ctx): axum::extract::Extension<rustapi_core::RequestContext>,
+    axum::extract::Extension(ctx): axum::extract::Extension<ferrum_core::RequestContext>,
     Json(body): Json<Map<String, Value>>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     let record = create_entry(
@@ -687,7 +687,7 @@ async fn update(
     Path((ct_name, id)): Path<(String, Uuid)>,
     Query(params): Query<GetParams>,
     axum::extract::Extension(principal): axum::extract::Extension<Principal>,
-    axum::extract::Extension(ctx): axum::extract::Extension<rustapi_core::RequestContext>,
+    axum::extract::Extension(ctx): axum::extract::Extension<ferrum_core::RequestContext>,
     Json(body): Json<Map<String, Value>>,
 ) -> Result<Json<Value>, ApiError> {
     let record = update_entry(
@@ -709,7 +709,7 @@ async fn delete_one(
     Path((ct_name, id)): Path<(String, Uuid)>,
     Query(params): Query<GetParams>,
     axum::extract::Extension(principal): axum::extract::Extension<Principal>,
-    axum::extract::Extension(ctx): axum::extract::Extension<rustapi_core::RequestContext>,
+    axum::extract::Extension(ctx): axum::extract::Extension<ferrum_core::RequestContext>,
 ) -> Result<StatusCode, ApiError> {
     delete_entry(
         &state,
@@ -738,7 +738,7 @@ pub(crate) fn db(e: sqlx::Error) -> ApiError {
             }
         }
         let code = d.code().map(|c| c.into_owned()).unwrap_or_default();
-        return ApiError(Error::Validation(rustapi_core::ValidationErrors::db(
+        return ApiError(Error::Validation(ferrum_core::ValidationErrors::db(
             code,
             d.message(),
         )));
@@ -763,7 +763,7 @@ pub(crate) fn entry_label(record: &serde_json::Value, id: &uuid::Uuid) -> String
 fn diff_records(
     before: Option<&serde_json::Value>,
     after: &serde_json::Value,
-) -> Vec<rustapi_core::FieldChange> {
+) -> Vec<ferrum_core::FieldChange> {
     use serde_json::Value;
     fn show(v: Option<&Value>) -> String {
         match v {
@@ -785,7 +785,7 @@ fn diff_records(
         }
         let bv = before_obj.and_then(|o| o.get(k));
         if bv.map(|x| show(Some(x))) != Some(show(Some(av))) {
-            out.push(rustapi_core::FieldChange {
+            out.push(ferrum_core::FieldChange {
                 field: k.clone(),
                 from: show(bv),
                 to: show(Some(av)),
@@ -800,15 +800,15 @@ fn diff_records(
 pub(crate) async fn audit_content(
     state: &AppState,
     principal: &Principal,
-    ctx: rustapi_core::RequestContext,
+    ctx: ferrum_core::RequestContext,
     action: &str,
     content_type: &str,
     id: &uuid::Uuid,
     label: String,
-    changes: Vec<rustapi_core::FieldChange>,
+    changes: Vec<ferrum_core::FieldChange>,
 ) {
-    let actor = rustapi_core::Actor::from_principal(principal, None);
-    let entry = rustapi_core::AuditEntry::new(action, actor)
+    let actor = ferrum_core::Actor::from_principal(principal, None);
+    let entry = ferrum_core::AuditEntry::new(action, actor)
         .target(content_type, id.to_string(), label)
         .changes(changes)
         .ctx(ctx);
@@ -897,7 +897,7 @@ async fn verify_relation_targets_exist(
     }
     let mut found: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
     for (target, ids) in &by_target {
-        let table = rustapi_sql::table_name(target)
+        let table = ferrum_sql::table_name(target)
             .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
         let sql = format!("SELECT id FROM {table} WHERE id = ANY($1)");
         let rows = sqlx::query(&sql)
@@ -981,7 +981,7 @@ async fn verify_link_targets_exist(
         if plan.ids.is_empty() {
             continue;
         }
-        let table = rustapi_sql::table_name(&plan.target)
+        let table = ferrum_sql::table_name(&plan.target)
             .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
         let sql = format!("SELECT id FROM {table} WHERE id = ANY($1)");
         let rows = sqlx::query(&sql)
@@ -1025,7 +1025,7 @@ async fn write_links(
         if !plan.present {
             continue;
         }
-        let (del_sql, _) = rustapi_sql::delete_links(owner_type, &plan.field, owner_id)
+        let (del_sql, _) = ferrum_sql::delete_links(owner_type, &plan.field, owner_id)
             .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
         sqlx::query(&del_sql)
             .bind(owner_id)
@@ -1036,7 +1036,7 @@ async fn write_links(
             continue;
         }
         let (ins_sql, _) =
-            rustapi_sql::insert_links(owner_type, &plan.field, &plan.target, owner_id)
+            ferrum_sql::insert_links(owner_type, &plan.field, &plan.target, owner_id)
                 .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
         sqlx::query(&ins_sql)
             .bind(owner_id)
@@ -1133,7 +1133,7 @@ async fn publish_entry(
     State(state): State<AppState>,
     Path((ct_name, id)): Path<(String, Uuid)>,
     axum::extract::Extension(principal): axum::extract::Extension<Principal>,
-    axum::extract::Extension(ctx): axum::extract::Extension<rustapi_core::RequestContext>,
+    axum::extract::Extension(ctx): axum::extract::Extension<ferrum_core::RequestContext>,
 ) -> Result<Json<Value>, ApiError> {
     set_publish_state(state, ct_name, id, principal, ctx, true).await
 }
@@ -1142,7 +1142,7 @@ async fn unpublish_entry(
     State(state): State<AppState>,
     Path((ct_name, id)): Path<(String, Uuid)>,
     axum::extract::Extension(principal): axum::extract::Extension<Principal>,
-    axum::extract::Extension(ctx): axum::extract::Extension<rustapi_core::RequestContext>,
+    axum::extract::Extension(ctx): axum::extract::Extension<ferrum_core::RequestContext>,
 ) -> Result<Json<Value>, ApiError> {
     set_publish_state(state, ct_name, id, principal, ctx, false).await
 }
@@ -1152,7 +1152,7 @@ async fn set_publish_state(
     ct_name: String,
     id: Uuid,
     principal: Principal,
-    ctx: rustapi_core::RequestContext,
+    ctx: ferrum_core::RequestContext,
     publish: bool,
 ) -> Result<Json<Value>, ApiError> {
     ensure(&state, &principal, Action::ContentWrite, &ct_name).await?;
@@ -1162,22 +1162,22 @@ async fn set_publish_state(
         .get(&ct_name)
         .await
         .ok_or(ApiError(Error::NotFound))?;
-    if ct.kind == rustapi_core::ContentTypeKind::Single {
+    if ct.kind == ferrum_core::ContentTypeKind::Single {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::single("use /api/single-types/:name for single types"),
+            ferrum_core::ValidationErrors::single("use /api/single-types/:name for single types"),
         )));
     }
     if !ct.draft_publish() {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::single(
+            ferrum_core::ValidationErrors::single(
                 "Draft & Publish is not enabled for this content type",
             ),
         )));
     }
     let (sql, binds) = if publish {
-        rustapi_sql::publish(&ct.name, id)
+        ferrum_sql::publish(&ct.name, id)
     } else {
-        rustapi_sql::unpublish(&ct.name, id)
+        ferrum_sql::unpublish(&ct.name, id)
     }
     .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
     let q = bind_all(sqlx::query(&sql), &binds);
@@ -1200,7 +1200,7 @@ async fn set_publish_state(
     let (action, change) = if publish {
         (
             "entry.publish",
-            rustapi_core::FieldChange {
+            ferrum_core::FieldChange {
                 field: "status".into(),
                 from: "—".into(),
                 to: "Published".into(),
@@ -1209,7 +1209,7 @@ async fn set_publish_state(
     } else {
         (
             "entry.unpublish",
-            rustapi_core::FieldChange {
+            ferrum_core::FieldChange {
                 field: "status".into(),
                 from: "—".into(),
                 to: "Draft".into(),
@@ -1242,7 +1242,7 @@ async fn write_media_links(
         if !plan.present {
             continue;
         }
-        let (del_sql, _) = rustapi_sql::delete_media_links(owner_type, &plan.field, owner_id)
+        let (del_sql, _) = ferrum_sql::delete_media_links(owner_type, &plan.field, owner_id)
             .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
         sqlx::query(&del_sql)
             .bind(owner_id)
@@ -1252,7 +1252,7 @@ async fn write_media_links(
         if plan.ids.is_empty() {
             continue;
         }
-        let (ins_sql, _) = rustapi_sql::insert_media_links(owner_type, &plan.field, owner_id)
+        let (ins_sql, _) = ferrum_sql::insert_media_links(owner_type, &plan.field, owner_id)
             .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
         sqlx::query(&ins_sql)
             .bind(owner_id)
@@ -1268,7 +1268,7 @@ async fn write_media_links(
 /// schemas. Called for both create and update before `body_to_binds`.
 async fn validate_component_fields(
     state: &AppState,
-    ct: &rustapi_core::ContentType,
+    ct: &ferrum_core::ContentType,
     body: &serde_json::Map<String, serde_json::Value>,
 ) -> Result<(), ApiError> {
     for f in &ct.fields {
@@ -1276,7 +1276,7 @@ async fn validate_component_fields(
             continue;
         };
         let component = state.components.get(&meta.component).await.ok_or_else(|| {
-            ApiError(Error::Validation(rustapi_core::ValidationErrors::field(
+            ApiError(Error::Validation(ferrum_core::ValidationErrors::field(
                 &f.name,
                 format!("component `{}` not found in registry", meta.component),
             )))
@@ -1286,7 +1286,7 @@ async fn validate_component_fields(
 
         if f.required && (raw.is_none() || raw == Some(&serde_json::Value::Null)) {
             return Err(ApiError(Error::Validation(
-                rustapi_core::ValidationErrors::field(&f.name, "field is required"),
+                ferrum_core::ValidationErrors::field(&f.name, "field is required"),
             )));
         }
 
@@ -1297,7 +1297,7 @@ async fn validate_component_fields(
 
         if meta.multiple {
             let arr = raw.as_array().ok_or_else(|| {
-                ApiError(Error::Validation(rustapi_core::ValidationErrors::field(
+                ApiError(Error::Validation(ferrum_core::ValidationErrors::field(
                     &f.name,
                     "repeatable component field must be an array",
                 )))
@@ -1318,11 +1318,11 @@ async fn validate_component_fields(
 
 fn validate_component_instance(
     value: &serde_json::Value,
-    fields: &[rustapi_core::Field],
+    fields: &[ferrum_core::Field],
     path_prefix: &str,
 ) -> Result<(), ApiError> {
     let obj = value.as_object().ok_or_else(|| {
-        ApiError(Error::Validation(rustapi_core::ValidationErrors::field(
+        ApiError(Error::Validation(ferrum_core::ValidationErrors::field(
             path_prefix,
             "component instance must be an object",
         )))
@@ -1334,17 +1334,17 @@ fn validate_component_instance(
 
         if f.required && v.is_null() {
             return Err(ApiError(Error::Validation(
-                rustapi_core::ValidationErrors::field(&field_path, "field is required"),
+                ferrum_core::ValidationErrors::field(&field_path, "field is required"),
             )));
         }
         // Media and Relation are stored as raw JSON inside component JSONB;
         // BoundValue::from_json always rejects them, so skip coercion here.
         if !v.is_null()
-            && f.kind != rustapi_core::FieldKind::Media
-            && f.kind != rustapi_core::FieldKind::Relation
+            && f.kind != ferrum_core::FieldKind::Media
+            && f.kind != ferrum_core::FieldKind::Relation
         {
-            rustapi_core::BoundValue::from_json(f.kind, v).map_err(|_| {
-                ApiError(Error::Validation(rustapi_core::ValidationErrors::field(
+            ferrum_core::BoundValue::from_json(f.kind, v).map_err(|_| {
+                ApiError(Error::Validation(ferrum_core::ValidationErrors::field(
                     &field_path,
                     format!("invalid value for kind {:?}", f.kind),
                 )))
@@ -1390,7 +1390,7 @@ async fn export_entries(
         .collect();
     if raw_ids.is_empty() {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::single("ids required"),
+            ferrum_core::ValidationErrors::single("ids required"),
         )));
     }
 
@@ -1398,14 +1398,14 @@ async fn export_entries(
         .iter()
         .map(|s| {
             uuid::Uuid::parse_str(s).map_err(|_| {
-                ApiError(Error::Validation(rustapi_core::ValidationErrors::single(
+                ApiError(Error::Validation(ferrum_core::ValidationErrors::single(
                     format!("invalid uuid: {s}"),
                 )))
             })
         })
         .collect::<Result<_, _>>()?;
 
-    let sql = rustapi_sql::select_by_ids_sql(&ct.name)
+    let sql = ferrum_sql::select_by_ids_sql(&ct.name)
         .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
 
     let rows = sqlx::query(&sql)
@@ -1482,13 +1482,13 @@ async fn import_entries(
     // Read the CSV file from multipart
     let csv_bytes = loop {
         match multipart.next_field().await.map_err(|e| {
-            ApiError(Error::Validation(rustapi_core::ValidationErrors::single(
+            ApiError(Error::Validation(ferrum_core::ValidationErrors::single(
                 format!("multipart error: {e}"),
             )))
         })? {
             None => {
                 return Err(ApiError(Error::Validation(
-                    rustapi_core::ValidationErrors::single("empty file"),
+                    ferrum_core::ValidationErrors::single("empty file"),
                 )))
             }
             Some(field) if field.name() == Some("file") => {
@@ -1503,7 +1503,7 @@ async fn import_entries(
 
     if csv_bytes.is_empty() {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::single("empty file"),
+            ferrum_core::ValidationErrors::single("empty file"),
         )));
     }
 
@@ -1514,7 +1514,7 @@ async fn import_entries(
     let headers: Vec<String> = rdr
         .headers()
         .map_err(|_| {
-            ApiError(Error::Validation(rustapi_core::ValidationErrors::single(
+            ApiError(Error::Validation(ferrum_core::ValidationErrors::single(
                 "empty file",
             )))
         })?
@@ -1524,7 +1524,7 @@ async fn import_entries(
 
     if headers.is_empty() {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::single("empty file"),
+            ferrum_core::ValidationErrors::single("empty file"),
         )));
     }
 
@@ -1535,7 +1535,7 @@ async fn import_entries(
 
     if records.len() > 1000 {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::single("too many rows"),
+            ferrum_core::ValidationErrors::single("too many rows"),
         )));
     }
 
@@ -1624,9 +1624,9 @@ async fn import_entries(
 
         let mut cols: Vec<String> = vec![];
         let mut placeholders: Vec<String> = vec![];
-        let mut all_binds: Vec<rustapi_core::BoundValue> = vec![];
+        let mut all_binds: Vec<ferrum_core::BoundValue> = vec![];
 
-        all_binds.push(rustapi_core::BoundValue::Uuid(row_id));
+        all_binds.push(ferrum_core::BoundValue::Uuid(row_id));
 
         for (i, (col, val)) in binds.iter().enumerate() {
             let ph = i + 2;
@@ -1660,7 +1660,7 @@ async fn import_entries(
         let result = {
             let mut q = sqlx::query(&insert_sql).persistent(false);
             for bv in &all_binds {
-                q = rustapi_schema::bind::bind_one_for_import(q, bv);
+                q = ferrum_schema::bind::bind_one_for_import(q, bv);
             }
             q.fetch_one(&state.pool).await
         };
@@ -1692,8 +1692,8 @@ async fn import_entries(
 
 /// True if a FieldKind can be used as a keyset cursor sort column (has a
 /// scalar, orderable, bindable representation).
-fn is_keyset_sortable(kind: rustapi_core::FieldKind) -> bool {
-    use rustapi_core::FieldKind;
+fn is_keyset_sortable(kind: ferrum_core::FieldKind) -> bool {
+    use ferrum_core::FieldKind;
     matches!(
         kind,
         FieldKind::String
@@ -1708,8 +1708,8 @@ fn is_keyset_sortable(kind: rustapi_core::FieldKind) -> bool {
 
 /// FieldKind of a sortable column: a user field's kind, or the kind of a known
 /// system column. Defaults to Datetime for the timestamp system columns.
-fn sort_column_kind(ct: &ContentType, col: &str) -> rustapi_core::FieldKind {
-    use rustapi_core::FieldKind;
+fn sort_column_kind(ct: &ContentType, col: &str) -> ferrum_core::FieldKind {
+    use ferrum_core::FieldKind;
     if let Some(f) = ct.fields.iter().find(|f| f.name == col) {
         return f.kind;
     }
@@ -1733,9 +1733,9 @@ fn sort_column_kind(ct: &ContentType, col: &str) -> rustapi_core::FieldKind {
 fn read_sort_value(
     row: &sqlx::postgres::PgRow,
     col: &str,
-    kind: rustapi_core::FieldKind,
-) -> Result<rustapi_core::BoundValue, Error> {
-    use rustapi_core::{BoundValue, FieldKind};
+    kind: ferrum_core::FieldKind,
+) -> Result<ferrum_core::BoundValue, Error> {
+    use ferrum_core::{BoundValue, FieldKind};
     use sqlx::Row;
     let map_err = |e: sqlx::Error| {
         Error::Internal(anyhow::anyhow!(
@@ -1747,7 +1747,7 @@ fn read_sort_value(
         FieldKind::Float => {
             let f = row.try_get::<f64, _>(col).map_err(map_err)?;
             if !f.is_finite() {
-                return Err(Error::Validation(rustapi_core::ValidationErrors::single(
+                return Err(Error::Validation(ferrum_core::ValidationErrors::single(
                     format!("cannot build cursor: sort column `{col}` has a non-finite value"),
                 )));
             }
@@ -1769,7 +1769,7 @@ fn read_sort_value(
         // valid keyset sort columns — fail with a clear client error rather
         // than attempting a String decode that panics on a jsonb column.
         other => {
-            return Err(Error::Validation(rustapi_core::ValidationErrors::single(
+            return Err(Error::Validation(ferrum_core::ValidationErrors::single(
                 format!("cannot use `{col}` (kind {other:?}) as a keyset cursor sort column"),
             )));
         }

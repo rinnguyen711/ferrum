@@ -36,7 +36,7 @@ import { listContentTypes } from "./api/endpoints";
 const ACCENT = "#D14D2B";
 const DENSITY = "comfortable";
 const UI_FONT = "IBM Plex Sans";
-const DARK_KEY = "rustapi:dark";
+const DARK_KEY = "ferrum:dark";
 
 function loadDark(): boolean {
   try {

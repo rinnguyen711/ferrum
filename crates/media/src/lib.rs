@@ -1,4 +1,4 @@
-//! Pluggable media storage for rustapi.
+//! Pluggable media storage for ferrum.
 
 pub mod local;
 pub mod provider;

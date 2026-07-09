@@ -58,9 +58,9 @@ OpenAPI 3.1 document:
 
 - `openapi: "3.1.0"`
 - `info`: `{ title, version, description }` — `version` from new config
-  `api_version` (env `RUSTAPI_API_VERSION`, default `"0.1.0"`).
+  `api_version` (env `FERRUM_API_VERSION`, default `"0.1.0"`).
 - `servers`: single entry from config `public_base_url` (env
-  `RUSTAPI_PUBLIC_URL`, default `"/"`).
+  `FERRUM_PUBLIC_URL`, default `"/"`).
 - `components.securitySchemes.bearerAuth`: HTTP bearer / JWT. Applied to all
   protected paths via per-operation `security`.
 - `paths` = static block (merged from `static_paths.rs`) + dynamic block
@@ -148,14 +148,14 @@ if state.config.docs_enabled {
 ```
 
 New config field `docs_enabled: bool` on `AppConfig` (env
-`RUSTAPI_DOCS_ENABLED`, default `true`; set `false`/`0` to disable in prod).
+`FERRUM_DOCS_ENABLED`, default `true`; set `false`/`0` to disable in prod).
 Also new: `api_version: String`, `public_base_url: String`.
 
 ## Security note
 
 The spec exposes every content type's name and field structure. Because docs
 default to **public**, deployments that treat their schema as sensitive must
-set `RUSTAPI_DOCS_ENABLED=false`. This is documented alongside the env var.
+set `FERRUM_DOCS_ENABLED=false`. This is documented alongside the env var.
 The flag controls registration of the routes themselves — when off, both
 `/openapi.json` and `/docs` return 404.
 

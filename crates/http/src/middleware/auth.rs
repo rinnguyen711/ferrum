@@ -8,8 +8,8 @@ use axum::http::HeaderMap;
 use axum::middleware::Next;
 use axum::response::Response;
 use chrono::Utc;
-use rustapi_core::{Error, Principal};
-use rustapi_sql::lookup_by_hash;
+use ferrum_core::{Error, Principal};
+use ferrum_sql::lookup_by_hash;
 
 pub async fn require_auth(
     State(state): State<AppState>,

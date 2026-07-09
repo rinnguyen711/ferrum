@@ -2,7 +2,7 @@
 
 ## Goal
 
-A narrative documentation website for Rustapi developers — guides, concepts, and
+A narrative documentation website for Ferrum developers — guides, concepts, and
 tutorials in the style of the Django / Strapi docs. This is distinct from the
 auto-generated OpenAPI/Swagger UI served at `/docs`, which documents only the
 dynamic `/api/{type}` endpoints. The docs site explains the framework: how to
@@ -29,7 +29,7 @@ separate to avoid mixing internal planning docs with the public site.
 
 ```
 book/
-  book.toml          # title "Rustapi", git repo link, default theme
+  book.toml          # title "Ferrum", git repo link, default theme
   src/
     SUMMARY.md       # nav tree (mdBook table of contents)
     introduction.md
@@ -85,7 +85,7 @@ mdbook serve      # local preview at http://localhost:3000
 - Custom theme / CSS
 - Search configuration beyond mdBook default
 - Deploy / CI pipeline
-- Serving the site from the rustapi binary
+- Serving the site from the ferrum binary
 
 ## Testing / verification
 

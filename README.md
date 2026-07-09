@@ -1,4 +1,4 @@
-# rustapi
+# Ferrum
 
 Headless CMS framework in Rust. Axum + sqlx backend, React + TS admin UI.
 
@@ -14,20 +14,20 @@ Headless CMS framework in Rust. Axum + sqlx backend, React + TS admin UI.
 
 ## Docker (quickest demo)
 
-The quickest way to try Rustapi without cloning is the published image. Point it
+The quickest way to try Ferrum without cloning is the published image. Point it
 at a Postgres database and give it a JWT secret (required, 32+ chars):
 
 ```sh
 docker run -p 8080:8080 \
-  -e DATABASE_URL=postgres://USER:PASS@HOST:5432/rustapi \
-  -e RUSTAPI_JWT_SECRET=$(openssl rand -hex 32) \
-  ghcr.io/<owner>/rustapi:latest
+  -e DATABASE_URL=postgres://USER:PASS@HOST:5432/ferrum \
+  -e FERRUM_JWT_SECRET=$(openssl rand -hex 32) \
+  ghcr.io/<owner>/ferrum:latest
 ```
 
 Or run image + database together with the standalone compose file:
 
 ```sh
-export RUSTAPI_JWT_SECRET=$(openssl rand -hex 32)
+export FERRUM_JWT_SECRET=$(openssl rand -hex 32)
 docker compose -f docker-compose.prod.yml up
 ```
 
@@ -44,11 +44,11 @@ docker compose up --build
 Override the default demo JWT secret for anything beyond a local demo:
 
 ```sh
-export RUSTAPI_JWT_SECRET=$(openssl rand -hex 32)
+export FERRUM_JWT_SECRET=$(openssl rand -hex 32)
 docker compose up --build
 ```
 
-To ship pre-defined content types, set `RUSTAPI_SCHEMA_DIR` (see [Schema as code](#schema-as-code) below).
+To ship pre-defined content types, set `FERRUM_SCHEMA_DIR` (see [Schema as code](#schema-as-code) below).
 
 ### Media storage
 
@@ -56,19 +56,19 @@ The Media Library defaults to **local filesystem** storage under `./media-data`
 — no configuration needed. To use S3 (or an S3-compatible service) set:
 
 ```sh
-export RUSTAPI_MEDIA_PROVIDER=s3
-export RUSTAPI_S3_BUCKET=my-bucket
-export RUSTAPI_S3_REGION=us-east-1
-export RUSTAPI_S3_ENDPOINT=https://...   # optional, for MinIO/R2/Spaces
-export RUSTAPI_S3_ACCESS_KEY=...
-export RUSTAPI_S3_SECRET_KEY=...
+export FERRUM_MEDIA_PROVIDER=s3
+export FERRUM_S3_BUCKET=my-bucket
+export FERRUM_S3_REGION=us-east-1
+export FERRUM_S3_ENDPOINT=https://...   # optional, for MinIO/R2/Spaces
+export FERRUM_S3_ACCESS_KEY=...
+export FERRUM_S3_SECRET_KEY=...
 ```
 
 Alternatively configure the provider at runtime via `PUT /admin/media/settings`.
 Storing provider secrets in the database requires a 32-byte hex encryption key:
 
 ```sh
-export RUSTAPI_SECRET_KEY=$(openssl rand -hex 32)
+export FERRUM_SECRET_KEY=$(openssl rand -hex 32)
 ```
 
 Env configuration always overrides database settings.
@@ -105,12 +105,12 @@ cargo build --workspace
 cargo test --workspace
 
 # Run the server against an external Postgres
-export DATABASE_URL=postgres://postgres:postgres@localhost:5432/rustapi
-export RUSTAPI_JWT_SECRET=$(openssl rand -hex 32)
-export RUSTAPI_DB_MAX_CONNECTIONS=20          # optional: Postgres pool size, default 10
-export RUSTAPI_STUDIO_DIR=$PWD/ui/dist        # optional: serve admin UI at /studio
-export RUSTAPI_SCHEMA_DIR=examples/schema/blog # optional: load TOML schema files on startup
-cargo run -p rustapi
+export DATABASE_URL=postgres://postgres:postgres@localhost:5432/ferrum
+export FERRUM_JWT_SECRET=$(openssl rand -hex 32)
+export FERRUM_DB_MAX_CONNECTIONS=20          # optional: Postgres pool size, default 10
+export FERRUM_STUDIO_DIR=$PWD/ui/dist        # optional: serve admin UI at /studio
+export FERRUM_SCHEMA_DIR=examples/schema/blog # optional: load TOML schema files on startup
+cargo run -p ferrum
 ```
 
 ## Admin UI
@@ -158,19 +158,19 @@ Both are **public by default**. The spec exposes every content type's name and
 field structure, so disable them in production if your schema is sensitive.
 
 ```sh
-export RUSTAPI_DOCS_ENABLED=false        # default true; false → /openapi.json and /docs return 404
-export RUSTAPI_API_VERSION=1.2.3         # default 0.1.0; reported as OpenAPI info.version
-export RUSTAPI_PUBLIC_URL=https://api.example.com   # default "/"; reported as OpenAPI servers[0].url
+export FERRUM_DOCS_ENABLED=false        # default true; false → /openapi.json and /docs return 404
+export FERRUM_API_VERSION=1.2.3         # default 0.1.0; reported as OpenAPI info.version
+export FERRUM_PUBLIC_URL=https://api.example.com   # default "/"; reported as OpenAPI servers[0].url
 ```
 
 ## Schema as code
 
 Define content types declaratively in TOML files and let the server sync the database to match on startup — no manual API calls or UI clicks required.
 
-Point `RUSTAPI_SCHEMA_DIR` at a directory of `*.toml` files; all are loaded and merged:
+Point `FERRUM_SCHEMA_DIR` at a directory of `*.toml` files; all are loaded and merged:
 
 ```sh
-export RUSTAPI_SCHEMA_DIR=examples/schema/blog
+export FERRUM_SCHEMA_DIR=examples/schema/blog
 ```
 
 A working blog preset ships in `examples/schema/blog/` (`author.toml`, `post.toml`). Trimmed example:
@@ -194,7 +194,7 @@ options = { draft_publish = true }
   kind_meta = { target = "author", cardinality = "many_to_one", inverse = "posts" }
 ```
 
-Alternatively, point `RUSTAPI_SCHEMA_FILE` at a single `.toml` file (used when `RUSTAPI_SCHEMA_DIR` is not set).
+Alternatively, point `FERRUM_SCHEMA_FILE` at a single `.toml` file (used when `FERRUM_SCHEMA_DIR` is not set).
 
 ### Components
 
@@ -224,8 +224,8 @@ Components are synced **before** content types, so a `component` field can refer
 ### Sync modes
 
 ```sh
-export RUSTAPI_SCHEMA_SYNC=additive   # default — creates types, adds new fields, never drops
-export RUSTAPI_SCHEMA_SYNC=full       # also drops types and fields absent from the TOML
+export FERRUM_SCHEMA_SYNC=additive   # default — creates types, adds new fields, never drops
+export FERRUM_SCHEMA_SYNC=full       # also drops types and fields absent from the TOML
 ```
 
 ### Managed types are read-only

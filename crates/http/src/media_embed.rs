@@ -5,7 +5,7 @@
 
 use crate::media::store;
 use crate::routes::media::AssetView;
-use rustapi_core::{ContentType, Error, FieldKind};
+use ferrum_core::{ContentType, Error, FieldKind};
 use serde_json::{Map, Value};
 use sqlx::{PgPool, Row};
 use std::collections::HashMap;
@@ -34,7 +34,7 @@ pub async fn apply_media_embed(
     ct: &ContentType,
     rows: &mut [Map<String, Value>],
 ) -> Result<(), Error> {
-    let media_fields: Vec<&rustapi_core::Field> = ct
+    let media_fields: Vec<&ferrum_core::Field> = ct
         .fields
         .iter()
         .filter(|f| f.kind == FieldKind::Media)
@@ -62,10 +62,10 @@ pub async fn apply_media_embed(
                 galleries.insert(f.name.clone(), HashMap::new());
                 continue;
             }
-            let jt = rustapi_sql::media_join_table_name(&ct.name, &f.name)
+            let jt = ferrum_sql::media_join_table_name(&ct.name, &f.name)
                 .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
             let owner_col = format!("{}_id", ct.name);
-            let owner_q = rustapi_sql::quote_ident(&owner_col)
+            let owner_q = ferrum_sql::quote_ident(&owner_col)
                 .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
             let sql = format!(
                 "SELECT {owner_q} AS parent, \"asset_id\" FROM {jt} WHERE {owner_q} = ANY($1) ORDER BY {owner_q}, \"position\""

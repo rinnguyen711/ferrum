@@ -1,11 +1,11 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use rustapi::config::Config;
-use rustapi_http::{
+use ferrum::config::Config;
+use ferrum_http::{
     build_router, mount_studio, resolve_provider, secret_key_from_env, AppConfig, AppState,
     NoopHook, RoleAuthz, RoleRegistry,
 };
-use rustapi_schema::{
+use ferrum_schema::{
     ComponentRegistry, ComponentService, SchemaRegistry, SchemaService, MIGRATOR,
 };
 use sqlx::postgres::PgPoolOptions;
@@ -16,7 +16,7 @@ use tracing_subscriber::{prelude::*, EnvFilter};
 mod migrate;
 
 #[derive(Debug, Parser)]
-#[command(name = "rustapi", about = "Headless CMS")]
+#[command(name = "ferrum", about = "Headless CMS")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
@@ -24,7 +24,7 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Migrate an existing Postgres database into Rustapi.
+    /// Migrate an existing Postgres database into Ferrum.
     Migrate(migrate::MigrateArgs),
 }
 
@@ -39,7 +39,7 @@ async fn main() -> Result<()> {
     let cfg = Config::from_env()?;
     init_tracing(&cfg.log);
 
-    tracing::info!(version = env!("CARGO_PKG_VERSION"), "rustapi starting");
+    tracing::info!(version = env!("CARGO_PKG_VERSION"), "ferrum starting");
 
     let pool = PgPoolOptions::new()
         .max_connections(cfg.db_max_connections)
@@ -85,14 +85,14 @@ async fn main() -> Result<()> {
     // Hydrate the locale registry from `_locales` (seeded by migration 0016).
     // Runs after migrations so the table exists. A load failure is non-fatal:
     // log and continue with an empty set rather than refuse to boot.
-    let locales = std::sync::Arc::new(rustapi_http::locale_registry::LocaleRegistry::new());
-    match rustapi_sql::locales::load_all(&pool).await {
+    let locales = std::sync::Arc::new(ferrum_http::locale_registry::LocaleRegistry::new());
+    match ferrum_sql::locales::load_all(&pool).await {
         Ok(all) => locales.set(all).await,
         Err(e) => tracing::warn!(error = %e, "failed to load locales at boot; using empty set"),
     }
 
     if let Some(path) = &cfg.schema_path {
-        rustapi_schema::sync::sync_from_path(&schemas, &components, path, cfg.schema_sync_mode)
+        ferrum_schema::sync::sync_from_path(&schemas, &components, path, cfg.schema_sync_mode)
             .await
             .context("schema sync")?;
         registry
@@ -112,9 +112,9 @@ async fn main() -> Result<()> {
         authz: Arc::new(RoleAuthz::new(Arc::new(roles.clone()))),
         roles,
         locales,
-        gql: rustapi_http::graphql::GqlRegistry::new(),
-        events: Arc::new(rustapi::webhook_worker::DbEventSink::new(pool.clone())),
-        audit: Arc::new(rustapi::audit_sink::DbAuditSink::new(pool.clone())),
+        gql: ferrum_http::graphql::GqlRegistry::new(),
+        events: Arc::new(ferrum::webhook_worker::DbEventSink::new(pool.clone())),
+        audit: Arc::new(ferrum::audit_sink::DbAuditSink::new(pool.clone())),
         hooks: Arc::new(NoopHook),
         config: AppConfig {
             jwt_secret: cfg.jwt_secret.clone(),
@@ -139,13 +139,13 @@ async fn main() -> Result<()> {
             .context("build initial GraphQL schema")?;
     }
 
-    rustapi::webhook_worker::spawn_worker(pool.clone());
+    ferrum::webhook_worker::spawn_worker(pool.clone());
 
     let audit_retention_days = std::env::var("AUDIT_RETENTION_DAYS")
         .ok()
         .and_then(|v| v.parse::<i64>().ok())
         .unwrap_or(90);
-    rustapi::audit_sink::spawn_prune_worker(pool.clone(), audit_retention_days);
+    ferrum::audit_sink::spawn_prune_worker(pool.clone(), audit_retention_days);
 
     let mut app = build_router(state, vec![]);
     tracing::info!(
@@ -162,7 +162,7 @@ async fn main() -> Result<()> {
         .await
         .context("bind")?;
     let addr = listener.local_addr().context("local addr")?;
-    tracing::info!(addr = %addr, port = addr.port(), "rustapi listening");
+    tracing::info!(addr = %addr, port = addr.port(), "ferrum listening");
     axum::serve(listener, app).await.context("serve")?;
     Ok(())
 }

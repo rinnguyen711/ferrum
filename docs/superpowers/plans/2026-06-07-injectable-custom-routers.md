@@ -121,16 +121,16 @@ to:
         let app = build_router(state, routers);
 ```
 
-`AppState` is already imported in this file's `use rustapi_http::{...}` line; `axum` is a workspace dep of the bin crate, so `axum::Router` resolves without a new import.
+`AppState` is already imported in this file's `use ferrum_http::{...}` line; `axum` is a workspace dep of the bin crate, so `axum::Router` resolves without a new import.
 
 - [ ] **Step 4: Build to verify the refactor compiles**
 
-Run: `cargo build -p rustapi-http -p rustapi`
+Run: `cargo build -p ferrum-http -p ferrum`
 Expected: builds clean (warnings about the unused `spawn_with_routers` are suppressed by `#[allow(dead_code)]`).
 
 - [ ] **Step 5: Run existing tests to confirm no regression**
 
-Run: `cargo test -p rustapi --test integration_smoke`
+Run: `cargo test -p ferrum --test integration_smoke`
 Expected: PASS — the empty-vec refactor changed no behavior.
 
 - [ ] **Step 6: Write the failing integration test**
@@ -144,7 +144,7 @@ use axum::extract::State;
 use axum::routing::get;
 use axum::Router;
 use common::TestApp;
-use rustapi_http::AppState;
+use ferrum_http::AppState;
 
 /// A custom endpoint injected by the bin. Returns 200 with the configured API
 /// version, proving the `State<AppState>` extractor resolves on an injected
@@ -188,7 +188,7 @@ async fn injected_route_requires_auth() {
 
 - [ ] **Step 7: Run the new test to verify it passes**
 
-Run: `cargo test -p rustapi --test custom_routers`
+Run: `cargo test -p ferrum --test custom_routers`
 Expected: PASS — both tests green. (`spawn_with_routers` is now actually used, so the dead-code allow is harmless.)
 
 If `injected_route_requires_auth` returns 200 instead of 401, the extras were merged outside the `require_auth` layer — re-check Step 1 places the merge loop before `route_layer`.

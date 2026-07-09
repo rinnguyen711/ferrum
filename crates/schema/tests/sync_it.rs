@@ -1,8 +1,8 @@
 //! End-to-end TOML sync against an ephemeral Postgres (testcontainers).
 
-use rustapi_core::{Field, FieldKind, PatchContentType};
-use rustapi_schema::sync::sync_from_path;
-use rustapi_schema::{
+use ferrum_core::{Field, FieldKind, PatchContentType};
+use ferrum_schema::sync::sync_from_path;
+use ferrum_schema::{
     ComponentRegistry, ComponentService, SchemaRegistry, SchemaService, SyncMode,
 };
 use sqlx::PgPool;
@@ -23,7 +23,7 @@ async fn setup_pool() -> PgPool {
         .await
         .expect("pool");
 
-    rustapi_schema::MIGRATOR.run(&pool).await.expect("migrate");
+    ferrum_schema::MIGRATOR.run(&pool).await.expect("migrate");
 
     // Leak the container so it stays alive for the duration of the test.
     std::mem::forget(pg);

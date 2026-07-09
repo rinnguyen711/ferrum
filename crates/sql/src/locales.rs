@@ -1,7 +1,7 @@
 //! `_locales` table access. A `Locale` is a code + display name; exactly one
 //! row is the default (enforced here on mutation, plus a partial unique index).
 
-use rustapi_core::Error;
+use ferrum_core::Error;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 
@@ -79,7 +79,7 @@ pub async fn delete(pool: &PgPool, code: &str) -> Result<bool, Error> {
     let row = get(pool, code).await?;
     match row {
         None => Ok(false),
-        Some(l) if l.is_default => Err(Error::Validation(rustapi_core::ValidationErrors::single(
+        Some(l) if l.is_default => Err(Error::Validation(ferrum_core::ValidationErrors::single(
             "cannot delete the default locale",
         ))),
         Some(_) => {

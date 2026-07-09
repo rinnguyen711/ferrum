@@ -2,18 +2,18 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: rustapi
-      POSTGRES_PASSWORD: rustapi
-      POSTGRES_DB: rustapi
+      POSTGRES_USER: ferrum
+      POSTGRES_PASSWORD: ferrum
+      POSTGRES_DB: ferrum
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U rustapi"]
+      test: ["CMD-SHELL", "pg_isready -U ferrum"]
       interval: 2s
       timeout: 3s
       retries: 20
     volumes:
       - pgdata:/var/lib/postgresql/data
 
-  rustapi:
+  ferrum:
     build: .
     depends_on:
       postgres:
@@ -21,12 +21,12 @@ services:
     volumes:
       - ./examples/schema/ecommerce:/schema:ro
     environment:
-      DATABASE_URL: postgres://rustapi:rustapi@postgres:5432/rustapi
+      DATABASE_URL: postgres://ferrum:ferrum@postgres:5432/ferrum
       # Override before `docker compose up` for non-demo use:
-      #   export RUSTAPI_JWT_SECRET=$(openssl rand -hex 32)
-      RUSTAPI_JWT_SECRET: ${RUSTAPI_JWT_SECRET:-demo-secret-please-rotate-min-32-chars-aaa}
-      RUSTAPI_SCHEMA_DIR: /schema
-      RUSTAPI_SCHEMA_SYNC: full
+      #   export FERRUM_JWT_SECRET=$(openssl rand -hex 32)
+      FERRUM_JWT_SECRET: ${FERRUM_JWT_SECRET:-demo-secret-please-rotate-min-32-chars-aaa}
+      FERRUM_SCHEMA_DIR: /schema
+      FERRUM_SCHEMA_SYNC: full
       # First boot: create the initial admin via POST /auth/setup (see README).
     ports:
       - "8080:8080"

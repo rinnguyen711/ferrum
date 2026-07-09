@@ -2,7 +2,7 @@
 //! ============================================================================
 //! Illustrative reference, NOT compiled into the build. Shows how a dev adds a
 //! custom route that reads content-type entries (products) and creates another
-//! (an order) using the PUBLIC content service API (`rustapi_http::content_api`).
+//! (an order) using the PUBLIC content service API (`ferrum_http::content_api`).
 //!
 //! Wire it up in `crates/bin/src/main.rs`:
 //!
@@ -23,14 +23,14 @@
 //! to one created via `POST /api/order` — same validation, same webhooks fire,
 //! same audit entry. No hand-written SQL, no bypassed side-effects.
 //!
-//! Note on the error type: handler results use `rustapi_http::ApiError` (not
-//! `rustapi_core::Error` directly) because `ApiError` is what implements axum's
+//! Note on the error type: handler results use `ferrum_http::ApiError` (not
+//! `ferrum_core::Error` directly) because `ApiError` is what implements axum's
 //! `IntoResponse`. `ApiError: From<Error>`, so `?` on a `content_api` call
 //! converts cleanly and the response gets the standard `{"error":{...}}` shape.
 
 use axum::{extract::State, Extension, Json};
-use rustapi_core::{Principal, RequestContext};
-use rustapi_http::{content_api, ApiError, AppState};
+use ferrum_core::{Principal, RequestContext};
+use ferrum_http::{content_api, ApiError, AppState};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use uuid::Uuid;

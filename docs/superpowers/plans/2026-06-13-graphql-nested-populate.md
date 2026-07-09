@@ -23,7 +23,7 @@
   - `TypeRef::named`, `named_nn`, `named_nn_list`, `named_nn_list_nn`.
 - **Field model:** `Field { name, kind: FieldKind, ... }`. `FieldKind::Relation` / `FieldKind::Media`. `scalars::is_list(&Field)` already returns true for m2m relations / multiple media. `field.relation_meta().target` is the target content-type name.
 - **ContentType:** `.name` (snake api id), `.kind: ContentTypeKind::{Collection, Single}`, `.fields: Vec<Field>`. Reachable in a resolver via `state.schemas.registry().get(ct_name).await -> Option<ContentType>`.
-- **Test harness:** `crates/bin/tests/graphql.rs` + `common::TestApp`. Create content types via `POST /admin/content-types` as admin (triggers GraphQL schema rebuild). Relation field payload (from relations.rs): `{"name":"author","kind":"relation","kind_meta":{"target":"writer","cardinality":"many_to_one"}}`. Bin package name is `rustapi` (NOT rustapi-bin).
+- **Test harness:** `crates/bin/tests/graphql.rs` + `common::TestApp`. Create content types via `POST /admin/content-types` as admin (triggers GraphQL schema rebuild). Relation field payload (from relations.rs): `{"name":"author","kind":"relation","kind_meta":{"target":"writer","cardinality":"many_to_one"}}`. Bin package name is `ferrum` (NOT ferrum-bin).
 
 ---
 
@@ -83,7 +83,7 @@ In `crates/http/src/graphql/scalars.rs`, the existing tests assert relation/medi
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cargo test -p rustapi-http graphql::scalars`
+Run: `cargo test -p ferrum-http graphql::scalars`
 Expected: FAIL — `base_type_name` still returns "UUID" for relation/media.
 
 - [ ] **Step 3: Change the relation/media arm of `base_type_name`**
@@ -115,10 +115,10 @@ Update the doc comment on `base_type_name` (currently says relation/media are sc
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo test -p rustapi-http graphql::scalars`
+Run: `cargo test -p ferrum-http graphql::scalars`
 Expected: PASS.
 
-> Note: `cargo build -p rustapi-http` will now FAIL or produce a schema that can't `finish()` because the `Media` object and Single-type objects aren't registered yet (Task 2). That's expected — the build/SDL tests are fixed in Task 2. Do NOT try to make the whole crate green here; just the scalars unit tests. If `cargo test -p rustapi-http graphql::scalars` compiles the crate and fails on build.rs SDL tests, that's fine for this task — proceed to commit the scalars change. If it won't compile at all (not just test failures), check the error is confined to build.rs/SDL (expected) vs a real scalars.rs mistake.
+> Note: `cargo build -p ferrum-http` will now FAIL or produce a schema that can't `finish()` because the `Media` object and Single-type objects aren't registered yet (Task 2). That's expected — the build/SDL tests are fixed in Task 2. Do NOT try to make the whole crate green here; just the scalars unit tests. If `cargo test -p ferrum-http graphql::scalars` compiles the crate and fails on build.rs SDL tests, that's fine for this task — proceed to commit the scalars change. If it won't compile at all (not just test failures), check the error is confined to build.rs/SDL (expected) vs a real scalars.rs mistake.
 
 - [ ] **Step 5: Commit**
 
@@ -158,7 +158,7 @@ Add a test that a relation to a Single type builds (the core fix):
 ```rust
     #[test]
     fn relation_to_single_target_builds() {
-        use rustapi_core::field::{Field, FieldKind};
+        use ferrum_core::field::{Field, FieldKind};
         use serde_json::{json, Value};
         // Single target
         let mut home = article();
@@ -189,7 +189,7 @@ If the existing `article()` helper isn't accessible or shaped as assumed, adapt 
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `cargo test -p rustapi-http graphql::build`
+Run: `cargo test -p ferrum-http graphql::build`
 Expected: FAIL — Single objects not registered; relation-to-single errors on `finish()`.
 
 - [ ] **Step 3: Register an object for every content type; re-add the Media object**
@@ -253,12 +253,12 @@ Keep the `surfaced_any` / `_empty` placeholder logic and the final `query`/`muta
 
 - [ ] **Step 4: Run build + SDL tests**
 
-Run: `cargo test -p rustapi-http graphql`
+Run: `cargo test -p ferrum-http graphql`
 Expected: PASS (scalars from Task 1 + build SDL incl. the new Single-object and relation-to-single tests). If `.sdl()` substring asserts are off by formatting, print SDL (assert messages include `{sdl}`) and reconcile.
 
 - [ ] **Step 5: Build the crate clean**
 
-Run: `cargo build -p rustapi-http && cargo clippy -p rustapi-http --all-targets`
+Run: `cargo build -p ferrum-http && cargo clippy -p ferrum-http --all-targets`
 Expected: compiles, clippy clean.
 
 - [ ] **Step 6: Commit**
@@ -280,7 +280,7 @@ git commit -m "feat(graphql): register object per content type + Media object; r
 In `resolve.rs`, add a helper that inspects the selection set and returns the comma-joined relation/media field names selected. It needs the `ContentType` to know which selected field names are relation/media (vs scalars). Signature and impl:
 
 ```rust
-use rustapi_core::{ContentType, FieldKind};
+use ferrum_core::{ContentType, FieldKind};
 
 /// Inspect the GraphQL selection set and return a comma-joined `populate`
 /// string of the relation/media fields the client selected (one level). `None`
@@ -309,7 +309,7 @@ fn selected_populate(entry: async_graphql::Lookahead<'_>, ct: &ContentType) -> O
 }
 ```
 
-> Verify imports: `async_graphql::Lookahead` is the right path (the `look_ahead` module is re-exported at crate root in 7.2.1 — confirm; if not, use the correct path e.g. `async_graphql::context::Lookahead`). `SelectionField::name()` returns `&str`. `FieldKind` import path is `rustapi_core::FieldKind` (already used elsewhere). If `ct.fields[].kind` matching needs the enum in scope, import it.
+> Verify imports: `async_graphql::Lookahead` is the right path (the `look_ahead` module is re-exported at crate root in 7.2.1 — confirm; if not, use the correct path e.g. `async_graphql::context::Lookahead`). `SelectionField::name()` returns `&str`. `FieldKind` import path is `ferrum_core::FieldKind` (already used elsewhere). If `ct.fields[].kind` matching needs the enum in scope, import it.
 
 - [ ] **Step 2: Wire it into `list_field`**
 
@@ -424,10 +424,10 @@ The module doc currently says "list/get are called with populate = None, so rela
 
 - [ ] **Step 5: Build + clippy**
 
-Run: `cargo build -p rustapi-http && cargo clippy -p rustapi-http --all-targets`
+Run: `cargo build -p ferrum-http && cargo clippy -p ferrum-http --all-targets`
 Expected: compiles, clippy clean. (Resolver behavior is exercised by Task 4's integration tests — the unit/SDL tests still pass but don't run resolvers.)
 
-Run: `cargo test -p rustapi-http graphql` — existing scalars+build tests still PASS.
+Run: `cargo test -p ferrum-http graphql` — existing scalars+build tests still PASS.
 
 - [ ] **Step 6: Commit**
 
@@ -579,7 +579,7 @@ Also add the previously-skipped coverage-gap tests (small): an enum field round-
 
 - [ ] **Step 2: Run the graphql suite**
 
-Run: `cargo test -p rustapi --test graphql -- --test-threads=1`
+Run: `cargo test -p ferrum --test graphql -- --test-threads=1`
 Expected: PASS (existing 6 + the new tests). If a populate test fails (e.g. `author.name` null), that's a REAL resolver bug — STOP and report with the response JSON; do NOT weaken the assertion.
 
 - [ ] **Step 3: Full gates**

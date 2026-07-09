@@ -1,8 +1,8 @@
 //! In-memory cache of all content types. The HTTP layer reads from here on
 //! every request; only the SchemaService mutates it.
 
-use rustapi_core::Cardinality;
-use rustapi_core::ContentType;
+use ferrum_core::Cardinality;
+use ferrum_core::ContentType;
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -146,7 +146,7 @@ struct RawCt {
     id: uuid::Uuid,
     name: String,
     display_name: String,
-    fields: sqlx::types::Json<Vec<rustapi_core::Field>>,
+    fields: sqlx::types::Json<Vec<ferrum_core::Field>>,
     options: sqlx::types::Json<serde_json::Value>,
     kind: String,
     created_at: chrono::DateTime<chrono::Utc>,
@@ -156,8 +156,8 @@ struct RawCt {
 impl RawCt {
     fn into_content_type(self) -> ContentType {
         let kind = match self.kind.as_str() {
-            "collection" => rustapi_core::ContentTypeKind::Collection,
-            "single" => rustapi_core::ContentTypeKind::Single,
+            "collection" => ferrum_core::ContentTypeKind::Collection,
+            "single" => ferrum_core::ContentTypeKind::Single,
             other => panic!("unknown content_type kind in database: {other:?}"),
         };
         ContentType {
@@ -177,7 +177,7 @@ impl RawCt {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use rustapi_core::{ContentTypeKind, Field, FieldKind};
+    use ferrum_core::{ContentTypeKind, Field, FieldKind};
     use serde_json::json;
     use uuid::Uuid;
 
@@ -222,7 +222,7 @@ mod tests {
 
     #[tokio::test]
     async fn inverse_lookup_finds_registered_pair() {
-        use rustapi_core::ContentType;
+        use ferrum_core::ContentType;
 
         let reg = SchemaRegistry::new();
         let user = ContentType {
@@ -272,7 +272,7 @@ mod tests {
 
     #[tokio::test]
     async fn inverse_lookup_ignores_relation_without_inverse() {
-        use rustapi_core::ContentType;
+        use ferrum_core::ContentType;
 
         let reg = SchemaRegistry::new();
         reg.insert(ContentType {
@@ -394,7 +394,7 @@ mod tests {
 
     #[tokio::test]
     async fn inverse_lookup_skips_primitive_fields() {
-        use rustapi_core::ContentType;
+        use ferrum_core::ContentType;
 
         let reg = SchemaRegistry::new();
         reg.insert(ContentType {

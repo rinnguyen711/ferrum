@@ -2,7 +2,7 @@
 //! mirroring the decisions in `openapi/schema.rs`. Keep the two in sync.
 
 use async_graphql::dynamic::TypeRef;
-use rustapi_core::field::{Cardinality, Field, FieldKind};
+use ferrum_core::field::{Cardinality, Field, FieldKind};
 
 /// Custom scalar names registered on the schema.
 pub const UUID_SCALAR: &str = "UUID";
@@ -97,7 +97,7 @@ pub fn enum_type_name(field: &Field) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustapi_core::field::Field;
+    use ferrum_core::field::Field;
     use serde_json::{json, Value};
 
     fn f(kind: FieldKind, required: bool, kind_meta: Value) -> Field {

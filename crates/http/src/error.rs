@@ -1,9 +1,9 @@
-//! Map `rustapi_core::Error` into HTTP responses with the v1 JSON shape.
+//! Map `ferrum_core::Error` into HTTP responses with the v1 JSON shape.
 
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use rustapi_core::Error;
+use ferrum_core::Error;
 use serde_json::json;
 
 pub struct ApiError(pub Error);
@@ -162,7 +162,7 @@ mod tests {
 
     #[tokio::test]
     async fn validation_includes_fields() {
-        let v = rustapi_core::ValidationErrors::field("title", "required");
+        let v = ferrum_core::ValidationErrors::field("title", "required");
         let resp = ApiError(Error::Validation(v)).into_response();
         assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
         let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
@@ -189,7 +189,7 @@ mod tests {
 
     #[tokio::test]
     async fn validation_includes_missing_ids() {
-        let v = rustapi_core::ValidationErrors::relation_target_missing(
+        let v = ferrum_core::ValidationErrors::relation_target_missing(
             "author",
             vec!["00000000-0000-0000-0000-000000000001".into()],
         );
@@ -207,7 +207,7 @@ mod tests {
 
     #[tokio::test]
     async fn validation_includes_db_info() {
-        let v = rustapi_core::ValidationErrors::db("23502", "null value in column \"x\"");
+        let v = ferrum_core::ValidationErrors::db("23502", "null value in column \"x\"");
         let resp = ApiError(Error::Validation(v)).into_response();
         assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
         let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();

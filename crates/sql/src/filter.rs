@@ -2,7 +2,7 @@
 //! implicit AND. Phase 2.2 added order / set / string operators. Phase 2.3 adds
 //! recursive combinators (`$or`, `$and`, `$not`) — `Filter` is now a tree.
 
-use rustapi_core::{BoundValue, FieldKind};
+use ferrum_core::{BoundValue, FieldKind};
 
 #[derive(Debug, Clone, Default)]
 #[non_exhaustive]

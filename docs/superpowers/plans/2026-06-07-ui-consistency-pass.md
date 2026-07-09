@@ -8,7 +8,7 @@
 
 **Tech Stack:** React 18 + TypeScript, plain CSS (token-based design system), Vite. No component test harness — verification is `pnpm typecheck`, `pnpm build`, and grep guards, run from `ui/`.
 
-**Conventions for every command below:** run from `/Users/rinnguyen/projects/rustapi/ui` unless stated. The repo `.gitignore` ignores `/docs`, so plan/spec commits already happened with `-f`; source commits under `ui/` are normal.
+**Conventions for every command below:** run from `/Users/rinnguyen/projects/ferrum/ui` unless stated. The repo `.gitignore` ignores `/docs`, so plan/spec commits already happened with `-f`; source commits under `ui/` are normal.
 
 **No-regression guard used throughout:**
 ```bash
@@ -24,7 +24,7 @@ Expected: typecheck prints nothing and exits 0; build ends with `✓ built in �
 
 - [ ] **Step 1: Confirm branch and clean baseline**
 
-Run (from repo root `/Users/rinnguyen/projects/rustapi`):
+Run (from repo root `/Users/rinnguyen/projects/ferrum`):
 ```bash
 git branch --show-current && git status --short
 ```

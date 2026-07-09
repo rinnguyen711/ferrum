@@ -18,7 +18,7 @@
 - **REST content handlers** (`crates/http/src/routes/content.rs`): `list`, `create`, `get_one`, `update`, `delete_one`. Today each is an axum handler that does authz (`ensure`), loads the `ContentType`, rejects `Single`, runs the DB + populate + hooks + events pipeline, and wraps the result in `Json`. This plan extracts the non-axum core of each into reusable functions.
 - **Authz choke point** (`crates/http/src/state.rs`): `state.authz.can(principal, action, content_type).await -> bool`. Actions: `Action::ContentRead`, `Action::ContentWrite`, `Action::ContentDelete`.
 - **Principal** is injected as an axum `Extension<Principal>` by `require_auth` (`crates/http/src/middleware/auth.rs:56`).
-- **Errors**: `crates/http/src/error.rs` wraps `rustapi_core::Error` as `ApiError`. `Error` variants: `NotFound`, `Validation(ValidationErrors)`, `Forbidden`, `Unauthorized`, `Conflict`, `RelationFkViolation`, `Internal(anyhow)`, plus others. The shared functions return `Result<_, Error>` (not `ApiError`) so both surfaces can map as they like.
+- **Errors**: `crates/http/src/error.rs` wraps `ferrum_core::Error` as `ApiError`. `Error` variants: `NotFound`, `Validation(ValidationErrors)`, `Forbidden`, `Unauthorized`, `Conflict`, `RelationFkViolation`, `Internal(anyhow)`, plus others. The shared functions return `Result<_, Error>` (not `ApiError`) so both surfaces can map as they like.
 - **Config gating**: `state.config.docs_enabled: bool`. The OpenAPI/Swagger router is merged only when this is true (`crates/http/src/routes/mod.rs`).
 - **Test harness**: `crates/bin/tests/common` provides `TestApp::spawn()` (ephemeral Postgres via testcontainers, migrations only — no seed) and `app.admin(req)` (adds admin auth), `app.url(path)`, `app.client`. Content types are created in-test by POSTing to `/admin/content-types` (see `crates/bin/tests/integration_roles.rs`).
 
@@ -96,7 +96,7 @@ async-graphql-axum.workspace = true
 
 - [ ] **Step 3: Verify it builds**
 
-Run: `cargo build -p rustapi-http`
+Run: `cargo build -p ferrum-http`
 Expected: compiles (no usage yet, just the new deps resolve).
 
 - [ ] **Step 4: Commit**
@@ -117,7 +117,7 @@ Pull the non-axum core of each REST handler into a function taking plain args an
 
 - [ ] **Step 1: Run the existing content tests to establish a green baseline**
 
-Run: `cargo test -p rustapi-bin --test integration_roles` and any content suite (e.g. `cargo test -p rustapi-bin content`)
+Run: `cargo test -p ferrum-bin --test integration_roles` and any content suite (e.g. `cargo test -p ferrum-bin content`)
 Expected: PASS (records the pre-refactor baseline; if Docker-cold, run once more — see memory note on cold-parallel flake).
 
 - [ ] **Step 2: Add a shared `list_entries` function**
@@ -145,8 +145,8 @@ pub(crate) async fn list_entries(
         .get(ct_name)
         .await
         .ok_or(Error::NotFound)?;
-    if ct.kind == rustapi_core::ContentTypeKind::Single {
-        return Err(Error::Validation(rustapi_core::ValidationErrors::single(
+    if ct.kind == ferrum_core::ContentTypeKind::Single {
+        return Err(Error::Validation(ferrum_core::ValidationErrors::single(
             "use /api/single-types/:name for single types",
         )));
     }
@@ -165,7 +165,7 @@ pub(crate) async fn list_entries(
         PublishFilter::All
     };
 
-    let (list_sql, list_binds) = rustapi_sql::select_list_status(
+    let (list_sql, list_binds) = ferrum_sql::select_list_status(
         &ct.name, &filter, &opts.sort, opts.page_size as i64, offset, publish,
     )
     .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
@@ -185,7 +185,7 @@ pub(crate) async fn list_entries(
     crate::media_embed::apply_media_embed(&state.pool, &ct, &mut maps).await?;
     let data: Vec<Value> = maps.into_iter().map(Value::Object).collect();
 
-    let (count_sql, count_binds) = rustapi_sql::count_status(&ct.name, &filter, publish)
+    let (count_sql, count_binds) = ferrum_sql::count_status(&ct.name, &filter, publish)
         .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
     let cq = bind_all_as(sqlx::query_as::<_, (i64,)>(&count_sql), &count_binds);
     let total: i64 = cq.fetch_one(&state.pool).await.map_err(|e| db(e).0)?.0;
@@ -265,8 +265,8 @@ Keep `ensure` if other handlers (publish/unpublish/import/export) still use it; 
 
 - [ ] **Step 5: Build and run the content tests — behavior must be unchanged**
 
-Run: `cargo build -p rustapi-http && cargo test -p rustapi-bin --test integration_roles`
-Expected: PASS, same as the Step 1 baseline. Also `cargo clippy -p rustapi-http --all-targets` clean.
+Run: `cargo build -p ferrum-http && cargo test -p ferrum-bin --test integration_roles`
+Expected: PASS, same as the Step 1 baseline. Also `cargo clippy -p ferrum-http --all-targets` clean.
 
 - [ ] **Step 6: Commit**
 
@@ -292,7 +292,7 @@ Create `crates/http/src/graphql/scalars.rs`:
 //! mirroring the decisions in `openapi/schema.rs`. Keep the two in sync.
 
 use async_graphql::dynamic::TypeRef;
-use rustapi_core::field::{Cardinality, Field, FieldKind};
+use ferrum_core::field::{Cardinality, Field, FieldKind};
 
 /// Custom scalar names registered on the schema.
 pub const UUID_SCALAR: &str = "UUID";
@@ -356,7 +356,7 @@ pub fn enum_type_name(field: &Field) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustapi_core::field::Field;
+    use ferrum_core::field::Field;
     use serde_json::{json, Value};
 
     fn f(kind: FieldKind, required: bool, kind_meta: Value) -> Field {
@@ -432,7 +432,7 @@ pub fn pascal(name: &str) -> String {
 
 - [ ] **Step 3: Run the tests to verify they pass**
 
-Run: `cargo test -p rustapi-http graphql::scalars`
+Run: `cargo test -p ferrum-http graphql::scalars`
 Expected: PASS (6 tests).
 
 - [ ] **Step 4: Commit**
@@ -461,8 +461,8 @@ Append to `crates/http/src/graphql/build.rs` a test that builds a schema from on
 mod tests {
     use super::*;
     use chrono::Utc;
-    use rustapi_core::field::{Field, FieldKind};
-    use rustapi_core::{ContentType, ContentTypeKind};
+    use ferrum_core::field::{Field, FieldKind};
+    use ferrum_core::{ContentType, ContentTypeKind};
     use serde_json::{json, Value};
     use uuid::Uuid;
 
@@ -513,7 +513,7 @@ mod tests {
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `cargo test -p rustapi-http graphql::build`
+Run: `cargo test -p ferrum-http graphql::build`
 Expected: FAIL — `build_schema` not defined.
 
 - [ ] **Step 3: Implement `build_schema`**
@@ -527,8 +527,8 @@ use crate::graphql::scalars::{
 use async_graphql::dynamic::{
     Enum, Field, FieldFuture, InputObject, InputValue, Object, Scalar, Schema, SchemaError, TypeRef,
 };
-use rustapi_core::field::FieldKind;
-use rustapi_core::{ContentType, ContentTypeKind};
+use ferrum_core::field::FieldKind;
+use ferrum_core::{ContentType, ContentTypeKind};
 
 /// Build the full dynamic schema from the current content-type list.
 /// Only Collection types get root fields; Single types are skipped in v1.
@@ -675,7 +675,7 @@ pub fn plural(name: &str) -> String {
 
 - [ ] **Step 4: Run to verify the shape tests pass**
 
-Run: `cargo test -p rustapi-http graphql::build`
+Run: `cargo test -p ferrum-http graphql::build`
 Expected: PASS (2 tests). If `.sdl()` differs slightly in spacing, adjust the `contains` assertions to match real output (run once, read the panic's printed SDL).
 
 - [ ] **Step 5: Commit**
@@ -709,8 +709,8 @@ use crate::routes::content;
 use crate::state::AppState;
 use async_graphql::dynamic::{FieldFuture, FieldValue, ResolverContext};
 use async_graphql::{Error as GqlError, Value as GqlValue};
-use rustapi_core::{Error, Principal};
-use rustapi_schema::query::ListParams; // adjust path: ListParams is defined in crate::query
+use ferrum_core::{Error, Principal};
+use ferrum_schema::query::ListParams; // adjust path: ListParams is defined in crate::query
 use serde_json::{Map, Value};
 use uuid::Uuid;
 
@@ -865,22 +865,22 @@ pub fn delete_field(ct_name: String) -> impl Fn(ResolverContext) -> FieldFuture 
 
 fn parse_id_arg(ctx: &ResolverContext, name: &str) -> Result<Uuid, GqlError> {
     let s = ctx.args.try_get(name).map_err(|_| gql_err(Error::Validation(
-        rustapi_core::ValidationErrors::single("missing id"))))?
+        ferrum_core::ValidationErrors::single("missing id"))))?
         .string().map_err(|_| gql_err(Error::Validation(
-        rustapi_core::ValidationErrors::single("id must be a string"))))?
+        ferrum_core::ValidationErrors::single("id must be a string"))))?
         .to_string();
     Uuid::parse_str(&s).map_err(|_| gql_err(Error::Validation(
-        rustapi_core::ValidationErrors::single("id is not a valid uuid"))))
+        ferrum_core::ValidationErrors::single("id is not a valid uuid"))))
 }
 
 fn input_arg(ctx: &ResolverContext, name: &str) -> Result<Map<String, Value>, GqlError> {
     let v: Value = ctx.args.try_get(name)
-        .map_err(|_| gql_err(Error::Validation(rustapi_core::ValidationErrors::single("missing input"))))?
+        .map_err(|_| gql_err(Error::Validation(ferrum_core::ValidationErrors::single("missing input"))))?
         .deserialize().map_err(|_| gql_err(Error::Validation(
-            rustapi_core::ValidationErrors::single("input must be an object"))))?;
+            ferrum_core::ValidationErrors::single("input must be an object"))))?;
     match v {
         Value::Object(m) => Ok(m),
-        _ => Err(gql_err(Error::Validation(rustapi_core::ValidationErrors::single("input must be an object")))),
+        _ => Err(gql_err(Error::Validation(ferrum_core::ValidationErrors::single("input must be an object")))),
     }
 }
 
@@ -906,7 +906,7 @@ fn filters_to_raw_query(v: Value) -> String {
 }
 ```
 
-> Path checks before coding: confirm `ListParams` import path (it is `crate::query::ListParams` per content.rs `use crate::query::{parse_list, ListParams}` — adjust the `use` accordingly; the `rustapi_schema::query` path above is a placeholder, fix it). Confirm `ListParams` field names and that it derives `Default` (if not, construct it explicitly without `..Default::default()`). Confirm `GqlValue::from_json` exists in the async-graphql version resolved (it does in 7.x as `Value::from_json`). Confirm `ctx.args.try_get(..).deserialize()` is available; if the API differs, use `.value()` + manual conversion.
+> Path checks before coding: confirm `ListParams` import path (it is `crate::query::ListParams` per content.rs `use crate::query::{parse_list, ListParams}` — adjust the `use` accordingly; the `ferrum_schema::query` path above is a placeholder, fix it). Confirm `ListParams` field names and that it derives `Default` (if not, construct it explicitly without `..Default::default()`). Confirm `GqlValue::from_json` exists in the async-graphql version resolved (it does in 7.x as `Value::from_json`). Confirm `ctx.args.try_get(..).deserialize()` is available; if the API differs, use `.value()` + manual conversion.
 
 - [ ] **Step 2: Swap build.rs to use the real resolvers; remove temp stubs**
 
@@ -914,12 +914,12 @@ In `crates/http/src/graphql/build.rs`, delete the TEMP stub `json_field_resolver
 
 - [ ] **Step 3: Build**
 
-Run: `cargo build -p rustapi-http`
+Run: `cargo build -p ferrum-http`
 Expected: compiles. Fix any API-shape mismatches flagged by the compiler (arg accessors, `FieldValue` construction).
 
 - [ ] **Step 4: Re-run schema shape tests (still pass with real resolvers)**
 
-Run: `cargo test -p rustapi-http graphql`
+Run: `cargo test -p ferrum-http graphql`
 Expected: PASS (scalars + build SDL tests; resolvers aren't exercised by SDL).
 
 - [ ] **Step 5: Commit**
@@ -942,7 +942,7 @@ git commit -m "feat(graphql): resolvers delegating to shared content CRUD"
 ```rust
 use crate::state::AppState;
 use async_graphql::dynamic::Schema;
-use rustapi_core::ContentType;
+use ferrum_core::ContentType;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -1030,7 +1030,7 @@ use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 use axum::extract::{Extension, State};
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
-use rustapi_core::Principal;
+use ferrum_core::Principal;
 
 /// POST /api/graphql — execute a query/mutation. AppState + Principal are
 /// injected into the request so resolvers can reach them via ctx.data.
@@ -1259,7 +1259,7 @@ async fn schema_reflects_new_type_without_restart() {
 
 - [ ] **Step 2: Run the suite**
 
-Run: `cargo test -p rustapi-bin --test graphql -- --test-threads=1`
+Run: `cargo test -p ferrum-bin --test graphql -- --test-threads=1`
 Expected: PASS (single-threaded to avoid the cold-parallel testcontainers flake noted in memory). If a field name or arg differs from the built schema, read the `errors` payload printed by the assert and reconcile with `build.rs`.
 
 - [ ] **Step 3: Add an authz-denial test**

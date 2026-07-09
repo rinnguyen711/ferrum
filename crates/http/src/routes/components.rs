@@ -6,8 +6,8 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Json, Router};
-use rustapi_core::{Error, Field};
-use rustapi_sql::Component;
+use ferrum_core::{Error, Field};
+use ferrum_sql::Component;
 use serde::Deserialize;
 
 pub fn router() -> Router<AppState> {
@@ -92,7 +92,7 @@ async fn delete_one(
 ) -> Result<StatusCode, ApiError> {
     if q.confirm != Some(true) {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::single("confirm_required: pass ?confirm=true"),
+            ferrum_core::ValidationErrors::single("confirm_required: pass ?confirm=true"),
         )));
     }
     if let Some(existing) = state.components.get(&uid).await {

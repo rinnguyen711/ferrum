@@ -1,14 +1,14 @@
-//! Live S3 round-trip against MinIO. Skipped unless RUSTAPI_TEST_S3=1.
+//! Live S3 round-trip against MinIO. Skipped unless FERRUM_TEST_S3=1.
 //! Expects env: S3_ENDPOINT, S3_BUCKET, S3_REGION, S3_KEY, S3_SECRET.
 
 use bytes::Bytes;
-use rustapi_media::s3::{S3Config, S3Provider};
-use rustapi_media::StorageProvider;
+use ferrum_media::s3::{S3Config, S3Provider};
+use ferrum_media::StorageProvider;
 
 #[tokio::test]
 async fn s3_round_trip() {
-    if std::env::var("RUSTAPI_TEST_S3").ok().as_deref() != Some("1") {
-        eprintln!("skipping: set RUSTAPI_TEST_S3=1 to run");
+    if std::env::var("FERRUM_TEST_S3").ok().as_deref() != Some("1") {
+        eprintln!("skipping: set FERRUM_TEST_S3=1 to run");
         return;
     }
     let cfg = S3Config {

@@ -4,15 +4,15 @@
 
 **Goal:** Admin-only user CRUD endpoints plus a studio Users screen (list + editor) that manages email, roles, and passwords, with backend-unsupported features shown as disabled placeholders.
 
-**Architecture:** New `/admin/users` routes (axum) mirror the existing `/admin/content-types` pattern, behind `require_auth` + a new `UserRead`/`UserWrite` authz check. A `RoleAuthz` user can only reach them as `admin`. The UI adds `/users` list + editor screens ported from `design/rustapi/users.jsx`, wired through new `endpoints.ts` calls; lockout guards (no self-delete, no self-demote) live in the handlers.
+**Architecture:** New `/admin/users` routes (axum) mirror the existing `/admin/content-types` pattern, behind `require_auth` + a new `UserRead`/`UserWrite` authz check. A `RoleAuthz` user can only reach them as `admin`. The UI adds `/users` list + editor screens ported from `design/ferrum/users.jsx`, wired through new `endpoints.ts` calls; lockout guards (no self-delete, no self-demote) live in the handlers.
 
 **Tech Stack:** Rust/Axum 0.7 + sqlx (backend), Argon2id (password rehash), React 18 + TS + react-router-dom (UI, typecheck only), cargo test + playwright smoke.
 
 **Spec:** `docs/superpowers/specs/2026-06-03-user-management-design.md`
 
 **Verification commands:**
-- Backend unit: `cargo test -p rustapi-core` / `cargo test -p rustapi-http`
-- Backend integration: `cargo test -p rustapi --test integration_users` (needs Docker)
+- Backend unit: `cargo test -p ferrum-core` / `cargo test -p ferrum-http`
+- Backend integration: `cargo test -p ferrum --test integration_users` (needs Docker)
 - UI: `cd ui && pnpm typecheck`
 
 ---
@@ -31,7 +31,7 @@
 - `ui/src/screens/UserEditor.tsx` — **create**: create/edit screen.
 - `ui/src/App.tsx` — **modify**: `/users`, `/users/new`, `/users/:id` routes.
 - `ui/src/components/shell.tsx` — **modify**: Users nav entry in `rs-rail-foot` (admin-only).
-- `ui/src/styles.css` — **modify**: port role/user CSS from `design/rustapi/styles.css`.
+- `ui/src/styles.css` — **modify**: port role/user CSS from `design/ferrum/styles.css`.
 
 ---
 
@@ -62,7 +62,7 @@ In `crates/core/src/principal.rs`, inside the existing `#[cfg(test)] mod tests`,
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cargo test -p rustapi-core principal`
+Run: `cargo test -p ferrum-core principal`
 Expected: FAIL — `Action::UserRead`/`UserWrite` do not exist.
 
 - [ ] **Step 3: Add the variants**
@@ -78,7 +78,7 @@ In `enum Action`, after `ContentWrite,` add:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo test -p rustapi-core principal`
+Run: `cargo test -p ferrum-core principal`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -173,7 +173,7 @@ pub async fn delete(pool: &PgPool, id: Uuid) -> Result<bool, sqlx::Error> {
 
 - [ ] **Step 2: Verify it compiles**
 
-Run: `cargo build -p rustapi-http`
+Run: `cargo build -p ferrum-http`
 Expected: compiles. (`list`/`create`/`update`/`delete` are unused until Task 3 — that's a warning, not an error; Task 3 lands immediately after.)
 
 - [ ] **Step 3: Commit**
@@ -205,7 +205,7 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Extension, Json, Router};
-use rustapi_core::{Action, Error, Principal, ValidationErrors};
+use ferrum_core::{Action, Error, Principal, ValidationErrors};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -400,7 +400,7 @@ pub mod users;
 
 - [ ] **Step 3: Verify it compiles**
 
-Run: `cargo build -p rustapi-http`
+Run: `cargo build -p ferrum-http`
 Expected: compiles, store-fn warnings gone.
 
 - [ ] **Step 4: Commit**
@@ -608,7 +608,7 @@ async fn non_admin_forbidden() {
 
 - [ ] **Step 2: Run the tests**
 
-Run: `cargo test -p rustapi --test integration_users`
+Run: `cargo test -p ferrum --test integration_users`
 Expected: all PASS (needs Docker).
 
 - [ ] **Step 3: Commit**
@@ -678,7 +678,7 @@ export function deleteUser(id: string): Promise<void> {
 Create `ui/src/roles.ts`:
 
 ```ts
-/** Mirrors the backend role→permission map (rustapi_core::role_allows). Display
+/** Mirrors the backend role→permission map (ferrum_core::role_allows). Display
  * only; the server is authoritative. */
 export interface Role {
   key: string;
@@ -1159,10 +1159,10 @@ Expected: a list showing which classes already exist (n>0) and which are missing
 
 - [ ] **Step 2: Port missing rules from the design stylesheet**
 
-For each class reported as `0` in Step 1, copy its rule(s) from `design/rustapi/styles.css` into `ui/src/styles.css`. Read the design stylesheet to extract them:
+For each class reported as `0` in Step 1, copy its rule(s) from `design/ferrum/styles.css` into `ui/src/styles.css`. Read the design stylesheet to extract them:
 
 ```bash
-grep -n "rs-rolebar\|rs-role-pill\|rs-perm-grid\|rs-role-radio\|rs-cap\|rs-2fa\|rs-user-cell\|rs-user-id\|rs-check\|rs-field-label\|rs-danger" design/rustapi/styles.css
+grep -n "rs-rolebar\|rs-role-pill\|rs-perm-grid\|rs-role-radio\|rs-cap\|rs-2fa\|rs-user-cell\|rs-user-id\|rs-check\|rs-field-label\|rs-danger" design/ferrum/styles.css
 ```
 
 Copy the matching rule blocks verbatim into `ui/src/styles.css` (append to the end). Only copy rules for classes that Step 1 reported as missing — do not duplicate existing ones. If a class exists in neither stylesheet (e.g. `rs-check`), add a minimal rule:
@@ -1199,15 +1199,15 @@ git commit -m "style(ui): port role/user CSS for Users screens"
 
 Run:
 ```bash
-docker rm -f rustapi-um-pg >/dev/null 2>&1
-docker run -d --name rustapi-um-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=rustapi_um -p 55433:5432 postgres:16
+docker rm -f ferrum-um-pg >/dev/null 2>&1
+docker run -d --name ferrum-um-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=ferrum_um -p 55433:5432 postgres:16
 sleep 4
-export DATABASE_URL="postgres://postgres:postgres@localhost:55433/rustapi_um"
-export RUSTAPI_JWT_SECRET=$(openssl rand -hex 32)
-export RUSTAPI_STUDIO_DIR=$PWD/ui/dist
-export RUSTAPI_SEED=false
-export RUSTAPI_BIND=127.0.0.1:8098
-cargo run -p rustapi
+export DATABASE_URL="postgres://postgres:postgres@localhost:55433/ferrum_um"
+export FERRUM_JWT_SECRET=$(openssl rand -hex 32)
+export FERRUM_STUDIO_DIR=$PWD/ui/dist
+export FERRUM_SEED=false
+export FERRUM_BIND=127.0.0.1:8098
+cargo run -p ferrum
 ```
 
 > If Docker is unavailable, note that the smoke was not run and rely on the
@@ -1229,7 +1229,7 @@ Open `http://127.0.0.1:8098/studio`. Verify:
 - [ ] **Step 3: Teardown + record result**
 
 ```bash
-docker rm -f rustapi-um-pg >/dev/null 2>&1
+docker rm -f ferrum-um-pg >/dev/null 2>&1
 ```
 Report which steps passed. If any failed, stop and report rather than completing.
 

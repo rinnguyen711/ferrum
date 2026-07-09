@@ -56,10 +56,10 @@ export function StatusBadge({ status }: { status: Status }) {
 
 function RailLogo() {
   return (
-    <div className="rs-logo" title="Rustapi">
+    <div className="rs-logo" title="Ferrum">
       <img
         src={`${import.meta.env.BASE_URL}logo.png`}
-        alt="Rustapi"
+        alt="Ferrum"
         width={26}
         height={26}
         style={{ display: "block" }}

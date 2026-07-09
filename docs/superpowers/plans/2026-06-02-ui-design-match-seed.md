@@ -4,9 +4,9 @@
 
 **Goal:** Make a fresh install ship with default Article/Author/Category types + seed data, and bring the admin UI up to the reference design in `design/` with visible placeholders for unimplemented features.
 
-**Architecture:** Two phases. **Phase A (backend):** a `seed` module in the `rustapi` bin crate runs at boot; if the DB has no content types and `RUSTAPI_SEED` is on, it creates the three types via `SchemaService::create` and inserts rows via the http crate's `body_to_binds` + `rustapi_sql::insert`. **Phase B (UI):** upgrade React screens (Dashboard, ContentList, SchemaEditor, shell panels, Settings) to match the design and add a placeholder MediaLibrary screen. Spec: `docs/superpowers/specs/2026-06-02-ui-design-match-and-seed-design.md`.
+**Architecture:** Two phases. **Phase A (backend):** a `seed` module in the `ferrum` bin crate runs at boot; if the DB has no content types and `FERRUM_SEED` is on, it creates the three types via `SchemaService::create` and inserts rows via the http crate's `body_to_binds` + `ferrum_sql::insert`. **Phase B (UI):** upgrade React screens (Dashboard, ContentList, SchemaEditor, shell panels, Settings) to match the design and add a placeholder MediaLibrary screen. Spec: `docs/superpowers/specs/2026-06-02-ui-design-match-and-seed-design.md`.
 
-**Tech Stack:** Rust (axum, sqlx, anyhow, tracing, testcontainers), React + TypeScript + Vite, existing `rs-*` CSS in `ui/src/styles.css` + reference CSS in `design/rustapi/styles.css`.
+**Tech Stack:** Rust (axum, sqlx, anyhow, tracing, testcontainers), React + TypeScript + Vite, existing `rs-*` CSS in `ui/src/styles.css` + reference CSS in `design/ferrum/styles.css`.
 
 **Relation ordering note (critical):** `SchemaService::create` calls `validate_relation_cross_refs`, which requires a relation's `target` type to already exist. Create order is **author → category → article**. The `article.author` relation declares `inverse: "articles"`, which registers the Author↔Article inverse automatically (same pattern as `post.author` with `inverse: "posts"` in `crates/bin/tests/relations.rs`). Do **not** put an `articles` relation field on the author type — it would reference `article` before it exists and fail.
 
@@ -28,14 +28,14 @@ In `crates/bin/src/config.rs`, add `pub seed: bool` to the `Config` struct (afte
 ```rust
     pub studio_dir: Option<String>,
     /// When true (default), an empty DB is seeded with default content types
-    /// and sample data at startup. Set RUSTAPI_SEED=false to disable.
+    /// and sample data at startup. Set FERRUM_SEED=false to disable.
     pub seed: bool,
 ```
 
 In `from_env`, before the final `Ok(Self { ... })`, add:
 
 ```rust
-        let seed = std::env::var("RUSTAPI_SEED")
+        let seed = std::env::var("FERRUM_SEED")
             .ok()
             .map(|s| !matches!(s.as_str(), "0" | "false" | "no"))
             .unwrap_or(true);
@@ -45,14 +45,14 @@ And add `seed,` to the returned struct literal.
 
 - [ ] **Step 2: Verify it compiles**
 
-Run: `cargo build -p rustapi`
+Run: `cargo build -p ferrum`
 Expected: builds clean (the existing `rejects_short_key` test is unaffected).
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add crates/bin/src/config.rs
-git commit -m "feat(bin): add RUSTAPI_SEED config flag (default on)"
+git commit -m "feat(bin): add FERRUM_SEED config flag (default on)"
 ```
 
 ---
@@ -81,8 +81,8 @@ serde_json.workspace = true
 //! Idempotent — skips entirely if any content type already exists.
 
 use anyhow::Result;
-use rustapi_core::{Field, FieldKind, NewContentType};
-use rustapi_schema::SchemaService;
+use ferrum_core::{Field, FieldKind, NewContentType};
+use ferrum_schema::SchemaService;
 use serde_json::json;
 
 fn field(name: &str, kind: FieldKind, required: bool) -> Field {
@@ -194,7 +194,7 @@ mod seed;
 
 - [ ] **Step 4: Verify compile**
 
-Run: `cargo build -p rustapi`
+Run: `cargo build -p ferrum`
 Expected: builds clean.
 
 - [ ] **Step 5: Commit**
@@ -211,16 +211,16 @@ git commit -m "feat(bin): seed module — default content-type definitions"
 **Files:**
 - Modify: `crates/bin/src/seed.rs`
 
-Insert authors + categories + articles by reusing the http write path. `body_to_binds` is `pub` in `rustapi_http::entry`; `rustapi_sql::insert` and `rustapi_schema::bind::bind_all` are `pub`.
+Insert authors + categories + articles by reusing the http write path. `body_to_binds` is `pub` in `ferrum_http::entry`; `ferrum_sql::insert` and `ferrum_schema::bind::bind_all` are `pub`.
 
 - [ ] **Step 1: Add imports + an `insert_entry` helper**
 
 At the top of `crates/bin/src/seed.rs`, extend imports:
 
 ```rust
-use rustapi_core::ContentType;
-use rustapi_http::entry::body_to_binds;
-use rustapi_schema::bind::bind_all;
+use ferrum_core::ContentType;
+use ferrum_http::entry::body_to_binds;
+use ferrum_schema::bind::bind_all;
 use serde_json::{Map, Value};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -234,7 +234,7 @@ ids it passes, so the FK is guaranteed to exist):
 async fn insert_entry(pool: &PgPool, ct: &ContentType, body: Map<String, Value>) -> Result<Uuid> {
     let (binds, _checks) = body_to_binds(ct, body, true)
         .map_err(|e| anyhow::anyhow!("seed body_to_binds: {e}"))?;
-    let (sql, bind_vals) = rustapi_sql::insert(ct, &binds)
+    let (sql, bind_vals) = ferrum_sql::insert(ct, &binds)
         .map_err(|e| anyhow::anyhow!("seed insert sql: {e}"))?;
     let row = bind_all(sqlx::query(&sql), &bind_vals)
         .fetch_one(pool)
@@ -354,7 +354,7 @@ pub async fn seed_if_empty(pool: &PgPool, schemas: &SchemaService, enabled: bool
 
 - [ ] **Step 3: Verify compile**
 
-Run: `cargo build -p rustapi`
+Run: `cargo build -p ferrum`
 Expected: builds clean.
 
 - [ ] **Step 4: Commit**
@@ -389,7 +389,7 @@ add:
 
 - [ ] **Step 2: Verify compile**
 
-Run: `cargo build -p rustapi`
+Run: `cargo build -p ferrum`
 Expected: builds clean.
 
 - [ ] **Step 3: Commit**
@@ -430,13 +430,13 @@ async fn seeds_default_types_and_data() {
     let app = TestApp::spawn().await;
 
     // Build a SchemaService over the harness pool (fresh DB → empty registry).
-    use rustapi_schema::{SchemaRegistry, SchemaService};
+    use ferrum_schema::{SchemaRegistry, SchemaService};
     let registry = SchemaRegistry::new();
     registry.reload_from_db(&app.pool).await.unwrap();
     let schemas = SchemaService::new(app.pool.clone(), registry);
 
     // First run seeds; returns Ok and creates types.
-    rustapi::seed::seed_if_empty(&app.pool, &schemas, true)
+    ferrum::seed::seed_if_empty(&app.pool, &schemas, true)
         .await
         .unwrap();
 
@@ -486,7 +486,7 @@ async fn seeds_default_types_and_data() {
     );
 
     // Idempotent: second run is a no-op (returns without error, no duplicates).
-    rustapi::seed::seed_if_empty(&app.pool, &schemas, true)
+    ferrum::seed::seed_if_empty(&app.pool, &schemas, true)
         .await
         .unwrap();
     assert_eq!(count("/api/author").await, 4, "no duplicate authors");
@@ -495,13 +495,13 @@ async fn seeds_default_types_and_data() {
 
 - [ ] **Step 2: Make the bin's modules reachable from the integration test**
 
-Integration tests can only import the crate's **library** target, but `rustapi`
+Integration tests can only import the crate's **library** target, but `ferrum`
 is a bin-only crate. Add a minimal lib target exposing `seed`.
 
 Create `crates/bin/src/lib.rs`:
 
 ```rust
-//! Library facet of the rustapi binary, exposing modules that integration
+//! Library facet of the ferrum binary, exposing modules that integration
 //! tests need to call directly (e.g. seeding).
 pub mod config;
 pub mod seed;
@@ -511,29 +511,29 @@ In `crates/bin/Cargo.toml`, add a `[lib]` section above `[[bin]]`:
 
 ```toml
 [lib]
-name = "rustapi"
+name = "ferrum"
 path = "src/lib.rs"
 ```
 
 In `crates/bin/src/main.rs`, replace the `mod config;` / `mod seed;` lines with:
 
 ```rust
-use rustapi::{config, seed};
+use ferrum::{config, seed};
 ```
 
 (Keep `use config::Config;` working — change it to `use crate::config::Config;`
-→ actually `use config::Config;` still resolves via the `use rustapi::config`
-import; if the compiler objects, write `use rustapi::config::Config;` and drop
+→ actually `use config::Config;` still resolves via the `use ferrum::config`
+import; if the compiler objects, write `use ferrum::config::Config;` and drop
 the separate `use config::Config;` line.)
 
 - [ ] **Step 3: Run the seed test**
 
-Run: `cargo test -p rustapi --test seed -- --nocapture`
+Run: `cargo test -p ferrum --test seed -- --nocapture`
 Expected: PASS (boots Postgres via testcontainers; needs Docker running).
 
 - [ ] **Step 4: Run the full bin test suite to confirm no regressions**
 
-Run: `cargo test -p rustapi`
+Run: `cargo test -p ferrum`
 Expected: all existing relation/filter/fieldkind tests still PASS.
 
 - [ ] **Step 5: Commit**
@@ -551,13 +551,13 @@ git commit -m "test(bin): seeding integration test + lib target"
 - Modify: `README.md`
 - Modify: `docker-compose.yml`
 
-- [ ] **Step 1: Note RUSTAPI_SEED in README**
+- [ ] **Step 1: Note FERRUM_SEED in README**
 
 In `README.md`, in the Docker section right after the admin-key override block, add:
 
 ```markdown
 The demo seeds default **Article**, **Author**, and **Category** types with
-sample data on first boot (empty DB only). Disable with `RUSTAPI_SEED=false`.
+sample data on first boot (empty DB only). Disable with `FERRUM_SEED=false`.
 ```
 
 - [ ] **Step 2: Document in docker-compose**
@@ -565,7 +565,7 @@ sample data on first boot (empty DB only). Disable with `RUSTAPI_SEED=false`.
 In `docker-compose.yml`, in the app service `environment:` block, add a commented line:
 
 ```yaml
-      # RUSTAPI_SEED: "false"   # disable first-boot sample data
+      # FERRUM_SEED: "false"   # disable first-boot sample data
 ```
 
 (Place it alongside the existing env vars; match the file's existing indentation.)
@@ -574,7 +574,7 @@ In `docker-compose.yml`, in the app service `environment:` block, add a commente
 
 ```bash
 git add README.md docker-compose.yml
-git commit -m "docs: document RUSTAPI_SEED first-boot seeding"
+git commit -m "docs: document FERRUM_SEED first-boot seeding"
 ```
 
 ---
@@ -583,20 +583,20 @@ git commit -m "docs: document RUSTAPI_SEED first-boot seeding"
 
 For all Phase B tasks, after edits run `pnpm -C ui build` (typecheck + bundle)
 and expect a clean build. CSS classes referenced below that are missing from
-`ui/src/styles.css` are ported from `design/rustapi/styles.css` in Task B1.
+`ui/src/styles.css` are ported from `design/ferrum/styles.css` in Task B1.
 
 ### Task B1: Port missing CSS
 
 **Files:**
 - Modify: `ui/src/styles.css`
-- Reference: `design/rustapi/styles.css`
+- Reference: `design/ferrum/styles.css`
 
 - [ ] **Step 1: Identify the missing classes**
 
 Run:
 
 ```bash
-grep -oh "rs-[a-z-]*" design/rustapi/styles.css | sort -u > /tmp/d.txt
+grep -oh "rs-[a-z-]*" design/ferrum/styles.css | sort -u > /tmp/d.txt
 grep -oh "rs-[a-z-]*" ui/src/styles.css | sort -u > /tmp/u.txt
 comm -23 /tmp/d.txt /tmp/u.txt
 ```
@@ -617,9 +617,9 @@ used by later tasks: `rs-dash`, `rs-dash-hero`, `rs-dash-eyebrow`, `rs-dash-sub`
 `rs-schema-add`, `rs-type-pill`, `rs-req-tag`, `rs-swatch`, `rs-empty--lg`,
 `rs-preview-pill`, plus any others in the diff.
 
-- [ ] **Step 2: Copy the rule blocks for those classes from `design/rustapi/styles.css` into `ui/src/styles.css`**
+- [ ] **Step 2: Copy the rule blocks for those classes from `design/ferrum/styles.css` into `ui/src/styles.css`**
 
-Append the matching CSS rule blocks (verbatim from `design/rustapi/styles.css`)
+Append the matching CSS rule blocks (verbatim from `design/ferrum/styles.css`)
 to the end of `ui/src/styles.css`. Include the full rule for each missing
 selector and any descendant/`:hover`/`is-*` variants of those selectors that
 appear in the design file. Keep the existing `--accent` / theme variables as-is
@@ -782,7 +782,7 @@ git commit -m "feat(ui): panel search + single-type/component/settings placehold
 
 **Files:**
 - Modify: `ui/src/screens/Dashboard.tsx`
-- Reference: `design/rustapi/screens.jsx` (Dashboard, StatCard, SysRow)
+- Reference: `design/ferrum/screens.jsx` (Dashboard, StatCard, SysRow)
 
 - [ ] **Step 1: Rewrite Dashboard with hero + stat grid + recent + system panel**
 
@@ -828,7 +828,7 @@ export function Dashboard() {
     <div className="rs-dash">
       <div className="rs-dash-hero">
         <div>
-          <p className="rs-dash-eyebrow rs-mono">Rustapi · workspace</p>
+          <p className="rs-dash-eyebrow rs-mono">Ferrum · workspace</p>
           <h1>Welcome back</h1>
           <p className="rs-dash-sub">
             {types?.length ?? 0} content types registered. The API is{" "}
@@ -946,7 +946,7 @@ function SysRow({
 
 Run: `grep -oE "eye|clock|edit|bolt|plus" ui/src/components/icons.tsx | sort -u`
 Expected: all five appear. If `bolt`/`clock`/`eye`/`edit` is missing, port the
-matching path from `design/rustapi/icons.jsx` into `ui/src/components/icons.tsx`
+matching path from `design/ferrum/icons.jsx` into `ui/src/components/icons.tsx`
 before building (add the key to the `Icons` map with the same SVG path).
 
 - [ ] **Step 3: Verify build**
@@ -967,7 +967,7 @@ git commit -m "feat(ui): dashboard hero, stat grid, recent + system panel"
 
 **Files:**
 - Modify: `ui/src/screens/ContentList.tsx`
-- Reference: `design/rustapi/content.jsx`
+- Reference: `design/ferrum/content.jsx`
 
 Keep the screen schema-driven (no per-type hardcoding). All new controls are
 real where cheap (search, selection, status tabs) and placeholders otherwise
@@ -1343,7 +1343,7 @@ In `ui/src/components/shell.tsx`, in `Sidebar`'s `items` array, add after the bu
 
 Confirm `image` is a key in `ui/src/components/icons.tsx`:
 Run: `grep -c "image:" ui/src/components/icons.tsx`
-Expected: ≥1. If 0, port the `image` icon path from `design/rustapi/icons.jsx`.
+Expected: ≥1. If 0, port the `image` icon path from `design/ferrum/icons.jsx`.
 
 In `SecondaryPanel`, the `media` section should render no panel (full-width).
 Add at the top of `SecondaryPanel`, alongside the existing dashboard guard:
@@ -1370,7 +1370,7 @@ git commit -m "feat(ui): media library placeholder screen + rail entry"
 
 **Files:**
 - Modify: `ui/src/builder/SchemaEditor.tsx`
-- Reference: `design/rustapi/screens.jsx` (ContentTypeBuilder)
+- Reference: `design/ferrum/screens.jsx` (ContentTypeBuilder)
 
 Only the **presentational** header + read view aligns to the design; the
 existing draft/create/patch machinery is untouched.
@@ -1409,7 +1409,7 @@ Confirm `Icons` is imported in this file; if not, add
 - [ ] **Step 3: Confirm the field rows use the schema classes**
 
 The field list should render rows with `rs-schema-row`, a `rs-type-pill` for the
-kind, and a `rs-req-tag` when required, matching `design/rustapi/screens.jsx`.
+kind, and a `rs-req-tag` when required, matching `design/ferrum/screens.jsx`.
 If the current rows use different markup, wrap each row's kind in
 `<span className="rs-type-pill">{kindLabel}</span>` and required in
 `<span className="rs-req-tag">required</span>` — keeping existing edit/delete
@@ -1433,7 +1433,7 @@ git commit -m "feat(ui): builder header meta + schema-row styling + Preview API 
 
 **Files:**
 - Modify: `ui/src/screens/Settings.tsx`
-- Reference: `design/rustapi/screens.jsx` (Settings)
+- Reference: `design/ferrum/screens.jsx` (Settings)
 
 - [ ] **Step 1: Render the design's static token table as a placeholder**
 
@@ -1488,7 +1488,7 @@ export function Settings() {
 
 Confirm `copy` is an icon key:
 Run: `grep -c "copy:" ui/src/components/icons.tsx`
-Expected: ≥1. If 0, port the `copy` icon from `design/rustapi/icons.jsx`.
+Expected: ≥1. If 0, port the `copy` icon from `design/ferrum/icons.jsx`.
 
 - [ ] **Step 2: Verify build**
 
@@ -1543,7 +1543,7 @@ Expected: all green. No commit needed unless fixes were made.
 - **Spec coverage:** Seed (A1–A6), Dashboard extras (B4), Content list design
   (B5), Builder (B7), Media placeholder (B6), Single types/Components (B3),
   Settings sub-pages (B3, B8), generic Admin identity (B2), real relations (A3),
-  backend bootstrap with `RUSTAPI_SEED` (A1, A4). All spec sections mapped.
+  backend bootstrap with `FERRUM_SEED` (A1, A4). All spec sections mapped.
 - **Known divergence from design (documented in A2):** article→category is a
   many_to_many in the design but v2.4 only supports many_to_one, so seed wires
   only article→author; categories remain a browsable collection. Media/rich-text

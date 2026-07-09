@@ -7,7 +7,7 @@
 ## Goal
 
 An immutable record of every stateful action across the workspace — who changed
-what, when. Surfaced as a Settings ▸ Administration screen (`design/rustapi/audit.jsx`
+what, when. Surfaced as a Settings ▸ Administration screen (`design/ferrum/audit.jsx`
 is the source-of-truth mockup) plus a read API.
 
 ## Decisions (locked)
@@ -133,7 +133,7 @@ WHERE), `audit_stats`, `audit_category_counts`, `prune_audit`.
 
 ## Section 4 — Admin UI
 
-New `ui/src/screens/AuditLog.tsx`, ported from `design/rustapi/audit.jsx`:
+New `ui/src/screens/AuditLog.tsx`, ported from `design/ferrum/audit.jsx`:
 - Nav entry "Audit logs" under Settings ▸ ADMINISTRATION (after Roles) + route.
 - Header + "Export log" primary button (fetch+blob CSV download).
 - 4 `StatCard`s from `/audit/stats`.
@@ -146,7 +146,7 @@ New `ui/src/screens/AuditLog.tsx`, ported from `design/rustapi/audit.jsx`:
   (timestamp, actor, IP, device=raw UA, request id) + changes diff + note.
 - Server pagination (25/50), reuse ContentList pager pattern.
 
-**CSS:** port `rs-audit-*` classes from `design/rustapi/styles.css` into
+**CSS:** port `rs-audit-*` classes from `design/ferrum/styles.css` into
 `ui/src/styles.css`, using DESIGN.md tokens (no hardcoded hex a token covers;
 the `AUDIT_CATS` category colors are the one allowed literal set).
 

@@ -2,9 +2,9 @@
 
 use async_trait::async_trait;
 use hmac::{Hmac, Mac};
-use rustapi_core::Event;
-use rustapi_http::EventSink;
-use rustapi_sql::{insert_deliveries, mark_delivery_failed, mark_delivery_success, poll_pending};
+use ferrum_core::Event;
+use ferrum_http::EventSink;
+use ferrum_sql::{insert_deliveries, mark_delivery_failed, mark_delivery_success, poll_pending};
 use sha2::Sha256;
 use sqlx::PgPool;
 
@@ -32,7 +32,7 @@ async fn entry_payload(
     if ev_name == "entry.deleted" {
         return serde_json::json!({ "id": id });
     }
-    let table = match rustapi_sql::table_name(content_type) {
+    let table = match ferrum_sql::table_name(content_type) {
         Ok(t) => t,
         Err(_) => return serde_json::json!({ "id": id }),
     };
@@ -188,7 +188,7 @@ pub fn spawn_worker(pool: PgPool) {
 /// for logging and persisting as `last_error`.
 async fn deliver(
     client: &reqwest::Client,
-    row: &rustapi_sql::PendingDelivery,
+    row: &ferrum_sql::PendingDelivery,
 ) -> Result<u16, String> {
     let body = serde_json::to_vec(&row.payload).map_err(|e| e.to_string())?;
 
@@ -199,7 +199,7 @@ async fn deliver(
 
     if let Some(secret) = &row.secret {
         let sig = hmac_signature(secret, &body);
-        req = req.header("x-rustapi-signature", format!("sha256={sig}"));
+        req = req.header("x-ferrum-signature", format!("sha256={sig}"));
     }
 
     let resp = req.send().await.map_err(|e| e.to_string())?;

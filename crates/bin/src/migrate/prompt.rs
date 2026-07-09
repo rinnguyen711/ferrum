@@ -1,7 +1,7 @@
 use crate::migrate::inspect::{SourceColumn, SourceTable};
 use crate::migrate::map::Mapping;
 use dialoguer::{Confirm, Input, MultiSelect, Select};
-use rustapi_core::field::FieldKind;
+use ferrum_core::field::FieldKind;
 
 /// User-confirmed mapping for one column.
 #[derive(Debug, Clone)]

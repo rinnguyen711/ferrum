@@ -99,7 +99,7 @@ mod media_meta_tests {
 
 - [ ] **Step 4: Run the test to verify it fails**
 
-Run: `cargo test -p rustapi-core media_meta_tests`
+Run: `cargo test -p ferrum-core media_meta_tests`
 Expected: FAIL — `MediaMeta` not found / `MediaMetaShape` not found.
 
 - [ ] **Step 5: Implement `MediaMeta` + the `MediaMetaShape` error variant**
@@ -145,7 +145,7 @@ impl MediaMeta {
 
 - [ ] **Step 6: Run the test to verify it passes**
 
-Run: `cargo test -p rustapi-core media_meta_tests`
+Run: `cargo test -p ferrum-core media_meta_tests`
 Expected: PASS (4 tests).
 
 - [ ] **Step 7: Add validation behavior (write failing tests first)**
@@ -230,7 +230,7 @@ mod media_field_tests {
 
 - [ ] **Step 8: Run the tests to verify they fail**
 
-Run: `cargo test -p rustapi-core media_field_tests`
+Run: `cargo test -p ferrum-core media_field_tests`
 Expected: FAIL — validation branch not present; `physical_column`/`is_stored_column` not yet media-aware.
 
 - [ ] **Step 9: Implement the validation branch + helper updates**
@@ -298,7 +298,7 @@ Update `is_stored_column()` so multiple media is not a row column:
 
 - [ ] **Step 10: Run all core tests**
 
-Run: `cargo test -p rustapi-core`
+Run: `cargo test -p ferrum-core`
 Expected: PASS (all, including the new media tests).
 
 - [ ] **Step 11: Commit**
@@ -337,7 +337,7 @@ Add to the test module in `crates/sql/src/ident.rs`:
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cargo test -p rustapi-sql media_join_table_name`
+Run: `cargo test -p ferrum-sql media_join_table_name`
 Expected: FAIL — function not found.
 
 - [ ] **Step 3: Implement `media_join_table_name`**
@@ -350,7 +350,7 @@ In `crates/sql/src/ident.rs`, mirror `join_table_name` (which builds `"j_<owner>
 /// (`j_<owner>_<field>`) so a relation and a media field of the same name never
 /// collide. Both `ct` and `field` are validated as identifiers.
 pub fn media_join_table_name(ct: &str, field: &str) -> Result<String, IdentError> {
-    if !rustapi_core::reserved::is_valid_ident(ct) || !rustapi_core::reserved::is_valid_ident(field) {
+    if !ferrum_core::reserved::is_valid_ident(ct) || !ferrum_core::reserved::is_valid_ident(field) {
         return Err(IdentError(format!("invalid identifier in media join table: {ct}.{field}")));
     }
     quote_ident(&format!("j_media_{ct}_{field}"))
@@ -361,7 +361,7 @@ pub fn media_join_table_name(ct: &str, field: &str) -> Result<String, IdentError
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `cargo test -p rustapi-sql media_join_table_name`
+Run: `cargo test -p ferrum-sql media_join_table_name`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -418,7 +418,7 @@ Add to the `tests` module in `crates/sql/src/ddl.rs`:
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `cargo test -p rustapi-sql media_single`
+Run: `cargo test -p ferrum-sql media_single`
 Expected: FAIL — media currently falls into the `sql_type` `_ => "TEXT"` arm, so the FK SQL is absent. (`create_table_skips_multiple_media_column` may already pass since `is_stored_column()` is false for multiple; that's fine.)
 
 - [ ] **Step 3: Implement the media single column branch**
@@ -440,7 +440,7 @@ In `crates/sql/src/ddl.rs::column_def`, add a media branch before the `Enum` bra
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `cargo test -p rustapi-sql media_single`
+Run: `cargo test -p ferrum-sql media_single`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -490,7 +490,7 @@ PRIMARY KEY (\"post_id\", \"asset_id\"))"
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `cargo test -p rustapi-sql media_join`
+Run: `cargo test -p ferrum-sql media_join`
 Expected: FAIL — functions not found.
 
 - [ ] **Step 3: Implement `create_media_join_table` + `drop_media_join_table`**
@@ -527,7 +527,7 @@ pub fn drop_media_join_table(ct: &str, field: &str) -> Result<String, DdlError> 
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `cargo test -p rustapi-sql media_join`
+Run: `cargo test -p ferrum-sql media_join`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -572,7 +572,7 @@ SELECT $1::uuid, x.asset, x.ord::int FROM UNNEST($2::uuid[]) WITH ORDINALITY AS 
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `cargo test -p rustapi-sql media_links`
+Run: `cargo test -p ferrum-sql media_links`
 Expected: FAIL — functions not found.
 
 - [ ] **Step 3: Implement `insert_media_links` + `delete_media_links`**
@@ -607,7 +607,7 @@ pub fn delete_media_links(ct: &str, field: &str, owner_id: Uuid) -> Result<(Stri
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `cargo test -p rustapi-sql media_links`
+Run: `cargo test -p ferrum-sql media_links`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -636,7 +636,7 @@ async fn exec_create_media_join_table(
     ct: &str,
     field: &str,
 ) -> Result<(), Error> {
-    let (jt, idx) = rustapi_sql::create_media_join_table(ct, field)
+    let (jt, idx) = ferrum_sql::create_media_join_table(ct, field)
         .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
     sqlx::query(&jt).execute(&mut **tx).await.map_err(map_db_err)?;
     sqlx::query(&idx).execute(&mut **tx).await.map_err(map_db_err)?;
@@ -676,7 +676,7 @@ In `patch`, the add-fields loop (lines ~128-138). The current loop does `if let 
                     continue;
                 }
             }
-            let sql = rustapi_sql::add_column(name, f)
+            let sql = ferrum_sql::add_column(name, f)
                 .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
             sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
         }
@@ -698,15 +698,15 @@ In `patch`, the drop loop (lines ~111-127). Currently it branches on `is_m2m` (d
                 .map(|m| m.multiple)
                 .unwrap_or(false);
             if is_m2m {
-                let sql = rustapi_sql::drop_join_table(name, drop_name)
+                let sql = ferrum_sql::drop_join_table(name, drop_name)
                     .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
                 sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
             } else if is_multi_media {
-                let sql = rustapi_sql::drop_media_join_table(name, drop_name)
+                let sql = ferrum_sql::drop_media_join_table(name, drop_name)
                     .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
                 sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
             } else {
-                let sql = rustapi_sql::drop_column(name, drop_name)
+                let sql = ferrum_sql::drop_column(name, drop_name)
                     .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
                 sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
             }
@@ -747,8 +747,8 @@ Add near the other `#[sqlx::test]` cases (match their exact attribute + signatur
 
 - [ ] **Step 6: Run schema tests**
 
-Run: `cargo test -p rustapi-schema`
-Expected: PASS (including the new media join-table test). If the DB harness is unavailable in this environment, at minimum `cargo build -p rustapi-schema` must succeed; note the DB test as deferred to CI.
+Run: `cargo test -p ferrum-schema`
+Expected: PASS (including the new media join-table test). If the DB harness is unavailable in this environment, at minimum `cargo build -p ferrum-schema` must succeed; note the DB test as deferred to CI.
 
 - [ ] **Step 7: Commit**
 
@@ -869,7 +869,7 @@ Add to the `tests` module in `crates/http/src/entry.rs`:
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `cargo test -p rustapi-http --lib entry`
+Run: `cargo test -p ferrum-http --lib entry`
 Expected: FAIL — `MediaCheck`/`MediaLinkPlan` undefined; tuple arity mismatch.
 
 - [ ] **Step 3: Add the new types + extend `BodyBinds`**
@@ -1005,7 +1005,7 @@ Every existing `body_to_binds(...)` call in this test module destructures `(out,
 
 - [ ] **Step 7: Run the tests to verify they pass**
 
-Run: `cargo test -p rustapi-http --lib entry`
+Run: `cargo test -p ferrum-http --lib entry`
 Expected: PASS. (Compilation will also fail in `routes/content.rs` until Task 9 — to keep this task green in isolation, run only the `--lib entry` unit tests here; the crate-wide build is fixed in Task 9.)
 
 > If the crate does not compile because `content.rs` still destructures the old 3-tuple, that is expected and resolved in Task 9. If your harness requires a compiling crate to run any test, do Task 9's call-site edits together with this task before running, and commit both — but prefer keeping them separate if the harness allows `--lib` module tests to compile independently.
@@ -1043,7 +1043,7 @@ Create `crates/http/src/media_embed.rs`. Start with a pure helper that orders ga
 //! Not gated by `?populate`. Single media -> object or null; multiple media ->
 //! ordered array of asset objects.
 
-use rustapi_core::{ContentType, Error, FieldKind};
+use ferrum_core::{ContentType, Error, FieldKind};
 use serde_json::{Map, Value};
 use sqlx::{PgPool, Row};
 use std::collections::HashMap;
@@ -1088,8 +1088,8 @@ mod tests {
 
 - [ ] **Step 3: Run the test to verify it fails, then passes**
 
-Run: `cargo test -p rustapi-http --lib media_embed`
-Expected: FAIL first (module/file new — actually it should pass once the file compiles; if it compiles and passes, that confirms the helper). If the crate doesn't compile yet because `apply_media_embed` is referenced from `content.rs`, defer that wiring to Task 9 and only verify this module's own test compiles via `cargo test -p rustapi-http --lib media_embed`.
+Run: `cargo test -p ferrum-http --lib media_embed`
+Expected: FAIL first (module/file new — actually it should pass once the file compiles; if it compiles and passes, that confirms the helper). If the crate doesn't compile yet because `apply_media_embed` is referenced from `content.rs`, defer that wiring to Task 9 and only verify this module's own test compiles via `cargo test -p ferrum-http --lib media_embed`.
 
 - [ ] **Step 4: Implement the asset-fetch + embed entry point**
 
@@ -1142,7 +1142,7 @@ pub async fn apply_media_embed(
     rows: &mut [Map<String, Value>],
 ) -> Result<(), Error> {
     // Gather media fields.
-    let media_fields: Vec<&rustapi_core::Field> =
+    let media_fields: Vec<&ferrum_core::Field> =
         ct.fields.iter().filter(|f| f.kind == FieldKind::Media).collect();
     if media_fields.is_empty() {
         return Ok(());
@@ -1165,10 +1165,10 @@ pub async fn apply_media_embed(
                 galleries.insert(f.name.clone(), HashMap::new());
                 continue;
             }
-            let jt = rustapi_sql::media_join_table_name(&ct.name, &f.name)
+            let jt = ferrum_sql::media_join_table_name(&ct.name, &f.name)
                 .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
             let owner_col = format!("{}_id", ct.name);
-            let owner_q = rustapi_sql::quote_ident(&owner_col)
+            let owner_q = ferrum_sql::quote_ident(&owner_col)
                 .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
             let sql = format!(
                 "SELECT {owner_q} AS parent, \"asset_id\" FROM {jt} WHERE {owner_q} = ANY($1) \
@@ -1237,16 +1237,16 @@ pub async fn apply_media_embed(
 }
 ```
 
-> Ensure `rustapi_sql::quote_ident` and `rustapi_sql::media_join_table_name` are `pub` (Tasks 2 confirms the latter; `quote_ident` is already used in `populate.rs`). Match `populate.rs`'s error-mapping idioms.
+> Ensure `ferrum_sql::quote_ident` and `ferrum_sql::media_join_table_name` are `pub` (Tasks 2 confirms the latter; `quote_ident` is already used in `populate.rs`). Match `populate.rs`'s error-mapping idioms.
 
 - [ ] **Step 5: Build the crate**
 
-Run: `cargo build -p rustapi-http`
+Run: `cargo build -p ferrum-http`
 Expected: SUCCESS (module compiles; not yet called — call site lands in Task 9). If `apply_media_embed` triggers a dead-code warning, that's acceptable for this task; it's wired next.
 
 - [ ] **Step 6: Run the module test**
 
-Run: `cargo test -p rustapi-http --lib media_embed`
+Run: `cargo test -p ferrum-http --lib media_embed`
 Expected: PASS.
 
 - [ ] **Step 7: Commit**
@@ -1302,10 +1302,10 @@ In `update` (line ~162), change the destructure to the 5-tuple and add the two v
 The PUT full-replace null-fill loop (lines ~173-187) already skips non-stored columns via `!f.is_stored_column()`, so multiple-media (not stored) is correctly skipped. Single media IS stored; when absent from the body it should be nulled like a relation. Update the `null_kind` computation to treat media like relation:
 
 ```rust
-            let null_kind = if f.kind == rustapi_core::FieldKind::Relation
-                || f.kind == rustapi_core::FieldKind::Media
+            let null_kind = if f.kind == ferrum_core::FieldKind::Relation
+                || f.kind == ferrum_core::FieldKind::Media
             {
-                rustapi_core::FieldKind::Uuid
+                ferrum_core::FieldKind::Uuid
             } else {
                 f.kind
             };
@@ -1401,13 +1401,13 @@ async fn write_media_links(
         if !plan.present {
             continue;
         }
-        let (del_sql, _) = rustapi_sql::delete_media_links(owner_type, &plan.field, owner_id)
+        let (del_sql, _) = ferrum_sql::delete_media_links(owner_type, &plan.field, owner_id)
             .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
         sqlx::query(&del_sql).bind(owner_id).execute(&mut **tx).await.map_err(db)?;
         if plan.ids.is_empty() {
             continue;
         }
-        let (ins_sql, _) = rustapi_sql::insert_media_links(owner_type, &plan.field, owner_id)
+        let (ins_sql, _) = ferrum_sql::insert_media_links(owner_type, &plan.field, owner_id)
             .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
         sqlx::query(&ins_sql)
             .bind(owner_id)
@@ -1448,7 +1448,7 @@ The media verify helpers reuse `relation_target_missing` for a consistent 422 sh
 
 - [ ] **Step 6: Build + run the http crate tests**
 
-Run: `cargo build -p rustapi-http && cargo test -p rustapi-http`
+Run: `cargo build -p ferrum-http && cargo test -p ferrum-http`
 Expected: SUCCESS + PASS (unit tests from Tasks 7-8 plus any existing http tests). DB round-trip tests (below) require the DB harness.
 
 - [ ] **Step 7: Add a DB round-trip integration test (http test style)**
@@ -1478,7 +1478,7 @@ In the http integration test module that exercises entry CRUD against a live poo
 
 - [ ] **Step 8: Run the integration test**
 
-Run: `cargo test -p rustapi-http media_single_and_multi_round_trip`
+Run: `cargo test -p ferrum-http media_single_and_multi_round_trip`
 Expected: PASS (with DB). If no DB harness, mark deferred to CI and ensure the crate builds.
 
 - [ ] **Step 9: Commit**
@@ -2023,7 +2023,7 @@ git commit -m "feat(ui): MediaField asset picker input in entry editor"
 - [ ] **Step 1: Run the full Rust test suite**
 
 Run: `cargo test`
-Expected: PASS across `rustapi-core`, `rustapi-sql`, `rustapi-schema`, `rustapi-http`. Note any DB-gated tests skipped if no DB.
+Expected: PASS across `ferrum-core`, `ferrum-sql`, `ferrum-schema`, `ferrum-http`. Note any DB-gated tests skipped if no DB.
 
 - [ ] **Step 2: Run the UI typecheck + build**
 

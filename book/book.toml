@@ -1,12 +1,12 @@
 [book]
-title = "Rustapi"
+title = "Ferrum"
 description = "Headless CMS framework in Rust — developer documentation"
-authors = ["Rustapi contributors"]
+authors = ["Ferrum contributors"]
 language = "en"
 src = "src"
 
 [output.html]
-git-repository-url = "https://github.com/rinnguyen711/rustapi"
+git-repository-url = "https://github.com/rinnguyen711/ferrum"
 default-theme = "light"
 preferred-dark-theme = "navy"
-additional-css = ["theme/rustapi.css"]
+additional-css = ["theme/ferrum.css"]

@@ -2,8 +2,8 @@
 //! → local default. Also decrypts secret config fields before building.
 
 use crate::media::store;
-use rustapi_media::secret as media_secret;
-use rustapi_media::{build, secret_fields, StorageProvider};
+use ferrum_media::secret as media_secret;
+use ferrum_media::{build, secret_fields, StorageProvider};
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -29,12 +29,12 @@ pub async fn resolve_provider(
     secret_key: Option<[u8; 32]>,
 ) -> Arc<dyn StorageProvider> {
     // 1. Env override.
-    if let Ok(provider) = std::env::var("RUSTAPI_MEDIA_PROVIDER") {
+    if let Ok(provider) = std::env::var("FERRUM_MEDIA_PROVIDER") {
         if let Some(cfg) = env_config(&provider) {
             if let Ok(p) = build(&provider, &cfg) {
                 return Arc::from(p);
             }
-            tracing::warn!(%provider, "RUSTAPI_MEDIA_* env config invalid; falling back");
+            tracing::warn!(%provider, "FERRUM_MEDIA_* env config invalid; falling back");
         }
     }
     // 2. DB settings.
@@ -56,22 +56,22 @@ pub async fn resolve_provider(
 fn env_config(provider: &str) -> Option<Value> {
     match provider {
         "local" => Some(json!({
-            "base_dir": std::env::var("RUSTAPI_MEDIA_BASE_DIR").unwrap_or_else(|_| "./media-data".into()),
+            "base_dir": std::env::var("FERRUM_MEDIA_BASE_DIR").unwrap_or_else(|_| "./media-data".into()),
         })),
         "s3" => Some(json!({
-            "bucket": std::env::var("RUSTAPI_S3_BUCKET").ok()?,
-            "region": std::env::var("RUSTAPI_S3_REGION").unwrap_or_else(|_| "us-east-1".into()),
-            "endpoint": std::env::var("RUSTAPI_S3_ENDPOINT").ok(),
-            "access_key": std::env::var("RUSTAPI_S3_ACCESS_KEY").ok()?,
-            "secret_key": std::env::var("RUSTAPI_S3_SECRET_KEY").ok()?,
+            "bucket": std::env::var("FERRUM_S3_BUCKET").ok()?,
+            "region": std::env::var("FERRUM_S3_REGION").unwrap_or_else(|_| "us-east-1".into()),
+            "endpoint": std::env::var("FERRUM_S3_ENDPOINT").ok(),
+            "access_key": std::env::var("FERRUM_S3_ACCESS_KEY").ok()?,
+            "secret_key": std::env::var("FERRUM_S3_SECRET_KEY").ok()?,
         })),
         _ => None,
     }
 }
 
-/// Parse `RUSTAPI_SECRET_KEY` (hex, 64 chars → 32 bytes). Returns None if unset.
+/// Parse `FERRUM_SECRET_KEY` (hex, 64 chars → 32 bytes). Returns None if unset.
 pub fn secret_key_from_env() -> Option<[u8; 32]> {
-    let hex = std::env::var("RUSTAPI_SECRET_KEY").ok()?;
+    let hex = std::env::var("FERRUM_SECRET_KEY").ok()?;
     let bytes = (0..hex.len())
         .step_by(2)
         .map(|i| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok())

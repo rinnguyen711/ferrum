@@ -6,7 +6,7 @@
 
 **Architecture:** A new `crates/http/src/openapi/` module assembles a `serde_json::Value` OpenAPI doc from `AppState`: a hand-written static block for `/admin/*`, `/auth/*`, `/healthz`, plus a dynamic block generated per `ContentType` from `state.schemas.registry().list()`. Two public (no-auth) axum routes serve the JSON and a CDN-loaded Swagger UI page. A `docs_enabled` config flag gates route registration.
 
-**Tech Stack:** Rust, axum 0.7, serde_json, existing `rustapi_core` field model, testcontainers integration harness.
+**Tech Stack:** Rust, axum 0.7, serde_json, existing `ferrum_core` field model, testcontainers integration harness.
 
 Spec: [docs/superpowers/specs/2026-06-04-openapi-docs-design.md](../specs/2026-06-04-openapi-docs-design.md)
 
@@ -21,7 +21,7 @@ Spec: [docs/superpowers/specs/2026-06-04-openapi-docs-design.md](../specs/2026-0
 - Modify `crates/http/src/lib.rs` — declare `pub mod openapi;`.
 - Modify `crates/http/src/state.rs:49-56` — add `docs_enabled`, `api_version`, `public_base_url` to `AppConfig`.
 - Modify `crates/http/src/routes/mod.rs:14-31` — conditionally merge `openapi::router()` into the public router.
-- Modify `crates/bin/src/config.rs` — read `RUSTAPI_DOCS_ENABLED`, `RUSTAPI_API_VERSION`, `RUSTAPI_PUBLIC_URL`.
+- Modify `crates/bin/src/config.rs` — read `FERRUM_DOCS_ENABLED`, `FERRUM_API_VERSION`, `FERRUM_PUBLIC_URL`.
 - Modify `crates/bin/src/main.rs:46-50` — pass new config fields into `AppConfig`.
 - Modify `crates/bin/tests/common/mod.rs:64-68` — add new fields to the test `AppConfig`.
 - Create `crates/bin/tests/openapi.rs` — integration tests.
@@ -56,8 +56,8 @@ pub struct AppConfig {
 
 - [ ] **Step 2: Verify it compiles (expect errors at construction sites)**
 
-Run: `cargo build -p rustapi-http`
-Expected: FAIL — `crates/bin` construction sites missing fields are not built here, so `rustapi-http` alone should COMPILE. Confirm `rustapi-http` builds clean.
+Run: `cargo build -p ferrum-http`
+Expected: FAIL — `crates/bin` construction sites missing fields are not built here, so `ferrum-http` alone should COMPILE. Confirm `ferrum-http` builds clean.
 
 - [ ] **Step 3: Commit**
 
@@ -99,7 +99,7 @@ Create `crates/http/src/openapi/schema.rs`:
 ```rust
 //! Maps the content-type field model to OpenAPI/JSON Schema fragments.
 
-use rustapi_core::field::{Field, FieldKind};
+use ferrum_core::field::{Field, FieldKind};
 use serde_json::{json, Value};
 
 /// Build a JSON Schema fragment for a single field's value type.
@@ -138,7 +138,7 @@ pub fn field_to_schema(field: &Field) -> Value {
             let many = field
                 .relation_meta()
                 .map(|m| {
-                    matches!(m.cardinality, rustapi_core::field::Cardinality::ManyToMany)
+                    matches!(m.cardinality, ferrum_core::field::Cardinality::ManyToMany)
                 })
                 .unwrap_or(false);
             if many {
@@ -169,7 +169,7 @@ pub fn field_to_schema(field: &Field) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustapi_core::field::Field;
+    use ferrum_core::field::Field;
     use serde_json::json;
 
     fn f(kind: FieldKind, kind_meta: Value) -> Field {
@@ -250,8 +250,8 @@ mod tests {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo test -p rustapi-http openapi::schema::tests`
-Expected: PASS (all 9 tests). If `Cardinality` import path is wrong, fix to match `rustapi_core::field::Cardinality` (it is re-exported there per `crates/core/src/field.rs:488`).
+Run: `cargo test -p ferrum-http openapi::schema::tests`
+Expected: PASS (all 9 tests). If `Cardinality` import path is wrong, fix to match `ferrum_core::field::Cardinality` (it is re-exported there per `crates/core/src/field.rs:488`).
 
 - [ ] **Step 5: Commit**
 
@@ -274,7 +274,7 @@ Append to `crates/http/src/openapi/schema.rs` (before the `#[cfg(test)] mod test
 Functions to add at module level:
 
 ```rust
-use rustapi_core::ContentType;
+use ferrum_core::ContentType;
 
 /// Returns (response_schema_name, request_schema_name) for a content type.
 pub fn schema_names(ct_name: &str) -> (String, String) {
@@ -453,7 +453,7 @@ fn merge_obj(mut base: Value, extra: Value) -> Value {
 Tests to add inside the existing `mod tests`:
 
 ```rust
-    use rustapi_core::ContentType;
+    use ferrum_core::ContentType;
     use chrono::Utc;
     use uuid::Uuid;
 
@@ -509,7 +509,7 @@ Tests to add inside the existing `mod tests`:
 
 - [ ] **Step 2: Run tests to verify they pass**
 
-Run: `cargo test -p rustapi-http openapi::schema::tests`
+Run: `cargo test -p ferrum-http openapi::schema::tests`
 Expected: PASS (all tests incl. the 4 new ones). Add `chrono` / `uuid` to `crates/http/Cargo.toml` `[dev-dependencies]` only if not already present (they are workspace deps used elsewhere in this crate — check `crates/http/Cargo.toml` first; reuse `*.workspace = true`).
 
 - [ ] **Step 3: Commit**
@@ -750,7 +750,7 @@ mod tests {
 
 - [ ] **Step 3: Run tests to verify they pass**
 
-Run: `cargo test -p rustapi-http openapi::static_paths::tests`
+Run: `cargo test -p ferrum-http openapi::static_paths::tests`
 Expected: PASS (2 tests).
 
 - [ ] **Step 4: Commit**
@@ -821,7 +821,7 @@ pub async fn build(state: &AppState) -> Value {
     json!({
         "openapi": "3.1.0",
         "info": {
-            "title": "rustapi",
+            "title": "ferrum",
             "version": cfg.api_version,
             "description": "Auto-generated API reference. Dynamic /api/{type} endpoints reflect the live content-type registry."
         },
@@ -835,9 +835,9 @@ pub async fn build(state: &AppState) -> Value {
 mod tests {
     use super::*;
     use crate::state::{AlwaysAllow, AppConfig, NoopSink};
-    use rustapi_core::{ContentType, Field};
-    use rustapi_core::field::FieldKind;
-    use rustapi_schema::{SchemaRegistry, SchemaService};
+    use ferrum_core::{ContentType, Field};
+    use ferrum_core::field::FieldKind;
+    use ferrum_schema::{SchemaRegistry, SchemaService};
     use std::sync::Arc;
     use tokio::sync::RwLock;
 
@@ -873,8 +873,8 @@ mod tests {
             .connect_lazy("postgres://invalid/never-used")
             .expect("lazy pool");
         let schemas = SchemaService::new(pool.clone(), registry);
-        let storage: Arc<RwLock<Arc<dyn rustapi_media::StorageProvider>>> =
-            Arc::new(RwLock::new(Arc::new(rustapi_media::LocalProvider::new(
+        let storage: Arc<RwLock<Arc<dyn ferrum_media::StorageProvider>>> =
+            Arc::new(RwLock::new(Arc::new(ferrum_media::LocalProvider::new(
                 std::env::temp_dir(),
             ))));
         let state = AppState {
@@ -907,7 +907,7 @@ mod tests {
 
 - [ ] **Step 3: Run the test**
 
-Run: `cargo test -p rustapi-http openapi::spec::tests`
+Run: `cargo test -p ferrum-http openapi::spec::tests`
 Expected: PASS. If `LocalProvider::new` signature differs, check `crates/media/src/local.rs` and adjust the constructor call. If constructing `AppState` in a unit test proves impractical (e.g. provider constructor needs more), delete this `#[tokio::test]` and rely on the Task 7 integration test (note in the test module why). The `build` function itself stays unchanged.
 
 - [ ] **Step 4: Commit**
@@ -964,7 +964,7 @@ const SWAGGER_UI_HTML: &str = r##"<!DOCTYPE html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>rustapi — API docs</title>
+  <title>ferrum — API docs</title>
   <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
 </head>
 <body>
@@ -984,8 +984,8 @@ const SWAGGER_UI_HTML: &str = r##"<!DOCTYPE html>
 
 - [ ] **Step 2: Verify the crate compiles**
 
-Run: `cargo build -p rustapi-http`
-Expected: PASS (clean build of `rustapi-http`).
+Run: `cargo build -p ferrum-http`
+Expected: PASS (clean build of `ferrum-http`).
 
 - [ ] **Step 3: Commit**
 
@@ -1049,15 +1049,15 @@ In `crates/bin/src/config.rs`, add three fields to the `Config` struct (after `s
 And in `from_env`, before the final `Ok(Self { ... })`, add:
 
 ```rust
-        let docs_enabled = std::env::var("RUSTAPI_DOCS_ENABLED")
+        let docs_enabled = std::env::var("FERRUM_DOCS_ENABLED")
             .ok()
             .filter(|s| !s.is_empty())
             .map(|s| !matches!(s.as_str(), "0" | "false" | "no"))
             .unwrap_or(true);
         let api_version =
-            std::env::var("RUSTAPI_API_VERSION").unwrap_or_else(|_| "0.1.0".into());
+            std::env::var("FERRUM_API_VERSION").unwrap_or_else(|_| "0.1.0".into());
         let public_base_url =
-            std::env::var("RUSTAPI_PUBLIC_URL").unwrap_or_else(|_| "/".into());
+            std::env::var("FERRUM_PUBLIC_URL").unwrap_or_else(|_| "/".into());
 ```
 
 Then add `docs_enabled, api_version, public_base_url,` to the `Ok(Self { ... })` initializer.
@@ -1176,7 +1176,7 @@ async fn docs_ui_served_as_html() {
 
 - [ ] **Step 2: Run the integration tests**
 
-Run: `cargo test -p rustapi-bin --test openapi`
+Run: `cargo test -p ferrum-bin --test openapi`
 Expected: PASS (2 tests). Requires Docker for testcontainers (same as other integration tests).
 
 - [ ] **Step 3: Commit**
@@ -1230,7 +1230,7 @@ async fn docs_disabled_returns_404() {
 
 - [ ] **Step 3: Run all openapi integration tests**
 
-Run: `cargo test -p rustapi-bin --test openapi`
+Run: `cargo test -p ferrum-bin --test openapi`
 Expected: PASS (3 tests).
 
 - [ ] **Step 4: Commit**
@@ -1250,13 +1250,13 @@ git commit -m "test(openapi): assert routes 404 when docs disabled"
 - [ ] **Step 1: Add an env-var section**
 
 In `README.md`, in the configuration/environment-variables section (search for
-an existing `RUSTAPI_` entry such as `RUSTAPI_PAGE_SIZE_MAX`; place these next
+an existing `FERRUM_` entry such as `FERRUM_PAGE_SIZE_MAX`; place these next
 to it, matching the surrounding format). Add:
 
 ```markdown
-| `RUSTAPI_DOCS_ENABLED` | `true` | Serve `/openapi.json` and `/docs` (Swagger UI). Set to `false` in production to hide the API schema. |
-| `RUSTAPI_API_VERSION` | `0.1.0` | Reported as `info.version` in the OpenAPI document. |
-| `RUSTAPI_PUBLIC_URL` | `/` | Reported as the OpenAPI `servers[0].url`. |
+| `FERRUM_DOCS_ENABLED` | `true` | Serve `/openapi.json` and `/docs` (Swagger UI). Set to `false` in production to hide the API schema. |
+| `FERRUM_API_VERSION` | `0.1.0` | Reported as `info.version` in the OpenAPI document. |
+| `FERRUM_PUBLIC_URL` | `/` | Reported as the OpenAPI `servers[0].url`. |
 ```
 
 If the README has no env-var table, add a short `## API Documentation` section

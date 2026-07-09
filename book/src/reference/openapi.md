@@ -20,17 +20,17 @@ curl http://localhost:8080/openapi.json
 ```
 
 The document's `info.version` and `servers[0].url` come from
-`RUSTAPI_API_VERSION` and `RUSTAPI_PUBLIC_URL`. See
+`FERRUM_API_VERSION` and `FERRUM_PUBLIC_URL`. See
 [Environment variables](env-vars.md).
 
 ## Disabling docs
 
-The spec and Swagger UI are controlled by `RUSTAPI_DOCS_ENABLED` (on by
+The spec and Swagger UI are controlled by `FERRUM_DOCS_ENABLED` (on by
 default). Set it to `false` (or `0`/`no`) to run an API-only server with neither
 `/openapi.json` nor `/docs` mounted — a common choice in production:
 
 ```sh
-RUSTAPI_DOCS_ENABLED=false
+FERRUM_DOCS_ENABLED=false
 ```
 
 The same flag also gates the GraphiQL playground on
@@ -39,5 +39,5 @@ The same flag also gates the GraphiQL playground on
 ## Where to go next
 
 - [REST API](rest-api.md) — the REST surface this spec describes.
-- [Environment variables](env-vars.md) — `RUSTAPI_DOCS_ENABLED`,
-  `RUSTAPI_API_VERSION`, `RUSTAPI_PUBLIC_URL`.
+- [Environment variables](env-vars.md) — `FERRUM_DOCS_ENABLED`,
+  `FERRUM_API_VERSION`, `FERRUM_PUBLIC_URL`.

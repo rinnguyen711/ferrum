@@ -11,7 +11,7 @@
 **Spec:** `docs/superpowers/specs/2026-06-19-localization-backend-design.md`
 
 **Conventions observed in this codebase (read before starting):**
-- Physical content tables are `ct_<name>` via `rustapi_sql::table_name`. Columns quoted via `quote_ident`.
+- Physical content tables are `ct_<name>` via `ferrum_sql::table_name`. Columns quoted via `quote_ident`.
 - System columns (`id`, `created_at`, `updated_at`, `published_at`) are special-cased in `crates/core/src/system.rs::is_system_column`, in `crates/http/src/entry.rs::row_to_json` (line ~305) and its column-order helper (line ~345). New system-ish columns `document_id`/`locale` must be threaded through all three.
 - `ContentType::draft_publish()` (crates/core/src/content_type.rs:64) is the exact pattern for `localized()`.
 - Migrations live in `crates/schema/migrations/NNNN_*.sql`. Latest is `0015_end_users.sql`; next is `0016`.
@@ -110,7 +110,7 @@ fn resolved_options_fills_localized() {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cargo test -p rustapi-core localized`
+Run: `cargo test -p ferrum-core localized`
 Expected: FAIL — `no method named localized`.
 
 - [ ] **Step 3: Add the accessor and option resolution**
@@ -142,7 +142,7 @@ obj.insert("localized".into(), serde_json::Value::Bool(loc));
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cargo test -p rustapi-core localized resolved_options`
+Run: `cargo test -p ferrum-core localized resolved_options`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -237,7 +237,7 @@ pub use locale::{is_valid_locale_tag, LOCALIZATION_COLUMNS};
 
 - [ ] **Step 3: Run test to verify it passes**
 
-Run: `cargo test -p rustapi-core locale`
+Run: `cargo test -p ferrum-core locale`
 Expected: PASS (test + impl land together; this is pure logic with no prior stub).
 
 - [ ] **Step 4: Commit**
@@ -298,7 +298,7 @@ fn localized_scopes_unique_field_to_document_and_locale() {
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `cargo test -p rustapi-sql localiz`
+Run: `cargo test -p ferrum-sql localiz`
 Expected: FAIL — columns/constraints not emitted.
 
 - [ ] **Step 3: Implement in `create_table`**
@@ -370,7 +370,7 @@ fn column_def_localized(
 
 - [ ] **Step 4: Run to verify they pass**
 
-Run: `cargo test -p rustapi-sql`
+Run: `cargo test -p ferrum-sql`
 Expected: PASS (new tests + all existing ddl tests still green — non-localized path unchanged).
 
 - [ ] **Step 5: Commit**
@@ -417,7 +417,7 @@ fn localize_table_escapes_default_locale() {
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `cargo test -p rustapi-sql localize_`
+Run: `cargo test -p ferrum-sql localize_`
 Expected: FAIL — `localize_table` not defined.
 
 - [ ] **Step 3: Implement**
@@ -452,7 +452,7 @@ pub fn localize_table(ct_name: &str, default_locale: &str) -> Result<String, Ddl
 
 - [ ] **Step 4: Run to verify it passes**
 
-Run: `cargo test -p rustapi-sql localize_`
+Run: `cargo test -p ferrum-sql localize_`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -534,7 +534,7 @@ fn list_locale_filter_appends_clause() {
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `cargo test -p rustapi-sql select_by_document list_locale`
+Run: `cargo test -p ferrum-sql select_by_document list_locale`
 Expected: FAIL — fns not defined.
 
 - [ ] **Step 3: Implement**
@@ -635,7 +635,7 @@ pub fn select_list_localized(
 
 - [ ] **Step 4: Run to verify they pass**
 
-Run: `cargo test -p rustapi-sql select_by_document list_locale`
+Run: `cargo test -p ferrum-sql select_by_document list_locale`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -686,7 +686,7 @@ Create `crates/sql/src/locales.rs`:
 //! `_locales` table access. A `Locale` is a code + display name; exactly one
 //! row is the default (enforced here on mutation, plus a partial unique index).
 
-use rustapi_core::Error;
+use ferrum_core::Error;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 
@@ -779,7 +779,7 @@ pub async fn delete(pool: &PgPool, code: &str) -> Result<bool, Error> {
     match row {
         None => Ok(false),
         Some(l) if l.is_default => Err(Error::Validation(
-            rustapi_core::ValidationErrors::single("cannot delete the default locale"),
+            ferrum_core::ValidationErrors::single("cannot delete the default locale"),
         )),
         Some(_) => {
             let res = sqlx::query("DELETE FROM \"_locales\" WHERE code = $1")
@@ -804,7 +804,7 @@ pub use locales::Locale;
 
 - [ ] **Step 5: Verify it compiles + unit test passes**
 
-Run: `cargo test -p rustapi-sql locales`
+Run: `cargo test -p ferrum-sql locales`
 Expected: PASS (module compiles, presence test green).
 
 - [ ] **Step 6: Commit**
@@ -845,7 +845,7 @@ if !was_localized && now_localized {
     .await?
     .unwrap_or_else(|| "en".to_string());
 
-    let ddl = rustapi_sql::ddl::localize_table(&new_ct.name, &default_code)
+    let ddl = ferrum_sql::ddl::localize_table(&new_ct.name, &default_code)
         .map_err(|e| /* map to this fn's error type */ )?;
     for stmt in ddl.split(';').map(str::trim).filter(|s| !s.is_empty()) {
         sqlx::query(stmt).execute(&mut *tx).await?;
@@ -864,7 +864,7 @@ If `service.rs` has unit tests for the draft_publish diff, add a sibling asserti
 
 - [ ] **Step 4: Verify the crate builds**
 
-Run: `cargo build -p rustapi-schema`
+Run: `cargo build -p ferrum-schema`
 Expected: compiles clean.
 
 - [ ] **Step 5: Commit**
@@ -891,7 +891,7 @@ Create `crates/http/src/locale_registry.rs`:
 //! In-memory cache of the locale set, mirroring `RoleRegistry`. Hydrated at
 //! boot from `_locales` and reloaded on every mutation.
 
-use rustapi_sql::Locale;
+use ferrum_sql::Locale;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -998,7 +998,7 @@ For each, add `locales: Arc::new(crate::locale_registry::LocaleRegistry::new()),
 
 - [ ] **Step 3: Run the unit tests**
 
-Run: `cargo test -p rustapi-http locale_registry`
+Run: `cargo test -p ferrum-http locale_registry`
 Expected: PASS.
 
 - [ ] **Step 4: Verify workspace still builds**
@@ -1074,7 +1074,7 @@ fn body_to_binds_strips_document_id_and_locale() {
 
 - [ ] **Step 4: Run to verify it fails**
 
-Run: `cargo test -p rustapi-http body_to_binds_strips_document`
+Run: `cargo test -p ferrum-http body_to_binds_strips_document`
 Expected: FAIL — keys present (they're unknown fields → likely an error, or pass through).
 
 - [ ] **Step 5: Implement the strip**
@@ -1082,7 +1082,7 @@ Expected: FAIL — keys present (they're unknown fields → likely an error, or 
 In `body_to_binds` (entry.rs), where it already removes `id`/`created_at`/`updated_at`/`published_at` from the incoming body, also remove `document_id` and `locale`:
 
 ```rust
-for sys in rustapi_core::LOCALIZATION_COLUMNS {
+for sys in ferrum_core::LOCALIZATION_COLUMNS {
     body.remove(sys);
 }
 ```
@@ -1091,7 +1091,7 @@ for sys in rustapi_core::LOCALIZATION_COLUMNS {
 
 - [ ] **Step 6: Run to verify it passes**
 
-Run: `cargo test -p rustapi-http body_to_binds_strips_document`
+Run: `cargo test -p ferrum-http body_to_binds_strips_document`
 Expected: PASS.
 
 - [ ] **Step 7: Thread locale into the shared cores**
@@ -1103,10 +1103,10 @@ In `crates/http/src/routes/content.rs`:
 ```rust
 if ct.localized() {
     let requested = state.locales.resolve(locale).await.ok_or_else(|| {
-        Error::Validation(rustapi_core::ValidationErrors::single("unknown locale"))
+        Error::Validation(ferrum_core::ValidationErrors::single("unknown locale"))
     })?;
     let default = state.locales.default_code().await;
-    let (sql, binds) = rustapi_sql::select_by_document(&ct.name, id, &requested, &default)
+    let (sql, binds) = ferrum_sql::select_by_document(&ct.name, id, &requested, &default)
         .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
     // ... fetch_optional, NotFound, row_to_json, populate, media_embed (same as below)
 } else {
@@ -1123,17 +1123,17 @@ Keep both branches sharing the populate/media tail. (`id: Uuid` is the path para
 ```rust
 if ct.localized() {
     let requested = state.locales.resolve(locale).await.ok_or(/* 422 */)?;
-    binds_map.insert("locale".into(), rustapi_core::BoundValue::Str(requested));
+    binds_map.insert("locale".into(), ferrum_core::BoundValue::Str(requested));
     binds_map.insert(
         "document_id".into(),
-        rustapi_core::BoundValue::Uuid(provided_doc_id.unwrap_or_else(Uuid::new_v4)),
+        ferrum_core::BoundValue::Uuid(provided_doc_id.unwrap_or_else(Uuid::new_v4)),
     );
 }
 ```
 
 > `insert`/`update` in dml look up each bind key in `ct.fields` and will reject `document_id`/`locale` as `UnknownField`. To allow them, special-case in dml `insert`/`update`: if the key is one of `LOCALIZATION_COLUMNS`, emit the quoted column directly instead of resolving via `physical_column()`. Add this in Task 5's fns? No — add it now as a tiny dml change with a unit test:
 
-In `dml.rs` `insert` and `update`, replace the `let Some(f) = by_name.get(...) else { return UnknownField }` lookup with: if `name` is in `rustapi_core::LOCALIZATION_COLUMNS`, use `quote_ident(name)?` as the column directly; else the existing field lookup. Add unit test:
+In `dml.rs` `insert` and `update`, replace the `let Some(f) = by_name.get(...) else { return UnknownField }` lookup with: if `name` is in `ferrum_core::LOCALIZATION_COLUMNS`, use `quote_ident(name)?` as the column directly; else the existing field lookup. Add unit test:
 
 ```rust
 #[test]
@@ -1171,7 +1171,7 @@ In `content.rs` handlers: `list` reads `params.locale.clone()` and passes it; `g
 
 - [ ] **Step 9: Run the http unit tests + build**
 
-Run: `cargo test -p rustapi-sql insert_allows_localization && cargo build -p rustapi-http`
+Run: `cargo test -p ferrum-sql insert_allows_localization && cargo build -p ferrum-http`
 Expected: PASS + compiles.
 
 - [ ] **Step 10: Commit**
@@ -1208,7 +1208,7 @@ use crate::state::AppState;
 use axum::extract::{Path, State};
 use axum::routing::get;
 use axum::{Json, Router};
-use rustapi_core::{Action, Error, Principal};
+use ferrum_core::{Action, Error, Principal};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -1226,7 +1226,7 @@ async fn ensure_admin(state: &AppState, principal: &Principal) -> Result<(), Api
 }
 
 async fn reload(state: &AppState) -> Result<(), ApiError> {
-    let all = rustapi_sql::locales::load_all(&state.pool).await.map_err(ApiError)?;
+    let all = ferrum_sql::locales::load_all(&state.pool).await.map_err(ApiError)?;
     state.locales.set(all).await;
     Ok(())
 }
@@ -1236,7 +1236,7 @@ async fn list(
     axum::extract::Extension(principal): axum::extract::Extension<Principal>,
 ) -> Result<Json<Value>, ApiError> {
     ensure_admin(&state, &principal).await?;
-    let all = rustapi_sql::locales::load_all(&state.pool).await.map_err(ApiError)?;
+    let all = ferrum_sql::locales::load_all(&state.pool).await.map_err(ApiError)?;
     Ok(Json(json!({ "data": all })))
 }
 
@@ -1256,12 +1256,12 @@ async fn upsert(
     Json(body): Json<UpsertBody>,
 ) -> Result<Json<Value>, ApiError> {
     ensure_admin(&state, &principal).await?;
-    if !rustapi_core::is_valid_locale_tag(&body.code) {
+    if !ferrum_core::is_valid_locale_tag(&body.code) {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::single("invalid locale code"),
+            ferrum_core::ValidationErrors::single("invalid locale code"),
         )));
     }
-    let loc = rustapi_sql::locales::upsert(
+    let loc = ferrum_sql::locales::upsert(
         &state.pool, &body.code, &body.name, body.position, body.is_default,
     )
     .await
@@ -1276,7 +1276,7 @@ async fn delete_one(
     axum::extract::Extension(principal): axum::extract::Extension<Principal>,
 ) -> Result<axum::http::StatusCode, ApiError> {
     ensure_admin(&state, &principal).await?;
-    let deleted = rustapi_sql::locales::delete(&state.pool, &code).await.map_err(ApiError)?;
+    let deleted = ferrum_sql::locales::delete(&state.pool, &code).await.map_err(ApiError)?;
     if !deleted {
         return Err(ApiError(Error::NotFound));
     }
@@ -1293,7 +1293,7 @@ In the module that composes routers (mirror where `roles::router()` is merged �
 
 - [ ] **Step 4: Build**
 
-Run: `cargo build -p rustapi-http`
+Run: `cargo build -p ferrum-http`
 Expected: compiles.
 
 - [ ] **Step 5: Commit**
@@ -1325,8 +1325,8 @@ In `crates/http/src/graphql/resolve.rs`, read the `locale` arg from the field co
 In `crates/bin/src/main.rs`, after the pool is built and other registries are hydrated (find `RoleRegistry`/`reload_from_db`/`SchemaRegistry` hydration), add:
 
 ```rust
-let locales = std::sync::Arc::new(rustapi_http::locale_registry::LocaleRegistry::new());
-match rustapi_sql::locales::load_all(&pool).await {
+let locales = std::sync::Arc::new(ferrum_http::locale_registry::LocaleRegistry::new());
+match ferrum_sql::locales::load_all(&pool).await {
     Ok(all) => locales.set(all).await,
     Err(e) => tracing::warn!(error = %e, "failed to load locales at boot; using empty set"),
 }
@@ -1405,7 +1405,7 @@ Write each as a `#[tokio::test]` (or the harness's test macro), with explicit as
 
 - [ ] **Step 3: Run the suite (Docker must be running)**
 
-Run: `cargo test -p rustapi-bin --test localization`
+Run: `cargo test -p ferrum-bin --test localization`
 Expected: all tests PASS. (Integration suites can flake on cold parallel runs — re-run isolated if so, per memory.)
 
 - [ ] **Step 4: Commit**
@@ -1425,7 +1425,7 @@ git commit -m "test: localization integration suite"
 
 - [ ] **Step 1: Read the docs contributing rules**
 
-Read `book/CONTRIBUTING.md`. Follow section taxonomy, second person, sentence-case headings, real runnable examples, `theme/rustapi.css` tokens.
+Read `book/CONTRIBUTING.md`. Follow section taxonomy, second person, sentence-case headings, real runnable examples, `theme/ferrum.css` tokens.
 
 - [ ] **Step 2: Document the localization API**
 

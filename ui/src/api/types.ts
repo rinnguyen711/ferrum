@@ -1,5 +1,5 @@
 // TS mirrors of the Rust API wire shapes. `kind` strings match the
-// serde lowercase rename on `rustapi_core::FieldKind`.
+// serde lowercase rename on `ferrum_core::FieldKind`.
 
 export type ContentTypeKind = "collection" | "single";
 
@@ -51,7 +51,7 @@ export interface NewContentType {
   kind?: ContentTypeKind;
 }
 
-// PATCH /admin/content-types/{name} wire shape — mirrors rustapi_core.
+// PATCH /admin/content-types/{name} wire shape — mirrors ferrum_core.
 export interface EnumExtension {
   field: string;
   append: string[];

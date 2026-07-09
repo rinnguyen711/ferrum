@@ -1,6 +1,6 @@
 //! Translate `Vec<BoundValue>` into a chained `sqlx::query::Query`.
 
-use rustapi_core::{BoundValue, FieldKind};
+use ferrum_core::{BoundValue, FieldKind};
 use sqlx::Postgres;
 
 pub fn bind_all<'q>(

@@ -33,7 +33,7 @@ definition. `name` must be a lowercase identifier and is fixed once set; `kind`
 defaults to `collection`. For the field kinds you can use, see
 [Fields & field kinds](../concepts/fields.md).
 
-Rustapi now serves your articles under `/api/article`.
+Ferrum now serves your articles under `/api/article`.
 
 ## Create an entry
 

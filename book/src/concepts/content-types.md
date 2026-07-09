@@ -2,11 +2,11 @@
 
 A content type is the schema for a kind of content. It names the content, lists
 its [fields](fields.md), and decides whether you get a *collection* of entries
-or a *single* one-off entry. When you define a content type, Rustapi creates a
+or a *single* one-off entry. When you define a content type, Ferrum creates a
 Postgres table for it and exposes a REST and GraphQL surface for its entries.
 
 If you model a blog, you create an `article` content type with `title` and
-`body` fields; Rustapi then serves your articles at `/api/article`.
+`body` fields; Ferrum then serves your articles at `/api/article`.
 
 ## What a content type holds
 
@@ -42,7 +42,7 @@ Single types have their own page — see [Single types](single-types.md).
 
 ## System columns
 
-Every entry table carries three columns Rustapi manages for you:
+Every entry table carries three columns Ferrum manages for you:
 
 - `id` — a UUID assigned on create.
 - `created_at` — set on create.
@@ -56,7 +56,7 @@ columns — including `published_at`, `user`, `select`, `from`, `where`, and
 
 ## The registry
 
-Rustapi keeps every content type in an in-memory registry that the HTTP layer
+Ferrum keeps every content type in an in-memory registry that the HTTP layer
 reads on each request, so dispatching a request to the right table costs no
 database round trip. The registry is loaded from the database at boot and stays
 in sync as you create, patch, and delete types. You never edit it directly — it

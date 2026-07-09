@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS _components (
 - [ ] **Step 2: Verify it applies**
 
 ```bash
-cargo build -p rustapi-schema 2>&1 | tail -5
+cargo build -p ferrum-schema 2>&1 | tail -5
 ```
 
 Expected: compiles without error (sqlx embed macro picks up the new file).
@@ -274,7 +274,7 @@ fn component_field_validate_ok() {
 - [ ] **Step 9: Run tests**
 
 ```bash
-cargo test -p rustapi-core 2>&1 | tail -20
+cargo test -p ferrum-core 2>&1 | tail -20
 ```
 
 Expected: all tests pass.
@@ -343,7 +343,7 @@ Add this at the top of the `op_allows_kind` function body, before the existing a
 - [ ] **Step 4: Run tests**
 
 ```bash
-cargo test -p rustapi-sql 2>&1 | tail -20
+cargo test -p ferrum-sql 2>&1 | tail -20
 ```
 
 Expected: all tests pass.
@@ -370,7 +370,7 @@ Create `crates/sql/src/component.rs`:
 ```rust
 //! CRUD against the `_components` table.
 
-use rustapi_core::Field;
+use ferrum_core::Field;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 
@@ -484,7 +484,7 @@ pub use component::{Component, ComponentStore};
 - [ ] **Step 3: Build**
 
 ```bash
-cargo build -p rustapi-sql 2>&1 | tail -10
+cargo build -p ferrum-sql 2>&1 | tail -10
 ```
 
 Expected: compiles without error.
@@ -511,8 +511,8 @@ Create `crates/schema/src/component.rs`:
 ```rust
 //! In-memory component registry + transactional service.
 
-use rustapi_core::{Error, Field, FieldKind, ValidationErrors};
-use rustapi_sql::{Component, ComponentStore};
+use ferrum_core::{Error, Field, FieldKind, ValidationErrors};
+use ferrum_sql::{Component, ComponentStore};
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -661,7 +661,7 @@ fn validate_uid(uid: &str) -> Result<(), Error> {
         )));
     }
     for p in &parts {
-        if !rustapi_core::reserved::is_valid_ident(p) {
+        if !ferrum_core::reserved::is_valid_ident(p) {
             return Err(Error::Validation(ValidationErrors::field(
                 "uid",
                 format!("uid segment `{p}` is not a valid identifier (^[a-z][a-z0-9_]{{0,62}}$)"),
@@ -723,7 +723,7 @@ pub use component::{ComponentRegistry, ComponentService};
 - [ ] **Step 4: Build**
 
 ```bash
-cargo build -p rustapi-schema 2>&1 | tail -10
+cargo build -p ferrum-schema 2>&1 | tail -10
 ```
 
 Expected: compiles without error.
@@ -749,10 +749,10 @@ git commit -m "feat(schema): add ComponentRegistry and ComponentService"
 In `crates/http/src/state.rs`, add the import:
 
 ```rust
-use rustapi_schema::{ComponentService, SchemaService};
+use ferrum_schema::{ComponentService, SchemaService};
 ```
 
-(Replace the existing `use rustapi_schema::SchemaService;` line.)
+(Replace the existing `use ferrum_schema::SchemaService;` line.)
 
 Then in the `AppState` struct, after `schemas: SchemaService`:
 
@@ -771,17 +771,17 @@ pub use state::{
 };
 ```
 
-No change needed here since `ComponentService` is exported from `rustapi_schema` directly. Callers that need it import from `rustapi_schema`.
+No change needed here since `ComponentService` is exported from `ferrum_schema` directly. Callers that need it import from `ferrum_schema`.
 
 - [ ] **Step 3: Wire `ComponentService` in `crates/bin/src/main.rs`**
 
 In `main.rs`, add to the imports:
 
 ```rust
-use rustapi_schema::{ComponentRegistry, ComponentService, SchemaRegistry, SchemaService, MIGRATOR};
+use ferrum_schema::{ComponentRegistry, ComponentService, SchemaRegistry, SchemaService, MIGRATOR};
 ```
 
-(Replace the existing `use rustapi_schema::{SchemaRegistry, SchemaService, MIGRATOR};`.)
+(Replace the existing `use ferrum_schema::{SchemaRegistry, SchemaService, MIGRATOR};`.)
 
 After `let schemas = SchemaService::new(pool.clone(), registry.clone());`, add:
 
@@ -802,7 +802,7 @@ components,
 Add to imports:
 
 ```rust
-use rustapi_schema::{ComponentRegistry, ComponentService, SchemaRegistry, SchemaService, MIGRATOR};
+use ferrum_schema::{ComponentRegistry, ComponentService, SchemaRegistry, SchemaService, MIGRATOR};
 ```
 
 Add field to `TestApp`:
@@ -870,8 +870,8 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::{get, put, delete};
 use axum::{Json, Router};
-use rustapi_core::{Error, Field};
-use rustapi_sql::Component;
+use ferrum_core::{Error, Field};
+use ferrum_sql::Component;
 use serde::Deserialize;
 
 pub fn router() -> Router<AppState> {
@@ -940,7 +940,7 @@ async fn delete_one(
 ) -> Result<StatusCode, ApiError> {
     if q.confirm != Some(true) {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::single("confirm_required: pass ?confirm=true"),
+            ferrum_core::ValidationErrors::single("confirm_required: pass ?confirm=true"),
         )));
     }
     // Check referential integrity: find all content types that reference this uid.
@@ -983,7 +983,7 @@ after `.merge(media::router())`.
 - [ ] **Step 3: Build**
 
 ```bash
-cargo build -p rustapi-http 2>&1 | tail -10
+cargo build -p ferrum-http 2>&1 | tail -10
 ```
 
 Expected: compiles without error.
@@ -1011,10 +1011,10 @@ At the bottom of `crates/http/src/routes/content.rs` (before the `#[cfg(test)]` 
 /// schemas. Called for both create and update before `body_to_binds`.
 async fn validate_component_fields(
     state: &AppState,
-    ct: &rustapi_core::ContentType,
+    ct: &ferrum_core::ContentType,
     body: &serde_json::Map<String, serde_json::Value>,
 ) -> Result<(), ApiError> {
-    use rustapi_core::{BoundValue, FieldKind};
+    use ferrum_core::{BoundValue, FieldKind};
 
     for f in &ct.fields {
         let Some(meta) = f.component_meta() else { continue };
@@ -1023,7 +1023,7 @@ async fn validate_component_fields(
             .get(&meta.component)
             .await
             .ok_or_else(|| {
-                ApiError(Error::Validation(rustapi_core::ValidationErrors::field(
+                ApiError(Error::Validation(ferrum_core::ValidationErrors::field(
                     &f.name,
                     format!("component `{}` not found in registry", meta.component),
                 )))
@@ -1033,7 +1033,7 @@ async fn validate_component_fields(
 
         // required outer check
         if f.required && (raw.is_none() || raw == Some(&serde_json::Value::Null)) {
-            return Err(ApiError(Error::Validation(rustapi_core::ValidationErrors::field(
+            return Err(ApiError(Error::Validation(ferrum_core::ValidationErrors::field(
                 &f.name,
                 "field is required",
             ))));
@@ -1044,7 +1044,7 @@ async fn validate_component_fields(
 
         if meta.multiple {
             let arr = raw.as_array().ok_or_else(|| {
-                ApiError(Error::Validation(rustapi_core::ValidationErrors::field(
+                ApiError(Error::Validation(ferrum_core::ValidationErrors::field(
                     &f.name,
                     "repeatable component field must be an array",
                 )))
@@ -1061,12 +1061,12 @@ async fn validate_component_fields(
 
 fn validate_component_instance(
     value: &serde_json::Value,
-    fields: &[rustapi_core::Field],
+    fields: &[ferrum_core::Field],
     path_prefix: &str,
 ) -> Result<(), ApiError> {
-    use rustapi_core::BoundValue;
+    use ferrum_core::BoundValue;
     let obj = value.as_object().ok_or_else(|| {
-        ApiError(Error::Validation(rustapi_core::ValidationErrors::field(
+        ApiError(Error::Validation(ferrum_core::ValidationErrors::field(
             path_prefix,
             "component instance must be an object",
         )))
@@ -1077,14 +1077,14 @@ fn validate_component_instance(
         let v = obj.get(&f.name).unwrap_or(&serde_json::Value::Null);
 
         if f.required && v.is_null() {
-            return Err(ApiError(Error::Validation(rustapi_core::ValidationErrors::field(
+            return Err(ApiError(Error::Validation(ferrum_core::ValidationErrors::field(
                 &field_path,
                 "field is required",
             ))));
         }
         if !v.is_null() {
             BoundValue::from_json(f.kind, v).map_err(|_| {
-                ApiError(Error::Validation(rustapi_core::ValidationErrors::field(
+                ApiError(Error::Validation(ferrum_core::ValidationErrors::field(
                     &field_path,
                     format!("invalid value for kind {:?}", f.kind),
                 )))
@@ -1126,7 +1126,7 @@ validate_component_fields(&state, &ct, &body).await?;
 - [ ] **Step 4: Build**
 
 ```bash
-cargo build -p rustapi-http 2>&1 | tail -10
+cargo build -p ferrum-http 2>&1 | tail -10
 ```
 
 Expected: compiles without error.
@@ -1156,9 +1156,9 @@ In `crates/http/src/routes/schema.rs`, add at the bottom:
 /// Inject `_component_fields` into every component-kind field on a ContentType.
 async fn inject_component_fields(
     state: &AppState,
-    mut ct: rustapi_core::ContentType,
-) -> rustapi_core::ContentType {
-    use rustapi_core::FieldKind;
+    mut ct: ferrum_core::ContentType,
+) -> ferrum_core::ContentType {
+    use ferrum_core::FieldKind;
     use serde_json::json;
 
     for f in &mut ct.fields {
@@ -1216,7 +1216,7 @@ async fn list(State(state): State<AppState>) -> Result<Json<Vec<ContentType>>, A
 - [ ] **Step 3: Build**
 
 ```bash
-cargo build -p rustapi-http 2>&1 | tail -10
+cargo build -p ferrum-http 2>&1 | tail -10
 ```
 
 Expected: compiles without error.
@@ -1575,7 +1575,7 @@ async fn existing_entries_readable_after_component_update() {
 - [ ] **Step 2: Run the tests**
 
 ```bash
-cargo test -p rustapi --test components 2>&1 | tail -30
+cargo test -p ferrum --test components 2>&1 | tail -30
 ```
 
 Expected: all tests pass.

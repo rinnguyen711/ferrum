@@ -1,4 +1,4 @@
-const TOKEN = "rustapi:token";
+const TOKEN = "ferrum:token";
 
 export function getToken(): string | null {
   try {

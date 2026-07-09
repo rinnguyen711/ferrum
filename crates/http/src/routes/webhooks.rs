@@ -8,8 +8,8 @@ use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Extension, Json, Router};
 use chrono::{DateTime, Utc};
-use rustapi_core::{Action, Actor, AuditEntry, Error, Principal, RequestContext};
-use rustapi_sql::{
+use ferrum_core::{Action, Actor, AuditEntry, Error, Principal, RequestContext};
+use ferrum_sql::{
     delete_webhook, get_webhook, insert_webhook, list_deliveries, list_webhooks, update_webhook,
     Webhook, WebhookDelivery,
 };
@@ -117,13 +117,13 @@ const VALID_EVENTS: &[&str] = &[
 fn validate_events(events: &[String]) -> Result<(), ApiError> {
     if events.is_empty() {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::field("events", "at least one event is required"),
+            ferrum_core::ValidationErrors::field("events", "at least one event is required"),
         )));
     }
     for e in events {
         if !VALID_EVENTS.contains(&e.as_str()) {
             return Err(ApiError(Error::Validation(
-                rustapi_core::ValidationErrors::field("events", "invalid event name"),
+                ferrum_core::ValidationErrors::field("events", "invalid event name"),
             )));
         }
     }
@@ -133,11 +133,11 @@ fn validate_events(events: &[String]) -> Result<(), ApiError> {
 fn validate_url(url: &str) -> Result<(), ApiError> {
     if url.trim().is_empty() {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::field("url", "url is required"),
+            ferrum_core::ValidationErrors::field("url", "url is required"),
         )));
     }
     url::Url::parse(url).map_err(|_| {
-        ApiError(Error::Validation(rustapi_core::ValidationErrors::field(
+        ApiError(Error::Validation(ferrum_core::ValidationErrors::field(
             "url",
             "url must be a valid URL",
         )))
@@ -176,7 +176,7 @@ async fn create(
     ensure_admin(&state, &principal).await?;
     if body.name.trim().is_empty() {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::field("name", "name is required"),
+            ferrum_core::ValidationErrors::field("name", "name is required"),
         )));
     }
     validate_url(&body.url)?;
@@ -210,7 +210,7 @@ async fn update(
     ensure_admin(&state, &principal).await?;
     if body.name.trim().is_empty() {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::field("name", "name is required"),
+            ferrum_core::ValidationErrors::field("name", "name is required"),
         )));
     }
     validate_url(&body.url)?;
@@ -266,7 +266,7 @@ async fn test_ping(
         .ok_or(ApiError(Error::NotFound))?;
     if !hook.enabled {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::single("webhook is disabled"),
+            ferrum_core::ValidationErrors::single("webhook is disabled"),
         )));
     }
     let payload = serde_json::json!({

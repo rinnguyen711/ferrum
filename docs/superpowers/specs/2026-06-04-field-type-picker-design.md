@@ -2,7 +2,7 @@
 
 ## Problem
 
-The Content-Type Builder design (`design/rustapi/modals.jsx`) specifies a two-step
+The Content-Type Builder design (`design/ferrum/modals.jsx`) specifies a two-step
 add-field flow:
 
 1. **FieldPicker** — a card-grid modal ("Select a field type") where the user picks
@@ -70,7 +70,7 @@ as-is unless trivial).
 
 ### `FieldPicker.tsx` (new)
 
-Card-grid modal. Mirrors `design/rustapi/modals.jsx:171-190`, typed, real kinds.
+Card-grid modal. Mirrors `design/ferrum/modals.jsx:171-190`, typed, real kinds.
 
 ```
 FieldPicker({ typeDisplay, isFirst, onPick, onClose })

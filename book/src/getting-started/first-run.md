@@ -1,6 +1,6 @@
 # First-run setup
 
-A fresh Rustapi server has no users. Before you can call the admin API, you
+A fresh Ferrum server has no users. Before you can call the admin API, you
 create the first admin account, then log in to get a token. This page assumes
 you have a server running from [Installation](installation.md).
 

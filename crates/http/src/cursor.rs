@@ -3,8 +3,8 @@
 //! token as a black box; we keep it opaque so internals can change freely.
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use rustapi_core::{BoundValue, FieldKind};
-use rustapi_sql::{Sort, SortDir};
+use ferrum_core::{BoundValue, FieldKind};
+use ferrum_sql::{Sort, SortDir};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

@@ -83,7 +83,7 @@ async fn prune_removes_old_rows() {
     .execute(&app.pool)
     .await
     .unwrap();
-    let removed = rustapi_sql::audit::prune_audit(&app.pool, 90)
+    let removed = ferrum_sql::audit::prune_audit(&app.pool, 90)
         .await
         .unwrap();
     assert!(removed >= 1);

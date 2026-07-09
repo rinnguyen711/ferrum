@@ -6,7 +6,7 @@ use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 use axum::extract::{Extension, State};
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
-use rustapi_core::Principal;
+use ferrum_core::Principal;
 
 /// POST /api/graphql — execute a query/mutation. AppState + Principal are
 /// injected into the request so resolvers reach them via ctx.data.

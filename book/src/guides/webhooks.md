@@ -1,7 +1,7 @@
 # Webhooks
 
 A webhook tells an external service when your content changes. Subscribe a URL
-to one or more content events, and Rustapi POSTs a JSON payload to it each time
+to one or more content events, and Ferrum POSTs a JSON payload to it each time
 one fires — durably queued and retried. This guide covers creating webhooks,
 the payload shape, verifying signatures, and retries.
 
@@ -58,16 +58,16 @@ Each delivery is a POST with a JSON body:
 
 ## Verify the signature
 
-If the webhook has a `secret`, Rustapi signs each request body with HMAC-SHA256
-and sends it in the `x-rustapi-signature` header:
+If the webhook has a `secret`, Ferrum signs each request body with HMAC-SHA256
+and sends it in the `x-ferrum-signature` header:
 
 ```
-x-rustapi-signature: sha256=<hex digest>
+x-ferrum-signature: sha256=<hex digest>
 ```
 
 Recompute the HMAC over the **raw request body** with your shared secret and
 compare. A non-matching signature means the request didn't come from your
-Rustapi instance — reject it.
+Ferrum instance — reject it.
 
 ## Delivery and retries
 

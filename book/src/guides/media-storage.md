@@ -1,6 +1,6 @@
 # Media storage
 
-Rustapi stores uploaded files — images, documents, anything — in the Media
+Ferrum stores uploaded files — images, documents, anything — in the Media
 Library, and serves them back through a storage **provider**. Two providers ship
 in the box: the local filesystem and Amazon S3 (or any S3-compatible service).
 This guide shows how to pick a provider, upload assets, and attach them to your
@@ -15,18 +15,18 @@ writing to `./media-data`.
 For the local provider, set the base directory:
 
 ```sh
-RUSTAPI_MEDIA_PROVIDER=local
-RUSTAPI_MEDIA_BASE_DIR=./media-data
+FERRUM_MEDIA_PROVIDER=local
+FERRUM_MEDIA_BASE_DIR=./media-data
 ```
 
 For S3, set the bucket and credentials:
 
 ```sh
-RUSTAPI_MEDIA_PROVIDER=s3
-RUSTAPI_S3_BUCKET=my-bucket
-RUSTAPI_S3_REGION=us-east-1
-RUSTAPI_S3_ACCESS_KEY=...
-RUSTAPI_S3_SECRET_KEY=...
+FERRUM_MEDIA_PROVIDER=s3
+FERRUM_S3_BUCKET=my-bucket
+FERRUM_S3_REGION=us-east-1
+FERRUM_S3_ACCESS_KEY=...
+FERRUM_S3_SECRET_KEY=...
 ```
 
 See [Environment variables](../reference/env-vars.md) for the full set,
@@ -63,7 +63,7 @@ curl -X POST http://localhost:8080/admin/media/settings/test \
 
 Secret fields (such as the S3 `secret_key`) are encrypted at rest and masked as
 `••••` when you read the settings back. Storing secrets in the database
-**requires `RUSTAPI_SECRET_KEY`** (a 64-character hex key); without it, saving a
+**requires `FERRUM_SECRET_KEY`** (a 64-character hex key); without it, saving a
 provider that has secrets is rejected. On read and re-save, a value still equal
 to the mask reuses the stored secret instead of overwriting it.
 
@@ -78,7 +78,7 @@ curl -X POST http://localhost:8080/admin/media/assets \
   -F 'folder_id=0c3e1a5e-2b1f-4d8a-9b6e-7c2f1d4a8e90'
 ```
 
-On upload Rustapi detects the MIME type from the bytes, computes a SHA-256
+On upload Ferrum detects the MIME type from the bytes, computes a SHA-256
 checksum, reads image dimensions when it can, writes the bytes through the
 provider, and records the asset:
 
@@ -132,7 +132,7 @@ strings:
 }
 ```
 
-Rustapi checks the asset exists before saving. A media field can't be
+Ferrum checks the asset exists before saving. A media field can't be
 `required`, `unique`, or carry a `default`.
 
 ## Where to go next

@@ -142,7 +142,7 @@ observers. No per-type registry, no hook `Vec`/chain, no transaction access in
 
 ## Error mapping
 
-Hooks return `rustapi_core::Error`; the author selects the variant, mapped to
+Hooks return `ferrum_core::Error`; the author selects the variant, mapped to
 HTTP by the existing `ApiError` in `crates/http/src/error.rs`. No new error
 variants.
 

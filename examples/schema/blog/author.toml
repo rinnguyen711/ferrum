@@ -1,4 +1,4 @@
-# Blog preset — Author. Synced via RUSTAPI_SCHEMA_DIR=examples/schema/blog
+# Blog preset — Author. Synced via FERRUM_SCHEMA_DIR=examples/schema/blog
 [[content_type]]
 name = "author"
 display_name = "Author"

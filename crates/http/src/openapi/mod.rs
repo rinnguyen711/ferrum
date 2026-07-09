@@ -31,7 +31,7 @@ const SWAGGER_UI_HTML: &str = r##"<!DOCTYPE html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>rustapi — API docs</title>
+  <title>ferrum — API docs</title>
   <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.18.2/swagger-ui.css" />
 </head>
 <body>

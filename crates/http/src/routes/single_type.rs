@@ -6,9 +6,9 @@ use crate::state::{AppState, WriteContext, WriteOp};
 use axum::extract::{Path, State};
 use axum::routing::get;
 use axum::{Json, Router};
-use rustapi_core::{Action, ContentTypeKind, Error, Event, Principal, ValidationErrors};
-use rustapi_schema::bind::bind_all;
-use rustapi_sql::Sort;
+use ferrum_core::{Action, ContentTypeKind, Error, Event, Principal, ValidationErrors};
+use ferrum_schema::bind::bind_all;
+use ferrum_sql::Sort;
 use serde_json::{Map, Value};
 use sqlx::Row;
 use uuid::Uuid;
@@ -41,13 +41,13 @@ async fn get_single(
         ))));
     }
 
-    let (sql, binds) = rustapi_sql::select_list_status(
+    let (sql, binds) = ferrum_sql::select_list_status(
         &ct.name,
-        &rustapi_sql::Filter::default(),
+        &ferrum_sql::Filter::default(),
         &Sort::default_created_at(),
         1,
         0,
-        rustapi_sql::PublishFilter::All,
+        ferrum_sql::PublishFilter::All,
     )
     .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
 
@@ -102,13 +102,13 @@ async fn put_single(
         body_to_binds(&ct, body, false)?;
 
     // Check if entry already exists
-    let (sel_sql, sel_binds) = rustapi_sql::select_list_status(
+    let (sel_sql, sel_binds) = ferrum_sql::select_list_status(
         &ct.name,
-        &rustapi_sql::Filter::default(),
+        &ferrum_sql::Filter::default(),
         &Sort::default_created_at(),
         1,
         0,
-        rustapi_sql::PublishFilter::All,
+        ferrum_sql::PublishFilter::All,
     )
     .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
     let existing_row = bind_all(sqlx::query(&sel_sql), &sel_binds)
@@ -120,7 +120,7 @@ async fn put_single(
         let existing_id: Uuid = existing
             .try_get("id")
             .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e))))?;
-        let (sql, binds) = rustapi_sql::update(&ct, existing_id, &binds_map)
+        let (sql, binds) = ferrum_sql::update(&ct, existing_id, &binds_map)
             .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
         let row = bind_all(sqlx::query(&sql), &binds)
             .fetch_one(&state.pool)
@@ -136,7 +136,7 @@ async fn put_single(
             .await;
         r
     } else {
-        let (sql, binds) = rustapi_sql::insert(&ct, &binds_map)
+        let (sql, binds) = ferrum_sql::insert(&ct, &binds_map)
             .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
         let row = bind_all(sqlx::query(&sql), &binds)
             .fetch_one(&state.pool)

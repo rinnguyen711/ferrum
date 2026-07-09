@@ -5,7 +5,7 @@ Status: approved
 
 ## Problem
 
-Rustapi has no way to define structured sub-objects as first-class field types. Authors must use `json` (raw textarea, no validation, no editor UI) when they need nested structured data. There is no reuse story — the same shape must be redefined on every content type that needs it.
+Ferrum has no way to define structured sub-objects as first-class field types. Authors must use `json` (raw textarea, no validation, no editor UI) when they need nested structured data. There is no reuse story — the same shape must be redefined on every content type that needs it.
 
 ## Goal
 

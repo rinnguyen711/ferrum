@@ -4,7 +4,7 @@ use axum::extract::State;
 use axum::routing::get;
 use axum::Router;
 use common::TestApp;
-use rustapi_http::AppState;
+use ferrum_http::AppState;
 
 /// A custom endpoint injected by the bin. Returns 200 with the configured API
 /// version, proving the `State<AppState>` extractor resolves on an injected

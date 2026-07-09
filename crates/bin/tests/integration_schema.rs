@@ -1,6 +1,6 @@
 mod common;
 use common::TestApp;
-use rustapi_core::{ContentTypeKind, Field, FieldKind, NewContentType};
+use ferrum_core::{ContentTypeKind, Field, FieldKind, NewContentType};
 use serde_json::json;
 
 #[tokio::test]

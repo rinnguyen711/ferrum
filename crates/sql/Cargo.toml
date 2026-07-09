@@ -1,12 +1,12 @@
 [package]
-name = "rustapi-sql"
+name = "ferrum-sql"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-rustapi-core = { path = "../core" }
+ferrum-core = { path = "../core" }
 anyhow.workspace = true
 chrono.workspace = true
 uuid.workspace = true

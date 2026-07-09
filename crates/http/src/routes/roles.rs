@@ -7,10 +7,10 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Extension, Json, Router};
-use rustapi_core::{
+use ferrum_core::{
     Action, Actor, AuditEntry, Error, Principal, RequestContext, ValidationErrors, PERM_VERBS,
 };
-use rustapi_sql::{
+use ferrum_sql::{
     delete_role, get_role, list_roles, set_permissions, upsert_role, RolePermission, RoleRecord,
 };
 use serde::{Deserialize, Serialize};
@@ -157,7 +157,7 @@ async fn list(
 ) -> Result<Json<Vec<RoleSummary>>, ApiError> {
     ensure_admin(&state, &principal).await?;
     let roles = list_roles(&state.pool).await.map_err(db)?;
-    let all = rustapi_sql::load_all(&state.pool).await.map_err(db)?;
+    let all = ferrum_sql::load_all(&state.pool).await.map_err(db)?;
     let out = roles
         .into_iter()
         .map(|r| {

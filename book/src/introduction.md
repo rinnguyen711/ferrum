@@ -1,7 +1,7 @@
 # Introduction
 
-Rustapi is a headless CMS framework written in Rust (Axum + sqlx) with a React +
-TypeScript admin UI. You define content types, and Rustapi gives you a Postgres
+Ferrum is a headless CMS framework written in Rust (Axum + sqlx) with a React +
+TypeScript admin UI. You define content types, and Ferrum gives you a Postgres
 schema, a REST API, a GraphQL API, and an admin interface for them — no
 boilerplate to hand-write.
 
@@ -24,7 +24,7 @@ boilerplate to hand-write.
 
 ## How this documentation is organized
 
-- **Getting Started** — install Rustapi, do the first-run setup, and create your
+- **Getting Started** — install Ferrum, do the first-run setup, and create your
   first content type.
 - **Core Concepts** — what the building blocks *are*: content types, fields,
   relations, components, draft/publish, single types.

@@ -16,8 +16,8 @@ A hook implements `WriteHook`, which has two methods — both with no-op default
 so you override only what you need:
 
 ```rust
-use rustapi_http::{WriteContext, WriteHook};
-use rustapi_core::Error;
+use ferrum_http::{WriteContext, WriteHook};
+use ferrum_core::Error;
 use serde_json::{Map, Value};
 
 pub struct MyHook;
@@ -80,7 +80,7 @@ Return `Err` to reject the request — a validation error surfaces as a `422`:
 
 ```rust
 return Err(Error::Validation(
-    rustapi_core::ValidationErrors::field("title", "must not be empty"),
+    ferrum_core::ValidationErrors::field("title", "must not be empty"),
 ));
 ```
 

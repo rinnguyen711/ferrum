@@ -149,14 +149,14 @@ export function WebhookEditor() {
             <div className="rs-field">
               <div className="rs-field-label">
                 <label>URL <span className="rs-req">*</span></label>
-                <span className="rs-field-hint">The endpoint Rustapi sends the POST request to</span>
+                <span className="rs-field-hint">The endpoint Ferrum sends the POST request to</span>
               </div>
               <div className="rs-input-affix">
                 <span className="rs-affix rs-mono">POST</span>
                 <input
                   className="rs-input rs-mono"
                   value={url}
-                  placeholder="https://example.com/webhooks/rustapi"
+                  placeholder="https://example.com/webhooks/ferrum"
                   onChange={(e) => { setUrl(e.target.value); touch(); }}
                 />
               </div>

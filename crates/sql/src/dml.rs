@@ -8,7 +8,7 @@
 use crate::filter::{Condition, Filter, FilterValue, Op};
 use crate::ident::{join_table_name, quote_ident, table_name, IdentError};
 use crate::sort::{Sort, SortDir};
-use rustapi_core::{BoundValue, ContentType, FieldKind};
+use ferrum_core::{BoundValue, ContentType, FieldKind};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
@@ -38,13 +38,13 @@ pub fn insert(
     values: &BTreeMap<String, BoundValue>,
 ) -> Result<SqlAndBinds, DmlError> {
     let table = table_name(&ct.name)?;
-    let by_name: std::collections::HashMap<&str, &rustapi_core::Field> =
+    let by_name: std::collections::HashMap<&str, &ferrum_core::Field> =
         ct.fields.iter().map(|f| (f.name.as_str(), f)).collect();
     let mut cols = vec![];
     let mut placeholders = vec![];
     let mut binds = vec![];
     for (i, (name, val)) in values.iter().enumerate() {
-        let col = if rustapi_core::LOCALIZATION_COLUMNS.contains(&name.as_str()) {
+        let col = if ferrum_core::LOCALIZATION_COLUMNS.contains(&name.as_str()) {
             quote_ident(name)?
         } else {
             let Some(f) = by_name.get(name.as_str()) else {
@@ -73,12 +73,12 @@ pub fn update(
     values: &BTreeMap<String, BoundValue>,
 ) -> Result<SqlAndBinds, DmlError> {
     let table = table_name(&ct.name)?;
-    let by_name: std::collections::HashMap<&str, &rustapi_core::Field> =
+    let by_name: std::collections::HashMap<&str, &ferrum_core::Field> =
         ct.fields.iter().map(|f| (f.name.as_str(), f)).collect();
     let mut sets = vec![];
     let mut binds: Vec<BoundValue> = vec![];
     for (i, (name, val)) in values.iter().enumerate() {
-        let col = if rustapi_core::LOCALIZATION_COLUMNS.contains(&name.as_str()) {
+        let col = if ferrum_core::LOCALIZATION_COLUMNS.contains(&name.as_str()) {
             quote_ident(name)?
         } else {
             let Some(f) = by_name.get(name.as_str()) else {
@@ -533,7 +533,7 @@ mod tests {
     use super::*;
     use crate::sort::{Sort, SortDir};
     use chrono::Utc;
-    use rustapi_core::{ContentType, Field};
+    use ferrum_core::{ContentType, Field};
     use serde_json::json;
 
     fn ct(fields: Vec<Field>) -> ContentType {
@@ -543,7 +543,7 @@ mod tests {
             display_name: "Post".into(),
             fields,
             options: json!({}),
-            kind: rustapi_core::ContentTypeKind::Collection,
+            kind: ferrum_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

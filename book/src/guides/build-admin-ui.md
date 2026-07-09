@@ -47,16 +47,16 @@ different prefix, change the `base` there and rebuild.
 ## Serve the bundle from the server
 
 The server mounts a built bundle at `/studio` when you point it at the output
-directory with the `RUSTAPI_STUDIO_DIR` environment variable
+directory with the `FERRUM_STUDIO_DIR` environment variable
 (see [Environment variables](../reference/env-vars.md)):
 
 ```sh
-export RUSTAPI_STUDIO_DIR=$PWD/ui/dist
-cargo run -p rustapi-bin
+export FERRUM_STUDIO_DIR=$PWD/ui/dist
+cargo run -p ferrum-bin
 # → http://localhost:8080/studio
 ```
 
-When `RUSTAPI_STUDIO_DIR` is unset, no UI route is mounted and the server runs
+When `FERRUM_STUDIO_DIR` is unset, no UI route is mounted and the server runs
 API-only. That is the right default for a headless deployment that never serves
 the admin UI.
 
@@ -78,7 +78,7 @@ leak a bare `404` through the outer status — its own handler always answers.
 
 ## Verify the embedded UI
 
-With `RUSTAPI_STUDIO_DIR` set and the server running, confirm both a top-level
+With `FERRUM_STUDIO_DIR` set and the server running, confirm both a top-level
 and a deep route load:
 
 ```sh
@@ -89,4 +89,4 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/studio/content/ar
 Both should print `200` and return the SPA's HTML. Open
 `http://localhost:8080/studio` in a browser and check that a custom change you
 built is present — the bundle the server serves is the one in
-`RUSTAPI_STUDIO_DIR`, so rebuild (`pnpm build`) after any UI edit.
+`FERRUM_STUDIO_DIR`, so rebuild (`pnpm build`) after any UI edit.

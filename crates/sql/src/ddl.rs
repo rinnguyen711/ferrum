@@ -2,7 +2,7 @@
 //! `ident::table_name`. Default values are emitted as SQL literals.
 
 use crate::ident::{quote_ident, table_name, IdentError};
-use rustapi_core::{ContentType, Field, FieldKind};
+use ferrum_core::{ContentType, Field, FieldKind};
 
 #[derive(Debug, thiserror::Error)]
 pub enum DdlError {
@@ -215,7 +215,7 @@ fn column_def_localized(
     localized: bool,
     scoped: &mut Vec<String>,
 ) -> Result<String, DdlError> {
-    use rustapi_core::Cardinality;
+    use ferrum_core::Cardinality;
     let is_one_to_one = f
         .relation_meta()
         .is_some_and(|m| m.cardinality == Cardinality::OneToOne);
@@ -308,7 +308,7 @@ fn column_def(ct_name: &str, f: &Field, suppress_unique: bool) -> Result<String,
 }
 
 fn relation_column_def(f: &Field, suppress_unique: bool) -> Result<String, DdlError> {
-    use rustapi_core::Cardinality;
+    use ferrum_core::Cardinality;
     let meta = f
         .relation_meta()
         .ok_or_else(|| IdentError("relation field missing/invalid kind_meta".into()))?;
@@ -407,7 +407,7 @@ mod tests {
             display_name: "Post".into(),
             fields,
             options: json!({}),
-            kind: rustapi_core::ContentTypeKind::Collection,
+            kind: ferrum_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

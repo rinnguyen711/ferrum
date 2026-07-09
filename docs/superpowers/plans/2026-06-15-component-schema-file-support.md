@@ -152,8 +152,8 @@ Change `update`:
 
 - [ ] **Step 5: Build the sql crate (expect downstream breaks)**
 
-Run: `cargo build -p rustapi-sql`
-Expected: `rustapi-sql` itself compiles clean. (Callers in `rustapi-schema`/`rustapi-http` will break until Task 2 — that's expected; this step only verifies the sql crate.)
+Run: `cargo build -p ferrum-sql`
+Expected: `ferrum-sql` itself compiles clean. (Callers in `ferrum-schema`/`ferrum-http` will break until Task 2 — that's expected; this step only verifies the sql crate.)
 
 - [ ] **Step 6: Commit**
 
@@ -254,7 +254,7 @@ Expected: clean (sync.rs does not call these yet; only the HTTP + any test calle
 
 - [ ] **Step 4: Run component tests**
 
-Run: `cargo test -p rustapi-schema component`
+Run: `cargo test -p ferrum-schema component`
 Expected: existing component tests pass (with Docker for any integration ones; unit ones pass regardless).
 
 - [ ] **Step 5: Commit**
@@ -303,7 +303,7 @@ display_name = "Post"
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `cargo test -p rustapi-schema sync::tests::parses_component_blocks`
+Run: `cargo test -p ferrum-schema sync::tests::parses_component_blocks`
 Expected: FAIL — `parse_schema` / `ParsedSchema` not found.
 
 - [ ] **Step 3: Add the parse types + function**
@@ -363,12 +363,12 @@ pub(crate) fn parse_toml(doc: &str) -> Result<Vec<NewContentType>, Error> {
 
 - [ ] **Step 4: Run to verify it passes**
 
-Run: `cargo test -p rustapi-schema sync::tests::parses_component_blocks`
-Expected: PASS. Also run `cargo test -p rustapi-schema sync::tests` — existing parse test still green.
+Run: `cargo test -p ferrum-schema sync::tests::parses_component_blocks`
+Expected: PASS. Also run `cargo test -p ferrum-schema sync::tests` — existing parse test still green.
 
 - [ ] **Step 5: Build (watch for dead-code under -D warnings)**
 
-Run: `cargo build -p rustapi-schema`
+Run: `cargo build -p ferrum-schema`
 Expected: clean. If `ParsedSchema.components` / `TomlComponent` is flagged dead (not yet consumed outside tests), add `#[allow(dead_code)]` with a `// consumed by plan_components in a later task` comment; it will be removed in Task 5.
 
 - [ ] **Step 6: Commit**
@@ -390,8 +390,8 @@ git commit -m "feat(schema): parse [[component]] blocks from schema TOML"
 Add to `mod tests` in `crates/schema/src/sync.rs`. First a helper to build a stored `Component` and a `TomlComponent`:
 
 ```rust
-    fn comp(uid: &str, fields: Vec<Field>, managed: bool) -> rustapi_sql::Component {
-        rustapi_sql::Component {
+    fn comp(uid: &str, fields: Vec<Field>, managed: bool) -> ferrum_sql::Component {
+        ferrum_sql::Component {
             uid: uid.into(),
             display_name: uid.into(),
             fields,
@@ -441,7 +441,7 @@ Add to `mod tests` in `crates/schema/src/sync.rs`. First a helper to build a sto
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `cargo test -p rustapi-schema sync::tests::plan_components`
+Run: `cargo test -p ferrum-schema sync::tests::plan_components`
 Expected: FAIL — `ComponentAction` / `plan_components` not found.
 
 - [ ] **Step 3: Implement `ComponentAction` + `plan_components`**
@@ -449,7 +449,7 @@ Expected: FAIL — `ComponentAction` / `plan_components` not found.
 Above `#[cfg(test)]` in `crates/schema/src/sync.rs`:
 
 ```rust
-use rustapi_sql::Component;
+use ferrum_sql::Component;
 
 /// One reconciliation step for components.
 #[derive(Debug, Clone, PartialEq)]
@@ -505,12 +505,12 @@ NOTE: `existing.fields != d.fields` requires `Field: PartialEq`. Verify (`grep -
 
 - [ ] **Step 4: Run to verify they pass**
 
-Run: `cargo test -p rustapi-schema sync::tests::plan_components`
+Run: `cargo test -p ferrum-schema sync::tests::plan_components`
 Expected: PASS (all three tests).
 
 - [ ] **Step 5: Build clean**
 
-Run: `cargo build -p rustapi-schema && cargo clippy -p rustapi-schema --all-targets`
+Run: `cargo build -p ferrum-schema && cargo clippy -p ferrum-schema --all-targets`
 Expected: clean. Remove any now-stale `#[allow(dead_code)]` from Task 3 on `TomlComponent`/`ParsedSchema.components` if those are now reachable (they are referenced by `plan_components` which is `pub(crate)` + used by tests — if still flagged for the non-test build, keep a single suppression and note Task 5 wires it live).
 
 - [ ] **Step 6: Commit**
@@ -695,13 +695,13 @@ NOTE: `Field::component_meta()` exists (used in `crates/http/src/routes/componen
 In `crates/bin/src/main.rs`, the sync call currently is:
 
 ```rust
-        rustapi_schema::sync::sync_from_path(&schemas, path, cfg.schema_sync_mode)
+        ferrum_schema::sync::sync_from_path(&schemas, path, cfg.schema_sync_mode)
 ```
 
 Change to pass the components service (already constructed in main as `components`):
 
 ```rust
-        rustapi_schema::sync::sync_from_path(&schemas, &components, path, cfg.schema_sync_mode)
+        ferrum_schema::sync::sync_from_path(&schemas, &components, path, cfg.schema_sync_mode)
 ```
 
 Confirm the `components` variable name in main.rs (`grep -n "ComponentService::new\|let components" crates/bin/src/main.rs`); use the actual binding.
@@ -711,10 +711,10 @@ Confirm the `components` variable name in main.rs (`grep -n "ComponentService::n
 `crates/schema/tests/sync_it.rs` calls `sync_from_path(&svc, path, mode)`. It now needs a `ComponentService`. Add a helper there:
 
 ```rust
-async fn comp_service(pool: &PgPool) -> rustapi_schema::ComponentService {
-    let reg = rustapi_schema::ComponentRegistry::new();
+async fn comp_service(pool: &PgPool) -> ferrum_schema::ComponentService {
+    let reg = ferrum_schema::ComponentRegistry::new();
     reg.reload_from_db(pool).await.unwrap();
-    rustapi_schema::ComponentService::new(pool.clone(), reg)
+    ferrum_schema::ComponentService::new(pool.clone(), reg)
 }
 ```
 
@@ -727,7 +727,7 @@ Expected: clean. Remove any `#[allow(dead_code)]` added in Tasks 3/4 that is now
 
 - [ ] **Step 7: Run schema unit tests**
 
-Run: `cargo test -p rustapi-schema sync::tests`
+Run: `cargo test -p ferrum-schema sync::tests`
 Expected: all pass.
 
 - [ ] **Step 8: Commit**
@@ -776,7 +776,7 @@ Confirm `Error` and `ApiError` are in scope (the file already uses `ApiError(Err
 
 - [ ] **Step 3: Build**
 
-Run: `cargo build -p rustapi-http`
+Run: `cargo build -p ferrum-http`
 Expected: clean.
 
 - [ ] **Step 4: Commit**
@@ -878,7 +878,7 @@ display_name = "Post"
 
 - [ ] **Step 2: Run the integration tests (Docker running)**
 
-Run: `cargo test -p rustapi-schema --test sync_it`
+Run: `cargo test -p ferrum-schema --test sync_it`
 Expected: all pass (the prior sync tests + the two new component tests). May take a while (containers).
 
 - [ ] **Step 3: Commit**
@@ -951,7 +951,7 @@ The existing `blog_preset_parses_and_orders` test calls `load_desired` on this d
 
 - [ ] **Step 4: Run the preset test**
 
-Run: `cargo test -p rustapi-schema sync::tests::blog_preset_parses_and_orders`
+Run: `cargo test -p ferrum-schema sync::tests::blog_preset_parses_and_orders`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1056,7 +1056,7 @@ Expected: clean.
 
 With Docker Postgres + env set:
 
-Run: `RUSTAPI_SCHEMA_DIR=examples/schema/blog cargo run -p rustapi`
+Run: `FERRUM_SCHEMA_DIR=examples/schema/blog cargo run -p ferrum`
 Expected: log `schema sync complete`; `/admin/components` lists `shared.seo` (managed); `post` has a `seo` component field; PUT on `shared.seo` returns 409.
 
 - [ ] **Step 7: Final fmt commit (only if fmt changed files)**

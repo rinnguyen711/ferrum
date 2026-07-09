@@ -1,7 +1,7 @@
 //! In-memory component registry + transactional service.
 
-use rustapi_core::{Error, Field, FieldKind, ValidationErrors};
-use rustapi_sql::{Component, ComponentStore};
+use ferrum_core::{Error, Field, FieldKind, ValidationErrors};
+use ferrum_sql::{Component, ComponentStore};
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -165,7 +165,7 @@ fn validate_uid(uid: &str) -> Result<(), Error> {
         )));
     }
     for p in &parts {
-        if !rustapi_core::reserved::is_valid_ident(p) {
+        if !ferrum_core::reserved::is_valid_ident(p) {
             return Err(Error::Validation(ValidationErrors::field(
                 "uid",
                 format!("uid segment `{p}` is not a valid identifier (^[a-z][a-z0-9_]{{0,62}}$)"),

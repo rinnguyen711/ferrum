@@ -7,8 +7,8 @@ use axum::{
     routing::get,
     Extension, Json, Router,
 };
-use rustapi_core::{Action, Error, Principal};
-use rustapi_sql::audit::{audit_category_counts, audit_stats, query_audit, AuditQuery};
+use ferrum_core::{Action, Error, Principal};
+use ferrum_sql::audit::{audit_category_counts, audit_stats, query_audit, AuditQuery};
 use serde::Deserialize;
 use std::collections::HashMap;
 use uuid::Uuid;

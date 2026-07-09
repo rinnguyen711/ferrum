@@ -25,8 +25,8 @@ that the schema file itself provides, with no manual UI step.
 
 ## Existing code this builds on
 
-- `rustapi_sql::Component { uid, display_name, fields }` and `ComponentStore` (table `_components`) with `create(uid, display_name, &fields)`, `update(...)`, `delete(uid)`, `list()`, `get(uid)`. There is also a private `RawComponent` sqlx `FromRow`.
-- `rustapi_schema::ComponentService::{create, update, delete, get, list}` + `ComponentRegistry`. `create` calls `validate_uid` + `validate_inner_fields`; `delete(uid, referencing_types)` rejects when referenced.
+- `ferrum_sql::Component { uid, display_name, fields }` and `ComponentStore` (table `_components`) with `create(uid, display_name, &fields)`, `update(...)`, `delete(uid)`, `list()`, `get(uid)`. There is also a private `RawComponent` sqlx `FromRow`.
+- `ferrum_schema::ComponentService::{create, update, delete, get, list}` + `ComponentRegistry`. `create` calls `validate_uid` + `validate_inner_fields`; `delete(uid, referencing_types)` rejects when referenced.
 - `validate_inner_fields` enforces `ALLOWED_INNER_KINDS` (scalars + media; no relation/component).
 - `crates/http/src/routes/components.rs`: routes use `put(update_one)` and `delete(delete_one)` (components use **PUT**, not PATCH).
 - The content-type sync engine in `crates/schema/src/sync.rs`: `SchemaFile`, `parse_toml`, `plan_sync`, `load_desired`, `order_creates`, `order_drops`, `sync_from_path`, `managed_options`.
@@ -68,7 +68,7 @@ display_name = "Post"
   ```sql
   ALTER TABLE _components ADD COLUMN managed boolean NOT NULL DEFAULT false;
   ```
-- Add `pub managed: bool` to `rustapi_sql::Component` and to the private `RawComponent` FromRow; update the two `SELECT` statements to include `managed`, and `into_component()` to map it.
+- Add `pub managed: bool` to `ferrum_sql::Component` and to the private `RawComponent` FromRow; update the two `SELECT` statements to include `managed`, and `into_component()` to map it.
 - Change `ComponentStore::create` and `update` to take a `managed: bool` parameter and bind it (INSERT adds the column; UPDATE sets it).
 - Update `ComponentService::create` / `update` signatures to thread `managed` through. Existing callers:
   - HTTP routes (`components.rs` create/update) pass `managed = false`.

@@ -6,7 +6,7 @@
 
 **Architecture:** Promote `RelationMeta.cardinality` to a typed `Cardinality` enum. `one_to_one` reuses the existing `<field>_id` FK column path plus a UNIQUE constraint. `many_to_many` introduces an auto-named join table (`j_<owner>_<field>`, hash-suffixed when too long), managed by `SchemaService` across create/patch/delete, written transactionally with replace-set semantics, and read via a new batched `apply_many` populate pass that reuses the existing per-parent cap machinery.
 
-**Tech Stack:** Rust, axum, sqlx (Postgres), testcontainers. Workspace crates: `rustapi-core`, `rustapi-sql`, `rustapi-schema`, `rustapi-http`, `rustapi` (bin).
+**Tech Stack:** Rust, axum, sqlx (Postgres), testcontainers. Workspace crates: `ferrum-core`, `ferrum-sql`, `ferrum-schema`, `ferrum-http`, `ferrum` (bin).
 
 **Spec:** [docs/superpowers/specs/2026-06-02-relations-one-to-one-many-to-many-design.md](../specs/2026-06-02-relations-one-to-one-many-to-many-design.md)
 
@@ -62,7 +62,7 @@ Add to the `relation_meta_tests` module in `crates/core/src/field.rs`:
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cargo test -p rustapi-core cardinality_parses_all_three`
+Run: `cargo test -p ferrum-core cardinality_parses_all_three`
 Expected: FAIL — `Cardinality` not found; `m.cardinality` is a `String`.
 
 - [ ] **Step 3: Add the enum and switch `RelationMeta`**
@@ -139,7 +139,7 @@ Also update `parse_minimal_meta` / `parse_with_inverse` assertions that compare
 
 - [ ] **Step 5: Run the whole core crate to catch every string-compare site**
 
-Run: `cargo test -p rustapi-core`
+Run: `cargo test -p ferrum-core`
 Expected: compile errors point to any remaining `cardinality == "..."` or
 `cardinality: "...".into()` usages (e.g. in `dml.rs`/`ddl.rs`/`service.rs` only
 *read* via `relation_meta()`, so core should now compile + pass). Fix any
@@ -228,7 +228,7 @@ Add to `relation_meta_tests`:
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `cargo test -p rustapi-core many_to_many_rejects_required is_stored_column_matrix`
+Run: `cargo test -p ferrum-core many_to_many_rejects_required is_stored_column_matrix`
 Expected: FAIL — `ManyToManyCannotBeRequired` and `is_stored_column` undefined.
 
 - [ ] **Step 3: Add the error variant**
@@ -282,7 +282,7 @@ In `impl Field`, after `physical_column`:
 
 - [ ] **Step 6: Run tests to verify pass**
 
-Run: `cargo test -p rustapi-core`
+Run: `cargo test -p ferrum-core`
 Expected: PASS (all core tests).
 
 - [ ] **Step 7: Commit**
@@ -332,7 +332,7 @@ Add to the `tests` module in `crates/sql/src/ident.rs`:
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `cargo test -p rustapi-sql join_table`
+Run: `cargo test -p ferrum-sql join_table`
 Expected: FAIL — `join_table_name` not found.
 
 - [ ] **Step 3: Implement `join_table_name`**
@@ -383,7 +383,7 @@ pub use ident::{join_table_name, quote_ident, table_name, IdentError};
 
 - [ ] **Step 5: Run tests to verify pass**
 
-Run: `cargo test -p rustapi-sql join_table`
+Run: `cargo test -p ferrum-sql join_table`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -427,7 +427,7 @@ Add to the `tests` module in `crates/sql/src/ddl.rs`:
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `cargo test -p rustapi-sql one_to_one`
+Run: `cargo test -p ferrum-sql one_to_one`
 Expected: FAIL — no `UNIQUE` emitted for the FK.
 
 - [ ] **Step 3: Add UNIQUE in `relation_column_def`**
@@ -436,7 +436,7 @@ In `crates/sql/src/ddl.rs`, change `relation_column_def`:
 
 ```rust
 fn relation_column_def(f: &Field) -> Result<String, DdlError> {
-    use rustapi_core::Cardinality;
+    use ferrum_core::Cardinality;
     let meta = f.relation_meta().ok_or_else(|| {
         IdentError("relation field missing/invalid kind_meta".into())
     })?;
@@ -455,7 +455,7 @@ skips non-stored columns.)
 
 - [ ] **Step 4: Run tests to verify pass**
 
-Run: `cargo test -p rustapi-sql`
+Run: `cargo test -p ferrum-sql`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -512,7 +512,7 @@ PRIMARY KEY (\"post_id\", \"tag_id\"))"
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `cargo test -p rustapi-sql join_table create_table_skips`
+Run: `cargo test -p ferrum-sql join_table create_table_skips`
 Expected: FAIL — `create_join_table` / `drop_join_table` undefined; `create_table`
 currently calls `column_def` for the M:N field and panics or emits `tags_id`.
 
@@ -592,7 +592,7 @@ pub use ddl::{
 
 - [ ] **Step 6: Run tests to verify pass**
 
-Run: `cargo test -p rustapi-sql`
+Run: `cargo test -p ferrum-sql`
 Expected: PASS.
 
 - [ ] **Step 7: Commit**
@@ -645,7 +645,7 @@ target ids array as `$2`. The handler binds `owner` to `$1` and the
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `cargo test -p rustapi-sql links`
+Run: `cargo test -p ferrum-sql links`
 Expected: FAIL — `insert_links` / `delete_links` undefined.
 
 - [ ] **Step 3: Implement the helpers**
@@ -705,7 +705,7 @@ pub use dml::{
 
 - [ ] **Step 5: Run tests to verify pass**
 
-Run: `cargo test -p rustapi-sql`
+Run: `cargo test -p ferrum-sql`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -783,7 +783,7 @@ Add to the `tests` module in `crates/schema/src/registry.rs`:
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `cargo test -p rustapi-schema m2m`
+Run: `cargo test -p ferrum-schema m2m`
 Expected: FAIL — the three new methods are undefined.
 
 - [ ] **Step 3: Implement the lookups**
@@ -799,7 +799,7 @@ Add to `impl SchemaRegistry` in `crates/schema/src/registry.rs`:
         if let Some(ct) = map.get(owner) {
             for f in &ct.fields {
                 if let Some(meta) = f.relation_meta() {
-                    if meta.cardinality == rustapi_core::Cardinality::ManyToMany {
+                    if meta.cardinality == ferrum_core::Cardinality::ManyToMany {
                         out.push((f.name.clone(), meta.target));
                     }
                 }
@@ -816,7 +816,7 @@ Add to `impl SchemaRegistry` in `crates/schema/src/registry.rs`:
         for ct in map.values() {
             for f in &ct.fields {
                 if let Some(meta) = f.relation_meta() {
-                    if meta.cardinality == rustapi_core::Cardinality::ManyToMany
+                    if meta.cardinality == ferrum_core::Cardinality::ManyToMany
                         && meta.target == target
                     {
                         out.push((ct.name.clone(), f.name.clone()));
@@ -839,7 +839,7 @@ Add to `impl SchemaRegistry` in `crates/schema/src/registry.rs`:
         for ct in map.values() {
             for f in &ct.fields {
                 let Some(meta) = f.relation_meta() else { continue };
-                if meta.cardinality == rustapi_core::Cardinality::ManyToMany
+                if meta.cardinality == ferrum_core::Cardinality::ManyToMany
                     && meta.target == target_name
                     && meta.inverse.as_deref() == Some(inverse_name)
                 {
@@ -859,7 +859,7 @@ through `inverse_lookup_m2m`. No change needed to `inverse_lookup` itself.
 
 - [ ] **Step 4: Run tests to verify pass**
 
-Run: `cargo test -p rustapi-schema`
+Run: `cargo test -p ferrum-schema`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -895,9 +895,9 @@ execute and **before** `tx.commit()`, add join-table creation for each M:N field
         // table so its FK to ct_<owner> resolves).
         for f in &ct.fields {
             if let Some(meta) = f.relation_meta() {
-                if meta.cardinality == rustapi_core::Cardinality::ManyToMany {
+                if meta.cardinality == ferrum_core::Cardinality::ManyToMany {
                     let (create_jt, create_idx) =
-                        rustapi_sql::create_join_table(&ct.name, &f.name, &meta.target)
+                        ferrum_sql::create_join_table(&ct.name, &f.name, &meta.target)
                             .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
                     sqlx::query(&create_jt).execute(&mut *tx).await.map_err(map_db_err)?;
                     sqlx::query(&create_idx).execute(&mut *tx).await.map_err(map_db_err)?;
@@ -920,30 +920,30 @@ need a join table, not `add_column`. Replace the two loops:
             let dropped = existing.fields.iter().find(|f| &f.name == drop_name);
             let is_m2m = dropped
                 .and_then(|f| f.relation_meta())
-                .map(|m| m.cardinality == rustapi_core::Cardinality::ManyToMany)
+                .map(|m| m.cardinality == ferrum_core::Cardinality::ManyToMany)
                 .unwrap_or(false);
             if is_m2m {
-                let sql = rustapi_sql::drop_join_table(name, drop_name)
+                let sql = ferrum_sql::drop_join_table(name, drop_name)
                     .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
                 sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
             } else {
-                let sql = rustapi_sql::drop_column(name, drop_name)
+                let sql = ferrum_sql::drop_column(name, drop_name)
                     .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
                 sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
             }
         }
         for f in &payload.add_fields {
             if let Some(meta) = f.relation_meta() {
-                if meta.cardinality == rustapi_core::Cardinality::ManyToMany {
+                if meta.cardinality == ferrum_core::Cardinality::ManyToMany {
                     let (create_jt, create_idx) =
-                        rustapi_sql::create_join_table(name, &f.name, &meta.target)
+                        ferrum_sql::create_join_table(name, &f.name, &meta.target)
                             .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
                     sqlx::query(&create_jt).execute(&mut *tx).await.map_err(map_db_err)?;
                     sqlx::query(&create_idx).execute(&mut *tx).await.map_err(map_db_err)?;
                     continue;
                 }
             }
-            let sql = rustapi_sql::add_column(name, f)
+            let sql = ferrum_sql::add_column(name, f)
                 .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
             sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
         }
@@ -957,7 +957,7 @@ owns and every join table that targets it. Replace the body around `drop_sql`:
 ```rust
         let owned = self.registry.m2m_targets(name).await;
         let referencing = self.registry.m2m_referencing(name).await;
-        let drop_sql = rustapi_sql::drop_table(name)
+        let drop_sql = ferrum_sql::drop_table(name)
             .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
 
         let mut tx = self.pool.begin().await.map_err(internal)?;
@@ -965,7 +965,7 @@ owns and every join table that targets it. Replace the body around `drop_sql`:
         // lingering FK references. Owned + referencing are distinct fields, so
         // there is no double-drop within one type's own delete.
         for (field, _target) in &owned {
-            let sql = rustapi_sql::drop_join_table(name, field)
+            let sql = ferrum_sql::drop_join_table(name, field)
                 .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
             sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
         }
@@ -973,7 +973,7 @@ owns and every join table that targets it. Replace the body around `drop_sql`:
             if owner == name {
                 continue; // already handled in `owned`
             }
-            let sql = rustapi_sql::drop_join_table(owner, field)
+            let sql = ferrum_sql::drop_join_table(owner, field)
                 .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
             sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
         }
@@ -996,7 +996,7 @@ the function doc noting it covers all cardinalities.
 
 - [ ] **Step 5: Compile + run schema tests**
 
-Run: `cargo test -p rustapi-schema`
+Run: `cargo test -p ferrum-schema`
 Expected: PASS (unit tests; DB lifecycle covered in Task 13).
 
 - [ ] **Step 6: Commit**
@@ -1106,7 +1106,7 @@ update them to ignore the new third: change `let (out, checks) =` to
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `cargo test -p rustapi-http m2m_array_becomes_link_plan`
+Run: `cargo test -p ferrum-http m2m_array_becomes_link_plan`
 Expected: FAIL — `body_to_binds` returns a 2-tuple; `LinkPlan` undefined.
 
 - [ ] **Step 3: Add `LinkPlan` and extend the return type**
@@ -1159,7 +1159,7 @@ with:
                     let meta = f.relation_meta().ok_or_else(|| {
                         Error::Validation(ValidationErrors::field(&f.name, "missing relation kind_meta"))
                     })?;
-                    if meta.cardinality == rustapi_core::Cardinality::ManyToMany {
+                    if meta.cardinality == ferrum_core::Cardinality::ManyToMany {
                         links.push(coerce_m2m(f, &meta.target, v)?);
                     } else {
                         coerce_relation(f, v, &mut out, &mut checks)?;
@@ -1208,7 +1208,7 @@ to `coerce_m2m`, which rejects non-arrays — acceptable (client should send `[]
 
 - [ ] **Step 5: Run tests to verify pass**
 
-Run: `cargo test -p rustapi-http entry`
+Run: `cargo test -p ferrum-http entry`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -1261,7 +1261,7 @@ async fn verify_link_targets_exist(
         if plan.ids.is_empty() {
             continue;
         }
-        let table = rustapi_sql::table_name(&plan.target)
+        let table = ferrum_sql::table_name(&plan.target)
             .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
         let sql = format!("SELECT id FROM {table} WHERE id = ANY($1)");
         let rows = sqlx::query(&sql).bind(&plan.ids).fetch_all(&state.pool).await.map_err(db)?;
@@ -1292,7 +1292,7 @@ Replace the body of `create` from the `insert` call through the row fetch with a
 transaction that also writes links:
 
 ```rust
-    let (sql, binds) = rustapi_sql::insert(&ct, &binds_map)
+    let (sql, binds) = ferrum_sql::insert(&ct, &binds_map)
         .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
 
     let mut tx = state.pool.begin().await.map_err(db)?;
@@ -1323,7 +1323,7 @@ link replace-set in a transaction. Replace from the `update` SQL build through
 the response with:
 
 ```rust
-    let (sql, binds) = rustapi_sql::update(&ct, id, &binds_map)
+    let (sql, binds) = ferrum_sql::update(&ct, id, &binds_map)
         .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
 
     let mut tx = state.pool.begin().await.map_err(db)?;
@@ -1365,14 +1365,14 @@ async fn write_links(
         if !plan.present {
             continue;
         }
-        let (del_sql, _) = rustapi_sql::delete_links(owner_type, &plan.field, owner_id)
+        let (del_sql, _) = ferrum_sql::delete_links(owner_type, &plan.field, owner_id)
             .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
         sqlx::query(&del_sql).bind(owner_id).execute(&mut **tx).await.map_err(db)?;
         if plan.ids.is_empty() {
             continue;
         }
         let (ins_sql, _, _) =
-            rustapi_sql::insert_links(owner_type, &plan.field, &plan.target, owner_id)
+            ferrum_sql::insert_links(owner_type, &plan.field, &plan.target, owner_id)
                 .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
         sqlx::query(&ins_sql)
             .bind(owner_id)
@@ -1387,7 +1387,7 @@ async fn write_links(
 
 - [ ] **Step 6: Compile**
 
-Run: `cargo build -p rustapi-http`
+Run: `cargo build -p ferrum-http`
 Expected: builds clean. (Behavior verified in Task 13.)
 
 - [ ] **Step 7: Commit**
@@ -1484,7 +1484,7 @@ Add to the `tests` module in `crates/http/src/populate.rs`:
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `cargo test -p rustapi-http parse_m2m_forward`
+Run: `cargo test -p ferrum-http parse_m2m_forward`
 Expected: FAIL — `PopulateField::Many` undefined.
 
 - [ ] **Step 3: Add the variants**
@@ -1535,8 +1535,8 @@ relation field. Branch on cardinality. Replace the forward block:
                         "unknown populate field `{name}`"
                     )))
                 })?;
-                if meta.cardinality == rustapi_core::Cardinality::ManyToMany {
-                    let join_table = rustapi_sql::join_table_name(&ct.name, &f.name)
+                if meta.cardinality == ferrum_core::Cardinality::ManyToMany {
+                    let join_table = ferrum_sql::join_table_name(&ct.name, &f.name)
                         .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
                     out.push(PopulateField::Many {
                         field_name: name.to_string(),
@@ -1573,7 +1573,7 @@ and a 1:1 inverse refinement. The `inverse_lookup` arm currently emits
                         f.relation_meta().is_some_and(|m| {
                             m.target == ct.name
                                 && m.inverse.as_deref() == Some(name)
-                                && m.cardinality == rustapi_core::Cardinality::OneToOne
+                                && m.cardinality == ferrum_core::Cardinality::OneToOne
                         })
                     })
                 })
@@ -1594,7 +1594,7 @@ and a 1:1 inverse refinement. The `inverse_lookup` arm currently emits
             continue;
         }
         if let Some((owner, field, _target)) = registry.inverse_lookup_m2m(&ct.name, name).await {
-            let join_table = rustapi_sql::join_table_name(&owner, &field)
+            let join_table = ferrum_sql::join_table_name(&owner, &field)
                 .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
             out.push(PopulateField::Many {
                 field_name: name.to_string(),
@@ -1611,7 +1611,7 @@ and a 1:1 inverse refinement. The `inverse_lookup` arm currently emits
 
 - [ ] **Step 5: Run parse tests to verify pass**
 
-Run: `cargo test -p rustapi-http parse_m2m`
+Run: `cargo test -p ferrum-http parse_m2m`
 Expected: PASS.
 
 - [ ] **Step 6: Implement `apply_many`**
@@ -1650,11 +1650,11 @@ pub async fn apply_many(
         }
         return Ok(());
     }
-    let target_tbl = rustapi_sql::table_name(target)
+    let target_tbl = ferrum_sql::table_name(target)
         .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
-    let self_q = rustapi_sql::quote_ident(self_col)
+    let self_q = ferrum_sql::quote_ident(self_col)
         .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
-    let other_q = rustapi_sql::quote_ident(other_col)
+    let other_q = ferrum_sql::quote_ident(other_col)
         .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
     // join_table is already a quoted identifier from join_table_name.
     let limit = (INVERSE_LIMIT_PER_PARENT + 1) * parent_ids.len();
@@ -1741,7 +1741,7 @@ pub async fn apply_inverse_one(
 
 - [ ] **Step 8: Run the http populate tests**
 
-Run: `cargo test -p rustapi-http populate`
+Run: `cargo test -p ferrum-http populate`
 Expected: PASS (unit/parse tests; DB hydration covered in Task 13).
 
 - [ ] **Step 9: Commit**
@@ -2048,7 +2048,7 @@ async fn m2m_join_table_dropped_with_type() {
 
 - [ ] **Step 8: Run the integration suite**
 
-Run: `cargo test -p rustapi --test relations_m2m`
+Run: `cargo test -p ferrum --test relations_m2m`
 Expected: PASS (requires Docker for testcontainers).
 
 - [ ] **Step 9: Run the full test suite to confirm no regressions**

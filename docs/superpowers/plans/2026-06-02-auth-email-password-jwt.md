@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the static `RUSTAPI_ADMIN_KEY` shared secret with email/password login that issues HS256 JWTs, plus multi-role RBAC and a first-run setup flow.
+**Goal:** Replace the static `FERRUM_ADMIN_KEY` shared secret with email/password login that issues HS256 JWTs, plus multi-role RBAC and a first-run setup flow.
 
 **Architecture:** A `_users` Postgres table holds Argon2id password hashes and a `roles TEXT[]`. Auth lives as a module inside `crates/http` (`auth/`). Login signs a stateless HS256 JWT; a `require_auth` middleware verifies the bearer token and injects `Principal::User`. A `RoleAuthz` impl of the existing `Authz` trait maps roles → `Action`s via a pure `role_allows` fn in core.
 
@@ -64,7 +64,7 @@ jsonwebtoken = { workspace = true }
 
 - [ ] **Step 3: Verify it builds**
 
-Run: `cargo build -p rustapi-http`
+Run: `cargo build -p ferrum-http`
 Expected: compiles (new crates downloaded), no errors.
 
 - [ ] **Step 4: Commit**
@@ -181,7 +181,7 @@ pub fn role_allows(role: &str, action: Action) -> bool {
 
 - [ ] **Step 3: Verify core compiles + tests fail-then-pass**
 
-Run: `cargo test -p rustapi-core principal`
+Run: `cargo test -p ferrum-core principal`
 Expected: the 5 tests above PASS. (They are written against the new code, so this is the red→green checkpoint for the unit-tested logic.)
 
 - [ ] **Step 4: Confirm `uuid` is a core dep**
@@ -220,7 +220,7 @@ In `crates/http/src/error.rs`, inside the existing `#[cfg(test)] mod tests`, add
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cargo test -p rustapi-http forbidden_is_403`
+Run: `cargo test -p ferrum-http forbidden_is_403`
 Expected: FAIL — compile error, `Error::Forbidden` does not exist.
 
 - [ ] **Step 3: Add the variant in core**
@@ -248,7 +248,7 @@ Also change the existing `Unauthorized` arm message from `"missing or invalid AP
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `cargo test -p rustapi-http forbidden_is_403`
+Run: `cargo test -p ferrum-http forbidden_is_403`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -286,7 +286,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS _users_email_lower ON _users (lower(email));
 
 `crates/schema/src/lib.rs` uses `sqlx::migrate!("./migrations")`, which embeds every `.sql` file at compile time. Run:
 
-Run: `cargo build -p rustapi-schema`
+Run: `cargo build -p ferrum-schema`
 Expected: compiles; the new migration is embedded (no SQL is executed at build).
 
 - [ ] **Step 3: Commit**
@@ -375,7 +375,7 @@ mod tests {
 
 - [ ] **Step 3: Run tests to verify they pass**
 
-Run: `cargo test -p rustapi-http password::`
+Run: `cargo test -p ferrum-http password::`
 Expected: 3 tests PASS.
 
 - [ ] **Step 4: Commit**
@@ -486,7 +486,7 @@ mod tests {
 
 - [ ] **Step 3: Run tests**
 
-Run: `cargo test -p rustapi-http jwt::`
+Run: `cargo test -p ferrum-http jwt::`
 Expected: 3 tests PASS. (`expired_rejected` relies on `jsonwebtoken`'s default 60s leeway being smaller than... — note: default leeway is 0 in v9, so -10s is reliably expired.)
 
 - [ ] **Step 4: Commit**
@@ -583,7 +583,7 @@ pub async fn insert(
 
 - [ ] **Step 3: Verify it compiles**
 
-Run: `cargo build -p rustapi-http`
+Run: `cargo build -p ferrum-http`
 Expected: compiles. (Queries are runtime — `query_as` string form — so no DB needed at build.)
 
 - [ ] **Step 4: Commit**
@@ -609,7 +609,7 @@ In `crates/http/src/state.rs`, add a test module at the bottom:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustapi_core::Principal;
+    use ferrum_core::Principal;
     use uuid::Uuid;
 
     fn user(roles: &[&str]) -> Principal {
@@ -645,7 +645,7 @@ mod tests {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cargo test -p rustapi-http role_authz`
+Run: `cargo test -p ferrum-http role_authz`
 Expected: FAIL — `RoleAuthz` does not exist.
 
 - [ ] **Step 3: Add RoleAuthz + extend AppConfig**
@@ -655,7 +655,7 @@ In `crates/http/src/state.rs`:
 (a) Update the `use` line to import `role_allows`:
 
 ```rust
-use rustapi_core::{role_allows, Action, Event, Principal};
+use ferrum_core::{role_allows, Action, Event, Principal};
 ```
 
 (b) After the `AlwaysAllow` impl block, add:
@@ -707,7 +707,7 @@ pub use state::{AlwaysAllow, AppConfig, Authz, AppState, EventSink, NoopSink, Ro
 
 - [ ] **Step 5: Run RoleAuthz tests**
 
-Run: `cargo test -p rustapi-http role_authz`
+Run: `cargo test -p ferrum-http role_authz`
 Expected: 3 tests PASS. (The crate won't fully build yet — `admin_key` references in `middleware/auth.rs`, `main.rs`, `common/mod.rs` still exist. Those are fixed in Tasks 9, 12, 11. If the test target fails to compile because of `middleware/auth.rs`, proceed to Task 9 first, then re-run.)
 
 > If the crate fails to compile due to `admin_key` usage in `middleware/auth.rs`, do Task 9 next and run this test afterward. Commit this task's changes together with Task 9.
@@ -744,7 +744,7 @@ use axum::extract::{Request, State};
 use axum::http::HeaderMap;
 use axum::middleware::Next;
 use axum::response::Response;
-use rustapi_core::{Error, Principal};
+use ferrum_core::{Error, Principal};
 
 pub async fn require_auth(
     State(state): State<AppState>,
@@ -783,7 +783,7 @@ use crate::state::AppState;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::{Json, Extension};
-use rustapi_core::{Error, Principal, ValidationErrors};
+use ferrum_core::{Error, Principal, ValidationErrors};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -931,7 +931,7 @@ Simpler: add a temporary test in `handlers.rs` that prints a hash, or compute in
     }
 ```
 
-Run: `cargo test -p rustapi-http print_dummy_hash -- --nocapture`
+Run: `cargo test -p ferrum-http print_dummy_hash -- --nocapture`
 Copy the printed PHC string into `DUMMY_HASH` in `handlers.rs`, then delete the temporary `print_dummy_hash` test.
 Expected: a string starting `$argon2id$v=19$...`.
 
@@ -1002,12 +1002,12 @@ pub fn build_router(state: AppState) -> Router {
 
 No new lib export needed (auth is `pub mod`). Build the crate:
 
-Run: `cargo build -p rustapi-http`
+Run: `cargo build -p ferrum-http`
 Expected: compiles. If `state.rs` tests from Task 8 weren't committed, they compile now too.
 
 - [ ] **Step 7: Run all http unit tests**
 
-Run: `cargo test -p rustapi-http`
+Run: `cargo test -p ferrum-http`
 Expected: all PASS (password, jwt, role_authz, error mappings).
 
 - [ ] **Step 8: Commit (folds in Task 8 if deferred)**
@@ -1051,7 +1051,7 @@ If Step 1 found `Error::Unauthorized` returned on `!authz.can(...)` in `schema.r
 
 - [ ] **Step 4: Build**
 
-Run: `cargo build -p rustapi-http`
+Run: `cargo build -p ferrum-http`
 Expected: compiles.
 
 - [ ] **Step 5: Commit**
@@ -1074,10 +1074,10 @@ Replace `crates/bin/tests/common/mod.rs` with:
 
 ```rust
 //! Shared integration-test plumbing. Spins a real Postgres via testcontainers
-//! and the rustapi router in-process, hitting it via reqwest.
+//! and the ferrum router in-process, hitting it via reqwest.
 
-use rustapi_http::{build_router, AppConfig, AppState, NoopSink, RoleAuthz};
-use rustapi_schema::{SchemaRegistry, SchemaService, MIGRATOR};
+use ferrum_http::{build_router, AppConfig, AppState, NoopSink, RoleAuthz};
+use ferrum_schema::{SchemaRegistry, SchemaService, MIGRATOR};
 use sqlx::PgPool;
 use std::sync::Arc;
 use testcontainers::runners::AsyncRunner;
@@ -1195,12 +1195,12 @@ impl TestApp {
 
 - [ ] **Step 2: Run the existing integration suite**
 
-Run: `cargo test -p rustapi --test integration_smoke`
+Run: `cargo test -p ferrum --test integration_smoke`
 Expected: PASS — proves the setup→login→bearer flow works end-to-end and existing `.admin()` call sites still authenticate.
 
 - [ ] **Step 3: Run the full integration suite**
 
-Run: `cargo test -p rustapi`
+Run: `cargo test -p ferrum`
 Expected: all existing integration tests PASS with the new auth. (Any test that asserted `x-api-key`-specific behavior would need updating, but call sites use `app.admin(...)`, which is now bearer-based.)
 
 - [ ] **Step 4: Commit**
@@ -1230,7 +1230,7 @@ mod tests {
     #[test]
     fn rejects_short_jwt_secret() {
         std::env::set_var("DATABASE_URL", "postgres://x");
-        std::env::set_var("RUSTAPI_JWT_SECRET", "short");
+        std::env::set_var("FERRUM_JWT_SECRET", "short");
         let err = Config::from_env().unwrap_err();
         assert!(err.to_string().contains("at least 32"));
     }
@@ -1239,8 +1239,8 @@ mod tests {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cargo test -p rustapi --lib rejects_short_jwt_secret`
-Expected: FAIL — `RUSTAPI_JWT_SECRET` not read yet.
+Run: `cargo test -p ferrum --lib rejects_short_jwt_secret`
+Expected: FAIL — `FERRUM_JWT_SECRET` not read yet.
 
 - [ ] **Step 3: Update the Config struct + loader**
 
@@ -1253,15 +1253,15 @@ In `crates/bin/src/config.rs`:
     pub jwt_ttl_secs: i64,
 ```
 
-(b) In `from_env`, replace the `admin_key` block (lines reading `RUSTAPI_ADMIN_KEY`) with:
+(b) In `from_env`, replace the `admin_key` block (lines reading `FERRUM_ADMIN_KEY`) with:
 
 ```rust
-        let jwt_secret = std::env::var("RUSTAPI_JWT_SECRET")
-            .context("RUSTAPI_JWT_SECRET must be set")?;
+        let jwt_secret = std::env::var("FERRUM_JWT_SECRET")
+            .context("FERRUM_JWT_SECRET must be set")?;
         if jwt_secret.len() < 32 {
-            return Err(anyhow!("RUSTAPI_JWT_SECRET must be at least 32 characters"));
+            return Err(anyhow!("FERRUM_JWT_SECRET must be at least 32 characters"));
         }
-        let jwt_ttl_secs = std::env::var("RUSTAPI_JWT_TTL_SECS")
+        let jwt_ttl_secs = std::env::var("FERRUM_JWT_TTL_SECS")
             .ok()
             .and_then(|s| s.parse::<i64>().ok())
             .unwrap_or(86400);
@@ -1281,7 +1281,7 @@ In `crates/bin/src/main.rs`:
 (a) Change the import line:
 
 ```rust
-use rustapi_http::{build_router, mount_studio, AppConfig, AppState, NoopSink, RoleAuthz};
+use ferrum_http::{build_router, mount_studio, AppConfig, AppState, NoopSink, RoleAuthz};
 ```
 
 (b) In the `AppState { .. }` construction, change `authz`:
@@ -1302,17 +1302,17 @@ use rustapi_http::{build_router, mount_studio, AppConfig, AppState, NoopSink, Ro
 
 - [ ] **Step 5: Run config test + build the binary**
 
-Run: `cargo test -p rustapi --lib rejects_short_jwt_secret`
+Run: `cargo test -p ferrum --lib rejects_short_jwt_secret`
 Expected: PASS.
 
-Run: `cargo build -p rustapi`
+Run: `cargo build -p ferrum`
 Expected: compiles.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add crates/bin/src/config.rs crates/bin/src/main.rs
-git commit -m "feat(bin): RUSTAPI_JWT_SECRET config, RoleAuthz wiring; drop admin key"
+git commit -m "feat(bin): FERRUM_JWT_SECRET config, RoleAuthz wiring; drop admin key"
 ```
 
 ---
@@ -1420,7 +1420,7 @@ async fn protected_route_rejects_missing_token() {
 
 - [ ] **Step 2: Run the auth integration tests**
 
-Run: `cargo test -p rustapi --test integration_auth`
+Run: `cargo test -p ferrum --test integration_auth`
 Expected: 7 tests PASS.
 
 - [ ] **Step 3: Commit**
@@ -1440,21 +1440,21 @@ git commit -m "test(bin): integration tests for setup/login/me"
 
 - [ ] **Step 1: Inspect current docker-compose env**
 
-Run: `grep -n "RUSTAPI_ADMIN_KEY\|RUSTAPI_" docker-compose.yml`
-Expected: shows the `RUSTAPI_ADMIN_KEY` line(s) to replace.
+Run: `grep -n "FERRUM_ADMIN_KEY\|FERRUM_" docker-compose.yml`
+Expected: shows the `FERRUM_ADMIN_KEY` line(s) to replace.
 
 - [ ] **Step 2: Swap the env var in docker-compose.yml**
 
-Replace each `RUSTAPI_ADMIN_KEY` reference with `RUSTAPI_JWT_SECRET` (same value source / default). For the demo default, generate at runtime as documented; keep any `${...}` substitution pattern already used.
+Replace each `FERRUM_ADMIN_KEY` reference with `FERRUM_JWT_SECRET` (same value source / default). For the demo default, generate at runtime as documented; keep any `${...}` substitution pattern already used.
 
 - [ ] **Step 3: Update README**
 
 In `README.md`:
-- Replace the `RUSTAPI_ADMIN_KEY` override snippet with `RUSTAPI_JWT_SECRET`:
+- Replace the `FERRUM_ADMIN_KEY` override snippet with `FERRUM_JWT_SECRET`:
   ```sh
-  export RUSTAPI_JWT_SECRET=$(openssl rand -hex 32)
+  export FERRUM_JWT_SECRET=$(openssl rand -hex 32)
   ```
-- Replace the backend run snippet's `RUSTAPI_ADMIN_KEY` line with `RUSTAPI_JWT_SECRET`.
+- Replace the backend run snippet's `FERRUM_ADMIN_KEY` line with `FERRUM_JWT_SECRET`.
 - Add a short "First-run setup" note after the Docker section:
   ```md
   On first boot the users table is empty. Create the initial admin:
@@ -1498,7 +1498,7 @@ git commit -m "docs: first-run setup flow, swap admin key for JWT secret"
 - Argon2id → Task 5. ✓
 - Multi-role RBAC, hardcoded map, `role_allows` → Tasks 2, 8. ✓
 - Default `admin` role → Task 9 (setup inserts `{admin}`). ✓
-- Remove `RUSTAPI_ADMIN_KEY`, first-run setup → Tasks 9, 12. ✓
+- Remove `FERRUM_ADMIN_KEY`, first-run setup → Tasks 9, 12. ✓
 - `/auth/setup`, `/auth/login`, `/auth/me` → Task 9. ✓
 - `_users` table → Task 4. ✓
 - 401 vs 403 (Forbidden) → Tasks 3, 10. ✓

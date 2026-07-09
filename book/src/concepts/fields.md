@@ -2,7 +2,7 @@
 
 A field is one named, typed slot on a [content type](content-types.md). Every
 field has a `name`, a `kind`, and a handful of optional modifiers. The `kind`
-decides what the field stores, how Rustapi validates incoming values, and what
+decides what the field stores, how Ferrum validates incoming values, and what
 Postgres column (or table) backs it.
 
 This is a field on the blog `article` type:
@@ -152,7 +152,7 @@ Two kinds differ:
 - **`many_to_many`** relations and **multiple** media fields have no column on
   the row; they live in a separate ordered join table.
 
-You don't manage these tables yourself — Rustapi creates and migrates them when
+You don't manage these tables yourself — Ferrum creates and migrates them when
 you create or patch the content type.
 
 ## Where to go next

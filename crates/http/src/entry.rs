@@ -1,7 +1,7 @@
 //! Validate request bodies for entry CRUD and decode rows back into JSON
 //! objects using schema metadata.
 
-use rustapi_core::{
+use ferrum_core::{
     is_system_column, BoundValue, ContentType, Error, Field, FieldKind, ValidationErrors,
 };
 use serde_json::{Map, Value};
@@ -72,7 +72,7 @@ pub fn body_to_binds(
     // Localization columns are server-managed; a client cannot set them as
     // fields (locale is selected via ?locale=, document_id is generated or
     // carried over). Strip them so they never reach body_to_binds' field loop.
-    for sys in rustapi_core::LOCALIZATION_COLUMNS {
+    for sys in ferrum_core::LOCALIZATION_COLUMNS {
         body.remove(sys);
     }
 
@@ -106,7 +106,7 @@ pub fn body_to_binds(
                             "missing relation kind_meta",
                         ))
                     })?;
-                    if meta.cardinality == rustapi_core::Cardinality::ManyToMany {
+                    if meta.cardinality == ferrum_core::Cardinality::ManyToMany {
                         links.push(coerce_m2m(f, &meta.target, v)?);
                     } else {
                         coerce_relation(f, v, &mut out, &mut checks)?;
@@ -138,9 +138,9 @@ pub fn body_to_binds(
                     }
                 }
                 let bv = BoundValue::from_json(f.kind, v).map_err(|e| match e {
-                    rustapi_core::CoerceError::BadEmail => Error::BadEmail,
-                    rustapi_core::CoerceError::BadUrl => Error::BadUrl,
-                    rustapi_core::CoerceError::BadSlug => Error::BadSlug,
+                    ferrum_core::CoerceError::BadEmail => Error::BadEmail,
+                    ferrum_core::CoerceError::BadUrl => Error::BadUrl,
+                    ferrum_core::CoerceError::BadSlug => Error::BadSlug,
                     other => Error::Validation(ValidationErrors::field(&f.name, other.to_string())),
                 })?;
                 if f.kind == FieldKind::Enum {
@@ -531,7 +531,7 @@ mod tests {
                 },
             ],
             options: json!({}),
-            kind: rustapi_core::ContentTypeKind::Collection,
+            kind: ferrum_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -622,7 +622,7 @@ mod tests {
                 kind_meta: json!({}),
             }],
             options: json!({ "draft_publish": true }),
-            kind: rustapi_core::ContentTypeKind::Collection,
+            kind: ferrum_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -650,7 +650,7 @@ mod tests {
                 kind_meta: json!({}),
             }],
             options: json!({ "localized": true }),
-            kind: rustapi_core::ContentTypeKind::Collection,
+            kind: ferrum_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -682,7 +682,7 @@ mod tests {
                 kind_meta: json!({"target":"user","cardinality":"many_to_one"}),
             }],
             options: json!({}),
-            kind: rustapi_core::ContentTypeKind::Collection,
+            kind: ferrum_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -792,7 +792,7 @@ mod tests {
                 },
             ],
             options: json!({}),
-            kind: rustapi_core::ContentTypeKind::Collection,
+            kind: ferrum_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -909,7 +909,7 @@ mod tests {
                 },
             ],
             options: json!({}),
-            kind: rustapi_core::ContentTypeKind::Collection,
+            kind: ferrum_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -1019,7 +1019,7 @@ mod tests {
                 kind_meta: json!({}),
             }],
             options: json!({}),
-            kind: rustapi_core::ContentTypeKind::Collection,
+            kind: ferrum_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -1055,7 +1055,7 @@ mod tests {
                 kind_meta: json!({}),
             }],
             options: json!({}),
-            kind: rustapi_core::ContentTypeKind::Collection,
+            kind: ferrum_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };

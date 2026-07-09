@@ -1,12 +1,12 @@
 //! Shared integration-test plumbing. Spins a real Postgres via testcontainers
-//! and the rustapi router in-process, hitting it via reqwest.
+//! and the ferrum router in-process, hitting it via reqwest.
 
-use rustapi::audit_sink::DbAuditSink;
-use rustapi_http::{
+use ferrum::audit_sink::DbAuditSink;
+use ferrum_http::{
     build_router, resolve_provider, secret_key_from_env, AppConfig, AppState, EventSink, NoopHook,
     NoopSink, RoleAuthz, RoleRegistry, WriteHook,
 };
-use rustapi_schema::{
+use ferrum_schema::{
     ComponentRegistry, ComponentService, SchemaRegistry, SchemaService, MIGRATOR,
 };
 use sqlx::PgPool;
@@ -107,12 +107,12 @@ impl TestApp {
         let components = ComponentService::new(pool.clone(), component_registry);
 
         let media_dir =
-            std::env::temp_dir().join(format!("rustapi-media-test-{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("ferrum-media-test-{}", uuid::Uuid::new_v4()));
         std::env::set_var(
-            "RUSTAPI_MEDIA_BASE_DIR",
+            "FERRUM_MEDIA_BASE_DIR",
             media_dir.to_string_lossy().to_string(),
         );
-        std::env::set_var("RUSTAPI_MEDIA_PROVIDER", "local");
+        std::env::set_var("FERRUM_MEDIA_PROVIDER", "local");
         let secret_key = secret_key_from_env();
         let storage = Arc::new(RwLock::new(resolve_provider(&pool, secret_key).await));
 
@@ -122,8 +122,8 @@ impl TestApp {
             components: components.clone(),
             authz: Arc::new(RoleAuthz::new(Arc::new(roles.clone()))),
             roles,
-            locales: std::sync::Arc::new(rustapi_http::locale_registry::LocaleRegistry::new()),
-            gql: rustapi_http::graphql::GqlRegistry::new(),
+            locales: std::sync::Arc::new(ferrum_http::locale_registry::LocaleRegistry::new()),
+            gql: ferrum_http::graphql::GqlRegistry::new(),
             events: sink,
             audit: Arc::new(DbAuditSink::new(pool.clone())),
             hooks: hook,

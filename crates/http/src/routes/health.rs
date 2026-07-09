@@ -15,7 +15,7 @@ pub async fn healthz(
     sqlx::query("SELECT 1")
         .execute(&state.pool)
         .await
-        .map_err(|e| ApiError(rustapi_core::Error::Internal(anyhow::anyhow!(e))))?;
+        .map_err(|e| ApiError(ferrum_core::Error::Internal(anyhow::anyhow!(e))))?;
     let db_ms = started.elapsed().as_millis() as i64;
 
     Ok((

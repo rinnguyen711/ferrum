@@ -2,7 +2,7 @@
 //! a request extension for handlers (e.g. audit logging) to read.
 
 use axum::{extract::Request, http::HeaderMap, middleware::Next, response::Response};
-use rustapi_core::RequestContext;
+use ferrum_core::RequestContext;
 use uuid::Uuid;
 
 fn client_ip(headers: &HeaderMap) -> Option<String> {

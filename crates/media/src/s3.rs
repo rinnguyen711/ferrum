@@ -110,7 +110,7 @@ impl StorageProvider for S3Provider {
 
     async fn test(&self) -> Result<(), StorageError> {
         // HEAD a key that should never exist; a 404 proves creds + bucket are reachable.
-        match self.bucket.head_object("__rustapi_healthcheck__").await {
+        match self.bucket.head_object("__ferrum_healthcheck__").await {
             Ok(_) => Ok(()),
             Err(S3Error::HttpFailWithBody(404, _)) => Ok(()),
             Err(S3Error::HttpFailWithBody(403, msg)) => {

@@ -325,7 +325,7 @@ export function TokenEditor() {
                 <span className="rs-token-reveal-icon"><Icons.check size={16} /></span>
                 <div>
                   <strong>Token created</strong>
-                  <p>Copy it now — for security, Rustapi only shows the full token once.</p>
+                  <p>Copy it now — for security, Ferrum only shows the full token once.</p>
                 </div>
               </div>
               <div className="rs-input-affix rs-token-key">

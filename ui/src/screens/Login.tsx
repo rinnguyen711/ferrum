@@ -80,7 +80,7 @@ export function Login() {
     return (
       <div className="rs-login">
         <div className="rs-login-card">
-          <h1>Rustapi Studio</h1>
+          <h1>Ferrum Studio</h1>
           <p className="rs-cell-muted">Loading…</p>
         </div>
       </div>
@@ -91,7 +91,7 @@ export function Login() {
     return (
       <div className="rs-login">
         <div className="rs-login-card">
-          <h1>Rustapi Studio</h1>
+          <h1>Ferrum Studio</h1>
           <p className="rs-cell-muted">Can't reach the API.</p>
           <button className="rs-btn rs-btn--primary" onClick={probe}>
             Retry
@@ -106,7 +106,7 @@ export function Login() {
   return (
     <div className="rs-login">
       <form className="rs-login-card" onSubmit={submit}>
-        <h1>Rustapi Studio</h1>
+        <h1>Ferrum Studio</h1>
         <p className="rs-cell-muted">
           {isSetup ? "Create the first admin account." : "Sign in to continue."}
         </p>

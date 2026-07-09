@@ -26,13 +26,13 @@ COPY crates/ crates/
 # survives across builds and Docker can't reliably bust it when source
 # changes, leading to stale binaries shipped into the image.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    cargo build --release -p rustapi \
- && cp target/release/rustapi /tmp/rustapi
+    cargo build --release -p ferrum \
+ && cp target/release/ferrum /tmp/ferrum
 
 # ─── Stage 3: runtime ──────────────────────────────────────────────
 FROM gcr.io/distroless/cc-debian12:nonroot AS runtime
 WORKDIR /app
-COPY --from=rust /tmp/rustapi /usr/local/bin/rustapi
+COPY --from=rust /tmp/ferrum /usr/local/bin/ferrum
 COPY --from=ui /ui/dist /app/studio
 
 # Provenance — populated by CI via --build-arg. Default to empty so local
@@ -43,12 +43,12 @@ ARG OCI_VERSION=""
 LABEL org.opencontainers.image.source=$OCI_SOURCE \
       org.opencontainers.image.revision=$OCI_REVISION \
       org.opencontainers.image.version=$OCI_VERSION \
-      org.opencontainers.image.title="rustapi" \
+      org.opencontainers.image.title="ferrum" \
       org.opencontainers.image.description="Headless CMS framework in Rust"
 
-ENV RUSTAPI_BIND=0.0.0.0:8080 \
-    RUSTAPI_STUDIO_DIR=/app/studio \
-    RUSTAPI_LOG=info
+ENV FERRUM_BIND=0.0.0.0:8080 \
+    FERRUM_STUDIO_DIR=/app/studio \
+    FERRUM_LOG=info
 EXPOSE 8080
 USER nonroot
-ENTRYPOINT ["/usr/local/bin/rustapi"]
+ENTRYPOINT ["/usr/local/bin/ferrum"]

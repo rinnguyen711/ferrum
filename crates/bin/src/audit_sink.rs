@@ -1,9 +1,9 @@
 //! Database-backed audit sink: writes one `_audit_log` row per recorded entry,
 //! fire-and-forget. Plus a background worker that prunes old rows.
 
-use rustapi_core::AuditEntry;
-use rustapi_http::state::AuditSink;
-use rustapi_sql::audit::{insert_audit, prune_audit, NewAudit};
+use ferrum_core::AuditEntry;
+use ferrum_http::state::AuditSink;
+use ferrum_sql::audit::{insert_audit, prune_audit, NewAudit};
 use serde_json::json;
 use sqlx::PgPool;
 use std::time::Duration;

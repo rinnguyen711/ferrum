@@ -10,8 +10,8 @@
 //! * `Many` — many_to_many (forward or inverse): resolved via the join table
 //!   with a per-parent cap, returning a capped array of objects.
 
-use rustapi_core::{ContentType, Error, FieldKind, ValidationErrors};
-use rustapi_schema::SchemaRegistry;
+use ferrum_core::{ContentType, Error, FieldKind, ValidationErrors};
+use ferrum_schema::SchemaRegistry;
 use serde_json::{Map, Value};
 use sqlx::{PgPool, Row};
 use std::collections::{HashMap, HashSet};
@@ -83,8 +83,8 @@ pub async fn parse_populate(
                         "unknown populate field `{name}`"
                     )))
                 })?;
-                if meta.cardinality == rustapi_core::Cardinality::ManyToMany {
-                    let join_table = rustapi_sql::join_table_name(&ct.name, &f.name)
+                if meta.cardinality == ferrum_core::Cardinality::ManyToMany {
+                    let join_table = ferrum_sql::join_table_name(&ct.name, &f.name)
                         .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
                     out.push(PopulateField::Many {
                         field_name: name.to_string(),
@@ -118,10 +118,10 @@ pub async fn parse_populate(
                 })
             });
             match cardinality {
-                Some(rustapi_core::Cardinality::ManyToMany) => {
+                Some(ferrum_core::Cardinality::ManyToMany) => {
                     // Fall through to inverse_lookup_m2m.
                 }
-                Some(rustapi_core::Cardinality::OneToOne) => {
+                Some(ferrum_core::Cardinality::OneToOne) => {
                     out.push(PopulateField::InverseOne {
                         field_name: name.to_string(),
                         source,
@@ -141,7 +141,7 @@ pub async fn parse_populate(
             }
         }
         if let Some((owner, field)) = registry.inverse_lookup_m2m(&ct.name, name).await {
-            let join_table = rustapi_sql::join_table_name(&owner, &field)
+            let join_table = ferrum_sql::join_table_name(&owner, &field)
                 .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
             // Current type is the *target* of the M:N; in the join table its own
             // id column is `<ct.name>_id`, children rows are `<owner>_id`.
@@ -190,7 +190,7 @@ pub async fn apply_forward(
     if ids.is_empty() {
         return Ok(());
     }
-    let table = rustapi_sql::table_name(target)
+    let table = ferrum_sql::table_name(target)
         .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
     let sql = format!("SELECT * FROM {table} WHERE id = ANY($1)");
     let fetched = sqlx::query(&sql)
@@ -295,9 +295,9 @@ pub async fn apply_inverse(
         }
         return Ok(());
     }
-    let table = rustapi_sql::table_name(source_table)
+    let table = ferrum_sql::table_name(source_table)
         .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
-    let fk_quoted = rustapi_sql::quote_ident(fk_col)
+    let fk_quoted = ferrum_sql::quote_ident(fk_col)
         .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
     // Over-fetch by one per parent to detect truncation without a separate
     // COUNT roundtrip. Order by FK then id so per-parent slices stay stable.
@@ -374,11 +374,11 @@ pub async fn apply_many(
         }
         return Ok(());
     }
-    let target_tbl = rustapi_sql::table_name(target)
+    let target_tbl = ferrum_sql::table_name(target)
         .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
-    let self_q = rustapi_sql::quote_ident(self_col)
+    let self_q = ferrum_sql::quote_ident(self_col)
         .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
-    let other_q = rustapi_sql::quote_ident(other_col)
+    let other_q = ferrum_sql::quote_ident(other_col)
         .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
     // join_table is already a quoted identifier from join_table_name.
     let limit = (INVERSE_LIMIT_PER_PARENT + 1) * parent_ids.len();
@@ -462,7 +462,7 @@ pub async fn apply_inverse_one(
 mod tests {
     use super::*;
     use chrono::Utc;
-    use rustapi_core::Field;
+    use ferrum_core::Field;
     use serde_json::json;
 
     fn ct_with_relation() -> ContentType {
@@ -495,7 +495,7 @@ mod tests {
                 },
             ],
             options: serde_json::json!({}),
-            kind: rustapi_core::ContentTypeKind::Collection,
+            kind: ferrum_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -516,7 +516,7 @@ mod tests {
                 kind_meta: json!({}),
             }],
             options: serde_json::json!({}),
-            kind: rustapi_core::ContentTypeKind::Collection,
+            kind: ferrum_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -679,7 +679,7 @@ mod tests {
                 kind_meta: json!({"target":"tag","cardinality":"many_to_many","inverse":"posts"}),
             }],
             options: serde_json::json!({}),
-            kind: rustapi_core::ContentTypeKind::Collection,
+            kind: ferrum_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -700,7 +700,7 @@ mod tests {
                 kind_meta: json!({}),
             }],
             options: serde_json::json!({}),
-            kind: rustapi_core::ContentTypeKind::Collection,
+            kind: ferrum_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

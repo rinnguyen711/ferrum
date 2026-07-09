@@ -38,7 +38,7 @@ In `crates/core/src/reserved.rs`, add to the `tests` mod:
 
 - [ ] **Step 2: Run, verify fail**
 
-Run: `cargo test -p rustapi-core published_at_is_reserved`
+Run: `cargo test -p ferrum-core published_at_is_reserved`
 Expected: FAIL (`published_at` not in list).
 
 - [ ] **Step 3: Add to reserved list**
@@ -55,7 +55,7 @@ pub const RESERVED_FIELD_NAMES: &[&str] = &[
 
 - [ ] **Step 4: Run, verify pass**
 
-Run: `cargo test -p rustapi-core published_at_is_reserved`
+Run: `cargo test -p ferrum-core published_at_is_reserved`
 Expected: PASS.
 
 - [ ] **Step 5: Add `options` field + helper with test**
@@ -86,7 +86,7 @@ Note: the existing `tests` mod's `field()` helper and `Utc`/`Uuid` imports alrea
 
 - [ ] **Step 6: Run, verify fail**
 
-Run: `cargo test -p rustapi-core draft_publish_defaults_and_reads`
+Run: `cargo test -p ferrum-core draft_publish_defaults_and_reads`
 Expected: FAIL (no `options` field / no `draft_publish()`).
 
 - [ ] **Step 7: Add field + helper + NewContentType default**
@@ -155,13 +155,13 @@ impl NewContentType {
 
 Every place that constructs `ContentType { ... }` now needs `options`. These compile-fail until fixed. Add `options: serde_json::json!({})` (or `serde_json::Value::Null`) to each. Find them:
 
-Run: `cargo build -p rustapi-core 2>&1 | grep -n "content_type.rs\|missing field .options"`
+Run: `cargo build -p ferrum-core 2>&1 | grep -n "content_type.rs\|missing field .options"`
 
 Fix each flagged `ContentType { ... }` literal in `crates/core/src/content_type.rs` tests by adding `options: serde_json::json!({}),` before `created_at`.
 
 - [ ] **Step 9: Run core tests**
 
-Run: `cargo test -p rustapi-core`
+Run: `cargo test -p ferrum-core`
 Expected: PASS (note: other crates won't build yet — that's expected; fix them in later tasks).
 
 - [ ] **Step 10: Commit**
@@ -225,7 +225,7 @@ Then add tests:
 
 - [ ] **Step 2: Run, verify fail**
 
-Run: `cargo test -p rustapi-sql create_table_emits_published_at_when_draft_publish add_published_at_column_builds_alter`
+Run: `cargo test -p ferrum-sql create_table_emits_published_at_when_draft_publish add_published_at_column_builds_alter`
 Expected: FAIL (no published_at logic, no `add_published_at_column`).
 
 - [ ] **Step 3: Implement**
@@ -252,11 +252,11 @@ pub fn add_published_at_column(ct_name: &str) -> Result<String, DdlError> {
 }
 ```
 
-Export it: in `crates/sql/src/lib.rs`, the `ddl` re-exports likely use `pub use ddl::*;` — confirm `add_published_at_column` is reachable as `rustapi_sql::add_published_at_column`. If lib.rs lists explicit names, add `add_published_at_column`.
+Export it: in `crates/sql/src/lib.rs`, the `ddl` re-exports likely use `pub use ddl::*;` — confirm `add_published_at_column` is reachable as `ferrum_sql::add_published_at_column`. If lib.rs lists explicit names, add `add_published_at_column`.
 
 - [ ] **Step 4: Run, verify pass**
 
-Run: `cargo test -p rustapi-sql`
+Run: `cargo test -p ferrum-sql`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -348,7 +348,7 @@ Note: confirm `Filter` implements `Default`; if not, use the same way existing `
 
 - [ ] **Step 2: Run, verify fail**
 
-Run: `cargo test -p rustapi-sql publish_sets_published_at_now select_list_published_filter_appends_clause`
+Run: `cargo test -p ferrum-sql publish_sets_published_at_now select_list_published_filter_appends_clause`
 Expected: FAIL (functions/enum missing).
 
 - [ ] **Step 3: Implement publish/unpublish**
@@ -477,7 +477,7 @@ Ensure `PublishFilter`, `publish`, `unpublish`, `select_list_status`, `count_sta
 
 - [ ] **Step 5: Run, verify pass**
 
-Run: `cargo test -p rustapi-sql`
+Run: `cargo test -p ferrum-sql`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -514,7 +514,7 @@ struct RawCt {
     id: uuid::Uuid,
     name: String,
     display_name: String,
-    fields: sqlx::types::Json<Vec<rustapi_core::Field>>,
+    fields: sqlx::types::Json<Vec<ferrum_core::Field>>,
     options: sqlx::types::Json<serde_json::Value>,
     created_at: chrono::DateTime<chrono::Utc>,
     updated_at: chrono::DateTime<chrono::Utc>,
@@ -549,7 +549,7 @@ Also fix the registry `tests` mod `ct()` helper to include `options: serde_json:
 
 - [ ] **Step 3: Build the crate**
 
-Run: `cargo build -p rustapi-schema`
+Run: `cargo build -p ferrum-schema`
 Expected: compiles (the SELECT is a runtime query, not compile-checked).
 
 - [ ] **Step 4: Commit**
@@ -581,7 +581,7 @@ pub(crate) fn published_at_transition(
     match (was_enabled, now_enabled) {
         (false, true) => Ok(true),
         (true, false) => Err(Error::Validation(
-            rustapi_core::ValidationErrors::single(
+            ferrum_core::ValidationErrors::single(
                 "disabling Draft & Publish is not supported",
             ),
         )),
@@ -604,7 +604,7 @@ Add test in the `tests` mod:
 
 - [ ] **Step 2: Run, verify fail**
 
-Run: `cargo test -p rustapi-schema published_at_transition_rules`
+Run: `cargo test -p ferrum-schema published_at_transition_rules`
 Expected: FAIL (function missing).
 
 - [ ] **Step 3: Implement create options handling**
@@ -666,7 +666,7 @@ In `patch` (`service.rs`), after computing `new_fields` and before building the 
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         if published_at_transition(was_enabled, now_enabled)? {
-            let sql = rustapi_sql::add_published_at_column(name)
+            let sql = ferrum_sql::add_published_at_column(name)
                 .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
             sqlx::query(&sql).execute(&mut *tx).await.map_err(map_db_err)?;
         }
@@ -694,12 +694,12 @@ Update the returned `ContentType` literal to include `options: new_options`.
 
 `PatchContentType::validate` in `content_type.rs` may pattern-match or not care about the new field — adding `Option` with `#[serde(default)]` keeps existing callers compiling. Build to confirm:
 
-Run: `cargo build -p rustapi-core -p rustapi-schema 2>&1 | grep -n "missing field\|error\[" | head`
+Run: `cargo build -p ferrum-core -p ferrum-schema 2>&1 | grep -n "missing field\|error\[" | head`
 Fix any `PatchContentType { ... }` literals (in tests across the workspace) by adding `options: None,`.
 
 - [ ] **Step 6: Run schema tests**
 
-Run: `cargo test -p rustapi-schema published_at_transition_rules`
+Run: `cargo test -p ferrum-schema published_at_transition_rules`
 Expected: PASS.
 
 - [ ] **Step 7: Commit**
@@ -735,7 +735,7 @@ Use the same ContentType-construction helper the surrounding tests use; set `opt
 
 - [ ] **Step 2: Run, verify fail**
 
-Run: `cargo test -p rustapi-http body_to_binds_strips_published_at`
+Run: `cargo test -p ferrum-http body_to_binds_strips_published_at`
 Expected: FAIL (currently `published_at` triggers unknown-field error → `unwrap()` panics).
 
 - [ ] **Step 3: Strip published_at in body_to_binds**
@@ -765,7 +765,7 @@ In `row_to_json`, after the `updated_at` insert and before the `for f in &ct.fie
 
 - [ ] **Step 5: Run, verify pass**
 
-Run: `cargo test -p rustapi-http body_to_binds_strips_published_at`
+Run: `cargo test -p ferrum-http body_to_binds_strips_published_at`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -796,7 +796,7 @@ Extend `ListParams` usage — add a `status` query param. `ListParams` is in `qu
 In `list`, map `status` → `PublishFilter` (default Published for D&P types, All otherwise) and use the status-aware SQL:
 
 ```rust
-    use rustapi_sql::PublishFilter;
+    use ferrum_sql::PublishFilter;
     let publish = if ct.draft_publish() {
         match params.status.as_deref() {
             Some("draft") => PublishFilter::Draft,
@@ -854,15 +854,15 @@ async fn set_publish_state(
     let ct = state.schemas.registry().get(&ct_name).await.ok_or(ApiError(Error::NotFound))?;
     if !ct.draft_publish() {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::single(
+            ferrum_core::ValidationErrors::single(
                 "Draft & Publish is not enabled for this content type",
             ),
         )));
     }
     let (sql, binds) = if publish {
-        rustapi_sql::publish(&ct.name, id)
+        ferrum_sql::publish(&ct.name, id)
     } else {
-        rustapi_sql::unpublish(&ct.name, id)
+        ferrum_sql::unpublish(&ct.name, id)
     }
     .map_err(|e| ApiError(Error::Internal(anyhow::anyhow!(e.to_string()))))?;
     let q = bind_all(sqlx::query(&sql), &binds);
@@ -875,7 +875,7 @@ async fn set_publish_state(
 
 - [ ] **Step 2: Build**
 
-Run: `cargo build -p rustapi-http`
+Run: `cargo build -p ferrum-http`
 Expected: compiles. Fix any import (`PublishFilter`, `select_list_status`, `count_status`).
 
 - [ ] **Step 3: Commit**
@@ -966,7 +966,7 @@ Adapt method names (`post_json`, `get_json`, `put_json`, `post_status`, `create_
 
 - [ ] **Step 2: Run**
 
-Run: `cargo test -p rustapi-bin --test integration_draft_publish`
+Run: `cargo test -p ferrum-bin --test integration_draft_publish`
 Expected: PASS (requires the test DB the harness provisions).
 
 - [ ] **Step 3: Run full workspace tests**

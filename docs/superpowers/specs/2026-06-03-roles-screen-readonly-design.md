@@ -11,11 +11,11 @@ assigned to each. Also replace the inline-SVG sidebar logo with `logo.png`.
 
 ## Why read-only
 
-The backend RBAC is a hardcoded Rust map (`rustapi_core::role_allows`): three
+The backend RBAC is a hardcoded Rust map (`ferrum_core::role_allows`): three
 fixed roles (`admin`/`editor`/`viewer`) with coarse actions (content R/W, schema
 R/W, user R/W). There is no roles table, no per-content-type granularity, and no
 way to define custom roles. A fully editable, DB-backed roles system (matching
-`design/rustapi/roles.jsx`) is a large separate slice. This slice ships the
+`design/ferrum/roles.jsx`) is a large separate slice. This slice ships the
 screen honestly against the current backend and defers the authz rewrite.
 
 ## Data source
@@ -28,7 +28,7 @@ Pure client-side. Zero new backend:
 
 ## Roles Screen
 
-Two screens, ported from `design/rustapi/roles.jsx` but stripped to read-only
+Two screens, ported from `design/ferrum/roles.jsx` but stripped to read-only
 and to the backend's coarse capabilities:
 
 ### `screens/Roles.tsx` (list)
@@ -68,7 +68,7 @@ and to the backend's coarse capabilities:
 - Replace the inline SVG in `RailLogo` (`shell.tsx`) with an `<img>` whose `src`
   is `` `${import.meta.env.BASE_URL}logo.png` `` so it resolves under the
   `/studio/` base path. Keep the `rs-logo` wrapper and sizing (~22–28px square),
-  `alt="Rustapi"`.
+  `alt="Ferrum"`.
 
 ## Error / Empty Handling
 

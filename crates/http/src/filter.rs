@@ -1,12 +1,12 @@
-//! Strapi-style `?filters[col][$op]=value` parser. Produces a `rustapi_sql::Filter`
+//! Strapi-style `?filters[col][$op]=value` parser. Produces a `ferrum_sql::Filter`
 //! ready for the SQL builder. v1 supports `$eq`, `$ne`, `$null` with implicit
 //! AND across params.
 
-use rustapi_core::{
+use ferrum_core::{
     is_system_column, BoundValue, ContentType, Error, Field, FieldKind, ValidationErrors,
     SYSTEM_COLUMNS,
 };
-use rustapi_sql::{Condition, Filter, FilterValue, Op};
+use ferrum_sql::{Condition, Filter, FilterValue, Op};
 use url::form_urlencoded;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -291,7 +291,7 @@ fn insert_into(
             let kind = field.kind();
             let physical_col = field.column(col);
             let is_relation = field.is_relation();
-            if !rustapi_sql::op_allows_kind(op, kind) {
+            if !ferrum_sql::op_allows_kind(op, kind) {
                 return Err(field_err(
                     col,
                     if is_relation {
@@ -398,7 +398,7 @@ fn insert_at_group_index(
             let kind = field.kind();
             let physical_col = field.column(col);
             let is_relation = field.is_relation();
-            if !rustapi_sql::op_allows_kind(op, kind) {
+            if !ferrum_sql::op_allows_kind(op, kind) {
                 return Err(field_err(
                     col,
                     if is_relation {
@@ -1035,7 +1035,7 @@ mod tokenize_tests {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use rustapi_core::{Field, FieldKind};
+    use ferrum_core::{Field, FieldKind};
     use serde_json::json;
     use uuid::Uuid;
 
@@ -1074,7 +1074,7 @@ mod tests {
                 },
             ],
             options: json!({}),
-            kind: rustapi_core::ContentTypeKind::Collection,
+            kind: ferrum_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -1138,7 +1138,7 @@ mod tests {
     #[test]
     fn m2m_field_not_filterable() {
         use chrono::Utc;
-        use rustapi_core::{ContentType, Field, FieldKind};
+        use ferrum_core::{ContentType, Field, FieldKind};
         let ct = ContentType {
             id: uuid::Uuid::nil(),
             name: "post".into(),
@@ -1153,7 +1153,7 @@ mod tests {
                 kind_meta: json!({"target": "tag", "cardinality": "many_to_many"}),
             }],
             options: json!({}),
-            kind: rustapi_core::ContentTypeKind::Collection,
+            kind: ferrum_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -1707,7 +1707,7 @@ mod tests {
                 kind_meta,
             }],
             options: json!({}),
-            kind: rustapi_core::ContentTypeKind::Collection,
+            kind: ferrum_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

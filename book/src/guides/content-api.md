@@ -14,10 +14,10 @@ entry you create through the content API is identical to one created via
 
 ## The functions
 
-The API lives in `rustapi_http::content_api` as four async functions:
+The API lives in `ferrum_http::content_api` as four async functions:
 
 ```rust
-use rustapi_http::content_api;
+use ferrum_http::content_api;
 
 // Read one entry by id. `populate` mirrors the ?populate= query param.
 get_entry(state, principal, ct_name, id, populate) -> Result<Value, Error>
@@ -53,7 +53,7 @@ Pass your router to `build_router` as the `extra` argument. It merges into the
 **protected** tree — behind `require_auth`, sharing `AppState`:
 
 ```rust
-use rustapi_http::build_router;
+use ferrum_http::build_router;
 
 let custom = axum::Router::new()
     .route("/api/checkout", axum::routing::post(checkout));
@@ -71,8 +71,8 @@ extensions on the protected tree. A handler pulls them out with axum's
 
 ```rust
 use axum::{extract::State, Extension, Json};
-use rustapi_core::{Principal, RequestContext};
-use rustapi_http::{content_api, ApiError, AppState};
+use ferrum_core::{Principal, RequestContext};
+use ferrum_http::{content_api, ApiError, AppState};
 use serde_json::{json, Map};
 use uuid::Uuid;
 
@@ -107,7 +107,7 @@ A full, annotated version of this handler is in
 
 ## Error handling
 
-Handler results use `rustapi_http::ApiError`, not `rustapi_core::Error` directly,
+Handler results use `ferrum_http::ApiError`, not `ferrum_core::Error` directly,
 because `ApiError` is what implements axum's `IntoResponse`. `ApiError: From<Error>`,
 so `?` on a `content_api` call converts cleanly and the response gets the standard
 `{"error": {...}}` shape. A missing entry becomes `404`, a failed authz check

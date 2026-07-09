@@ -1,23 +1,23 @@
 [package]
-name = "rustapi"
+name = "ferrum"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
 [lib]
-name = "rustapi"
+name = "ferrum"
 path = "src/lib.rs"
 
 [[bin]]
-name = "rustapi"
+name = "ferrum"
 path = "src/main.rs"
 
 [dependencies]
-rustapi-core = { path = "../core" }
-rustapi-schema = { path = "../schema" }
-rustapi-http = { path = "../http" }
-rustapi-sql = { path = "../sql" }
+ferrum-core = { path = "../core" }
+ferrum-schema = { path = "../schema" }
+ferrum-http = { path = "../http" }
+ferrum-sql = { path = "../sql" }
 uuid.workspace = true
 tokio.workspace = true
 sqlx.workspace = true

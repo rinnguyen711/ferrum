@@ -1,9 +1,9 @@
 use crate::migrate::map::Mapping;
 use crate::migrate::prompt::{ColumnDecision, TablePlan};
 use indicatif::{ProgressBar, ProgressStyle};
-use rustapi_core::content_type::{ContentTypeKind, NewContentType};
-use rustapi_core::field::{Field, FieldKind};
-use rustapi_schema::SchemaService;
+use ferrum_core::content_type::{ContentTypeKind, NewContentType};
+use ferrum_core::field::{Field, FieldKind};
+use ferrum_schema::SchemaService;
 use sqlx::PgPool;
 
 #[allow(dead_code)]

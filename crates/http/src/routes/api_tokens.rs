@@ -8,8 +8,8 @@ use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Extension, Json, Router};
 use chrono::{DateTime, Utc};
-use rustapi_core::{Action, Actor, AuditEntry, Error, Principal, RequestContext};
-use rustapi_sql::{delete_token, insert_token, list_tokens, update_token};
+use ferrum_core::{Action, Actor, AuditEntry, Error, Principal, RequestContext};
+use ferrum_sql::{delete_token, insert_token, list_tokens, update_token};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -87,12 +87,12 @@ async fn create(
 
     if body.name.trim().is_empty() {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::field("name", "name is required"),
+            ferrum_core::ValidationErrors::field("name", "name is required"),
         )));
     }
     if body.scopes.is_empty() {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::field("scopes", "at least one scope is required"),
+            ferrum_core::ValidationErrors::field("scopes", "at least one scope is required"),
         )));
     }
     // API tokens are content-scoped only. Schema/user management requires an admin token (future).
@@ -104,7 +104,7 @@ async fn create(
         .collect();
     if !invalid.is_empty() {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::field(
+            ferrum_core::ValidationErrors::field(
                 "scopes",
                 "only content:* scopes are allowed for API tokens",
             ),
@@ -170,12 +170,12 @@ async fn update(
 
     if body.name.trim().is_empty() {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::field("name", "name is required"),
+            ferrum_core::ValidationErrors::field("name", "name is required"),
         )));
     }
     if body.scopes.is_empty() {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::field("scopes", "at least one scope is required"),
+            ferrum_core::ValidationErrors::field("scopes", "at least one scope is required"),
         )));
     }
     let invalid: Vec<&str> = body
@@ -186,7 +186,7 @@ async fn update(
         .collect();
     if !invalid.is_empty() {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::field(
+            ferrum_core::ValidationErrors::field(
                 "scopes",
                 "only content:* scopes are allowed for API tokens",
             ),

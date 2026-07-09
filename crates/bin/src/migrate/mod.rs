@@ -8,7 +8,7 @@ use crate::migrate::inspect::{inspect_table, list_tables};
 use crate::migrate::prompt::{confirm_data_migration, confirm_plan, plan_table, select_tables};
 use anyhow::{Context, Result};
 use clap::Args;
-use rustapi_schema::{SchemaRegistry, SchemaService, MIGRATOR};
+use ferrum_schema::{SchemaRegistry, SchemaService, MIGRATOR};
 use sqlx::postgres::PgPoolOptions;
 
 #[derive(Debug, Args)]
@@ -17,8 +17,8 @@ pub struct MigrateArgs {
     #[arg(long)]
     pub source: String,
 
-    /// Target Rustapi Postgres connection string. Defaults to RUSTAPI_DATABASE_URL.
-    #[arg(long, env = "RUSTAPI_DATABASE_URL")]
+    /// Target Ferrum Postgres connection string. Defaults to FERRUM_DATABASE_URL.
+    #[arg(long, env = "FERRUM_DATABASE_URL")]
     pub target: String,
 
     /// Print the migration plan and exit without writing anything.
@@ -42,7 +42,7 @@ pub async fn run(args: MigrateArgs) -> Result<()> {
     MIGRATOR
         .run(&target)
         .await
-        .context("apply Rustapi internal migrations to target")?;
+        .context("apply Ferrum internal migrations to target")?;
 
     let registry = SchemaRegistry::new();
     registry

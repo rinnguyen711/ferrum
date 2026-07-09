@@ -16,20 +16,20 @@ manual click-through in the admin UI.
 |---|---|
 | Format | **TOML**. Rust-native, solid `toml` crate, comments, matches project idiom. No custom DSL in v1. |
 | Source of truth | TOML file(s) describe the **desired state**. Server reconciles DB toward it on boot. |
-| Sync modes | `RUSTAPI_SCHEMA_SYNC`: `additive` (default) = create types + add fields, never drop. `full` = also drop types/fields absent from TOML. |
+| Sync modes | `FERRUM_SCHEMA_SYNC`: `additive` (default) = create types + add fields, never drop. `full` = also drop types/fields absent from TOML. |
 | Rename | **Not supported in v1** (documented). Declarative TOML can't distinguish rename from drop+add. A name change = new field; old field stays until dropped (full mode). |
 | Failure mode | **Fail fast.** Any parse/validate/apply error aborts boot with non-zero exit. Matches Prisma/Atlas/Sanity/Django. Only triggers when a schema path is configured. |
 | Data scope | **Schema only.** No row seeding via TOML. Row data stays with CSV import. |
-| Default demo seed | **Removed entirely.** Delete `bin/src/seed.rs` demo types (author/article/category) + sample rows + `RUSTAPI_SEED`. Ship empty by default. |
-| File location | `RUSTAPI_SCHEMA_DIR` (load + merge all `*.toml`) or `RUSTAPI_SCHEMA_FILE` (single file). Dir wins if both set. Unset = feature off. |
+| Default demo seed | **Removed entirely.** Delete `bin/src/seed.rs` demo types (author/article/category) + sample rows + `FERRUM_SEED`. Ship empty by default. |
+| File location | `FERRUM_SCHEMA_DIR` (load + merge all `*.toml`) or `FERRUM_SCHEMA_FILE` (single file). Dir wins if both set. Unset = feature off. |
 | Two-writer conflict | **TOML owns; UI locks managed types.** Types from TOML are marked `managed`; UI/API reject edits (409) and grey them out. UI freely manages types NOT in TOML. Matches Sanity/Prisma. |
 
 ## Existing code this builds on
 
-- `rustapi_core::NewContentType` / `Field` / `PatchContentType` — already serde-derive, so TOML deserializes straight into them.
-- `rustapi_core::NewContentType::validate()` — local shape validation, reused as-is.
-- `rustapi_schema::SchemaService::{create, patch, delete}` — transactional DDL + registry update, **one transaction per type**.
-- `rustapi_schema::service::validate_relation_cross_refs` — cross-type relation validation, reused.
+- `ferrum_core::NewContentType` / `Field` / `PatchContentType` — already serde-derive, so TOML deserializes straight into them.
+- `ferrum_core::NewContentType::validate()` — local shape validation, reused as-is.
+- `ferrum_schema::SchemaService::{create, patch, delete}` — transactional DDL + registry update, **one transaction per type**.
+- `ferrum_schema::service::validate_relation_cross_refs` — cross-type relation validation, reused.
 - `SchemaRegistry::reload_from_db` — registry hydrated before sync runs.
 - `ContentType::draft_publish()` — pattern for the new `managed()` helper reading `options` jsonb.
 - Boot sequence in `crates/bin/src/main.rs`: hydrate registry → (was: seed) → build GraphQL → serve.
@@ -85,16 +85,16 @@ apply is the thin DB loop.
 ## Section 3 — Boot wiring + config
 
 `crates/bin/src/config.rs`:
-- add `schema_path: Option<String>` (`RUSTAPI_SCHEMA_DIR` else `RUSTAPI_SCHEMA_FILE`, dir wins)
-- add `schema_sync_mode: SyncMode` (`RUSTAPI_SCHEMA_SYNC`, default `additive`)
-- **remove** `seed: bool` / `RUSTAPI_SEED`
+- add `schema_path: Option<String>` (`FERRUM_SCHEMA_DIR` else `FERRUM_SCHEMA_FILE`, dir wins)
+- add `schema_sync_mode: SyncMode` (`FERRUM_SCHEMA_SYNC`, default `additive`)
+- **remove** `seed: bool` / `FERRUM_SEED`
 
 `crates/bin/src/main.rs`, after registry hydrate, replace the `seed::seed_if_empty`
 call with:
 
 ```rust
 if let Some(path) = &cfg.schema_path {
-    rustapi_schema::sync::sync_from_path(&schemas, path, cfg.schema_sync_mode)
+    ferrum_schema::sync::sync_from_path(&schemas, path, cfg.schema_sync_mode)
         .await
         .context("schema sync")?;   // ? = fail fast, abort boot
 }

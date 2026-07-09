@@ -27,7 +27,7 @@ pub struct SourceTable {
 const CT_PREFIX: &str = "ct_";
 
 #[allow(dead_code)]
-const RUSTAPI_TABLES: &[&str] = &[
+const FERRUM_TABLES: &[&str] = &[
     "_sqlx_migrations",
     "_media_assets",
     "_api_tokens",
@@ -56,7 +56,7 @@ pub async fn list_tables(pool: &PgPool) -> Result<Vec<String>, sqlx::Error> {
         .into_iter()
         .filter(|t| {
             !t.starts_with(CT_PREFIX)
-                && !RUSTAPI_TABLES.contains(&t.as_str())
+                && !FERRUM_TABLES.contains(&t.as_str())
                 && !t.starts_with("pg_")
         })
         .collect())
@@ -132,7 +132,7 @@ pub async fn inspect_table(pool: &PgPool, table_name: &str) -> Result<SourceTabl
         let fk_table = fk_map.get(&column_name).cloned();
         let mapping = infer(&pg_type, &udt_name, is_fk);
 
-        let enum_values = if mapping == Mapping::Field(rustapi_core::field::FieldKind::Enum) {
+        let enum_values = if mapping == Mapping::Field(ferrum_core::field::FieldKind::Enum) {
             load_enum_values(pool, &udt_name).await.unwrap_or_default()
         } else {
             vec![]

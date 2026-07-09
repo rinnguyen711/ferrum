@@ -6,7 +6,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{get, patch};
 use axum::{Extension, Json, Router};
-use rustapi_core::{
+use ferrum_core::{
     Actor, AuditEntry, ContentType, Error, Event, NewContentType, PatchContentType, Principal,
     RequestContext,
 };
@@ -127,7 +127,7 @@ async fn delete_one(
 ) -> Result<StatusCode, ApiError> {
     if q.confirm != Some(true) {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::single("confirm_required: pass ?confirm=true"),
+            ferrum_core::ValidationErrors::single("confirm_required: pass ?confirm=true"),
         )));
     }
     if let Some(existing) = state.schemas.registry().get(&name).await {
@@ -154,9 +154,9 @@ async fn delete_one(
 /// Inject `_component_fields` into every component-kind field on a ContentType.
 async fn inject_component_fields(
     state: &AppState,
-    mut ct: rustapi_core::ContentType,
-) -> rustapi_core::ContentType {
-    use rustapi_core::FieldKind;
+    mut ct: ferrum_core::ContentType,
+) -> ferrum_core::ContentType {
+    use ferrum_core::FieldKind;
     use serde_json::json;
 
     for f in &mut ct.fields {

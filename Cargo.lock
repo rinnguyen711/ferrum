@@ -1094,6 +1094,139 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f1f227452a390804cdb637b74a86990f2a7d7ba4b7d5693aac9b4dd6defd8d6"
 
 [[package]]
+name = "ferrum"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "chrono",
+ "clap",
+ "csv",
+ "dialoguer",
+ "ferrum-core",
+ "ferrum-http",
+ "ferrum-schema",
+ "ferrum-sql",
+ "hex",
+ "hmac",
+ "indicatif",
+ "reqwest",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "testcontainers",
+ "testcontainers-modules",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "ferrum-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "ferrum-http"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "argon2",
+ "async-graphql",
+ "async-graphql-axum",
+ "async-trait",
+ "axum",
+ "base64",
+ "bytes",
+ "chrono",
+ "csv",
+ "ferrum-core",
+ "ferrum-media",
+ "ferrum-schema",
+ "ferrum-sql",
+ "hex",
+ "imagesize",
+ "infer",
+ "jsonwebtoken",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "thiserror 1.0.69",
+ "tokio",
+ "tower",
+ "tower-http",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "ferrum-media"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "async-trait",
+ "base64",
+ "bytes",
+ "rust-s3",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
+name = "ferrum-schema"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "ferrum-core",
+ "ferrum-sql",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tempfile",
+ "testcontainers",
+ "testcontainers-modules",
+ "thiserror 1.0.69",
+ "tokio",
+ "toml",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "ferrum-sql"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "ferrum-core",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "thiserror 1.0.69",
+ "uuid",
+]
+
+[[package]]
 name = "filetime"
 version = "0.2.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2732,139 +2865,6 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "url",
-]
-
-[[package]]
-name = "rustapi"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "axum",
- "chrono",
- "clap",
- "csv",
- "dialoguer",
- "hex",
- "hmac",
- "indicatif",
- "reqwest",
- "rustapi-core",
- "rustapi-http",
- "rustapi-schema",
- "rustapi-sql",
- "serde_json",
- "sha2",
- "sqlx",
- "testcontainers",
- "testcontainers-modules",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "rustapi-core"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "regex",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "rustapi-http"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "argon2",
- "async-graphql",
- "async-graphql-axum",
- "async-trait",
- "axum",
- "base64",
- "bytes",
- "chrono",
- "csv",
- "hex",
- "imagesize",
- "infer",
- "jsonwebtoken",
- "regex",
- "rustapi-core",
- "rustapi-media",
- "rustapi-schema",
- "rustapi-sql",
- "serde",
- "serde_json",
- "sha2",
- "sqlx",
- "thiserror 1.0.69",
- "tokio",
- "tower",
- "tower-http",
- "tracing",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "rustapi-media"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "async-trait",
- "base64",
- "bytes",
- "rust-s3",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
-]
-
-[[package]]
-name = "rustapi-schema"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "rustapi-core",
- "rustapi-sql",
- "serde",
- "serde_json",
- "sqlx",
- "tempfile",
- "testcontainers",
- "testcontainers-modules",
- "thiserror 1.0.69",
- "tokio",
- "toml",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "rustapi-sql"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "hex",
- "rustapi-core",
- "serde",
- "serde_json",
- "sha2",
- "sqlx",
- "thiserror 1.0.69",
- "uuid",
 ]
 
 [[package]]

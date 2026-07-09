@@ -7,7 +7,7 @@
 
 Let an admin manage users from the studio: a dedicated Users screen (list +
 detail editor) backed by new admin-only user CRUD endpoints. Mirror the
-reference layout in `design/rustapi/users.jsx`; surface only what the backend
+reference layout in `design/ferrum/users.jsx`; surface only what the backend
 supports as real, and mark everything else as a "Coming soon" placeholder.
 
 ## Should User go in the Content-Type Builder?
@@ -22,7 +22,7 @@ relation to the user (deferred — see Out of Scope).
 
 - **Backend:** full admin-only user CRUD (list, create, update, delete).
 - **UI:** `/users` screen (list + editor) + a sidebar nav entry; ported from
-  `design/rustapi/users.jsx`, wired to the API. Features the backend lacks are
+  `design/ferrum/users.jsx`, wired to the API. Features the backend lacks are
   rendered as disabled `data-placeholder` "Coming soon" controls.
 - `_users` stays a locked system table. Admin sets the initial password on
   create (no email/invite infrastructure exists).
@@ -31,7 +31,7 @@ relation to the user (deferred — see Out of Scope).
 
 ### Authorization
 
-Add `Action::UserRead` and `Action::UserWrite` to `rustapi_core`. In
+Add `Action::UserRead` and `Action::UserWrite` to `ferrum_core`. In
 `role_allows`: `admin` grants both; `editor`/`viewer`/unknown grant neither.
 Routes call the existing `ensure(...)`/`Authz::can` path; denial → `403`
 Forbidden.
@@ -87,7 +87,7 @@ request `Extension<Principal>` for the lockout guards.
 
 ### Screens
 
-Ported from `design/rustapi/users.jsx` into real React/TS:
+Ported from `design/ferrum/users.jsx` into real React/TS:
 
 **`screens/Users.tsx` (list):**
 - Table from `GET /admin/users`. Columns: ID, User (avatar + email), Role
@@ -115,7 +115,7 @@ Ported from `design/rustapi/users.jsx` into real React/TS:
 
 A static `ROLES` constant in the UI mirrors the backend
 (`admin`/`editor`/`viewer` with display name, color, description), matching the
-design's `RUSTAPI.userRoles` shape.
+design's `FERRUM.userRoles` shape.
 
 ### API client
 
@@ -125,7 +125,7 @@ body)`, `deleteUser(id)` and `User` / `NewUser` / `PatchUser` types in
 
 ### CSS
 
-Port only the classes the Users screens use from `design/rustapi/styles.css`
+Port only the classes the Users screens use from `design/ferrum/styles.css`
 into `ui/src/styles.css` (`rs-rolebar`, `rs-role-pill`, `rs-perm-grid`,
 `rs-role-radio`, `rs-2fa`, `rs-rail-card`, `rs-cap`, etc.). No unrelated design
 CSS.
@@ -162,5 +162,5 @@ guard.
 
 Status (confirmed/blocked/suspended) · 2FA · OAuth providers · username /
 full-name fields · invite emails · per-role capability editing (the Roles matrix
-screen, `design/rustapi/roles.jsx`) · export · server-side pagination ·
+screen, `design/ferrum/roles.jsx`) · export · server-side pagination ·
 `UserProfile` custom fields via a 1-1 relation to `_users`.

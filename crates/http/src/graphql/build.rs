@@ -17,8 +17,8 @@ use async_graphql::dynamic::{
     Enum, Field, FieldFuture, InputObject, InputValue, Object, ResolverContext, Scalar, Schema,
     SchemaBuilder, SchemaError, TypeRef,
 };
-use rustapi_core::field::FieldKind;
-use rustapi_core::{ContentType, ContentTypeKind};
+use ferrum_core::field::FieldKind;
+use ferrum_core::{ContentType, ContentTypeKind};
 
 use crate::graphql::{resolve, scalars};
 
@@ -361,8 +361,8 @@ pub fn build_schema(types: &[ContentType]) -> Result<Schema, SchemaError> {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use rustapi_core::field::{Field, FieldKind};
-    use rustapi_core::{ContentType, ContentTypeKind};
+    use ferrum_core::field::{Field, FieldKind};
+    use ferrum_core::{ContentType, ContentTypeKind};
     use serde_json::{json, Value};
     use uuid::Uuid;
 

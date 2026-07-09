@@ -1,7 +1,7 @@
 //! Parse `page`, `pageSize`, `sort` query params with v1 rules.
 
-use rustapi_core::{ContentType, Error, ValidationErrors};
-use rustapi_sql::{Sort, SortDir};
+use ferrum_core::{ContentType, Error, ValidationErrors};
+use ferrum_sql::{Sort, SortDir};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, Default)]
@@ -93,7 +93,7 @@ fn parse_sort(s: &str, ct: &ContentType) -> Result<Sort, Error> {
 }
 
 fn is_sortable(col: &str, ct: &ContentType) -> bool {
-    if rustapi_core::is_system_column(col) {
+    if ferrum_core::is_system_column(col) {
         return true;
     }
     // Many-to-many fields have no sortable column on this table.
@@ -106,7 +106,7 @@ fn is_sortable(col: &str, ct: &ContentType) -> bool {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use rustapi_core::{Field, FieldKind};
+    use ferrum_core::{Field, FieldKind};
     use serde_json::json;
     use uuid::Uuid;
 
@@ -125,7 +125,7 @@ mod tests {
                 kind_meta: json!({}),
             }],
             options: json!({}),
-            kind: rustapi_core::ContentTypeKind::Collection,
+            kind: ferrum_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -220,7 +220,7 @@ mod tests {
 
     #[test]
     fn m2m_field_not_sortable() {
-        use rustapi_core::ContentType;
+        use ferrum_core::ContentType;
         let ct_m2m = ContentType {
             id: Uuid::nil(),
             name: "post".into(),
@@ -246,7 +246,7 @@ mod tests {
                 },
             ],
             options: json!({}),
-            kind: rustapi_core::ContentTypeKind::Collection,
+            kind: ferrum_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };

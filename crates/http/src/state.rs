@@ -2,12 +2,12 @@
 
 use crate::roles::RoleRegistry;
 use async_trait::async_trait;
-use rustapi_core::{
+use ferrum_core::{
     action_to_scope, role_allows, verb_to_action, Action, AuditEntry, Error, Event, Principal,
     PERM_VERBS,
 };
-use rustapi_media::StorageProvider;
-use rustapi_schema::{ComponentService, SchemaService};
+use ferrum_media::StorageProvider;
+use ferrum_schema::{ComponentService, SchemaService};
 use serde_json::{Map, Value};
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -193,7 +193,7 @@ pub struct AppState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustapi_core::Principal;
+    use ferrum_core::Principal;
     use uuid::Uuid;
 
     fn user(roles: &[&str]) -> Principal {

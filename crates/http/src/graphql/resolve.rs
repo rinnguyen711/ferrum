@@ -25,7 +25,7 @@
 
 use async_graphql::dynamic::{FieldFuture, FieldValue, ResolverContext};
 use async_graphql::{Error as GqlError, ErrorExtensions, Value as GqlValue};
-use rustapi_core::{ContentType, Error, FieldKind, Principal, RequestContext};
+use ferrum_core::{ContentType, Error, FieldKind, Principal, RequestContext};
 use serde_json::{Map, Value as JsonValue};
 use uuid::Uuid;
 
@@ -122,19 +122,19 @@ fn id_arg(ctx: &ResolverContext<'_>) -> Result<Uuid, GqlError> {
         .args
         .get("id")
         .ok_or_else(|| {
-            gql_err(Error::Validation(rustapi_core::ValidationErrors::single(
+            gql_err(Error::Validation(ferrum_core::ValidationErrors::single(
                 "missing `id` argument",
             )))
         })?
         .string()
         .map_err(|_| {
-            gql_err(Error::Validation(rustapi_core::ValidationErrors::single(
+            gql_err(Error::Validation(ferrum_core::ValidationErrors::single(
                 "`id` must be a string",
             )))
         })?
         .to_string();
     Uuid::parse_str(&raw).map_err(|_| {
-        gql_err(Error::Validation(rustapi_core::ValidationErrors::single(
+        gql_err(Error::Validation(ferrum_core::ValidationErrors::single(
             "`id` is not a valid UUID",
         )))
     })
@@ -146,20 +146,20 @@ fn data_arg(ctx: &ResolverContext<'_>) -> Result<Map<String, JsonValue>, GqlErro
         .args
         .get("data")
         .ok_or_else(|| {
-            gql_err(Error::Validation(rustapi_core::ValidationErrors::single(
+            gql_err(Error::Validation(ferrum_core::ValidationErrors::single(
                 "missing `data` argument",
             )))
         })?
         .deserialize()
         .map_err(|_| {
-            gql_err(Error::Validation(rustapi_core::ValidationErrors::single(
+            gql_err(Error::Validation(ferrum_core::ValidationErrors::single(
                 "`data` is not a valid input object",
             )))
         })?;
     match val {
         JsonValue::Object(m) => Ok(m),
         _ => Err(gql_err(Error::Validation(
-            rustapi_core::ValidationErrors::single("`data` must be an object"),
+            ferrum_core::ValidationErrors::single("`data` must be an object"),
         ))),
     }
 }

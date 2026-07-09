@@ -1,4 +1,4 @@
-# Writing Rustapi docs
+# Writing Ferrum docs
 
 Rules for adding to and updating the mdBook in `book/`. Read this before
 touching any page under `src/`. Goal: every page stays consistent, accurate,
@@ -75,7 +75,7 @@ This is the strict rule. Docs lose trust the moment a snippet doesn't work.
 
 ## Theming
 
-The book is themed with the rustapi design tokens via `theme/rustapi.css`.
+The book is themed with the ferrum design tokens via `theme/ferrum.css`.
 Don't hard-code colors or inline styles in Markdown. If a page needs a new
 visual treatment, change the token/CSS, not the page. See `DESIGN.md` at the
 repo root for the token source of truth.
@@ -85,7 +85,7 @@ repo root for the token source of truth.
 - A code change that alters behavior, an endpoint, a field kind, or an env var
   **must update the affected page in the same PR.** Out-of-date docs are worse
   than missing docs.
-- Naming note: the `rustapi` name is changing (rename pending). When the new
+- Naming note: the `ferrum` name is changing (rename pending). When the new
   name lands, do a deliberate sweep — title, intro, examples — don't trickle it.
 - When you fill a stub, delete its `<!-- TODO: fill -->` marker. Grep for
   remaining TODOs before claiming the docs are done:

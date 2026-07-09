@@ -1,7 +1,7 @@
 //! Maps the content-type field model to OpenAPI/JSON Schema fragments.
 
-use rustapi_core::field::{Cardinality, Field, FieldKind};
-use rustapi_core::ContentType;
+use ferrum_core::field::{Cardinality, Field, FieldKind};
+use ferrum_core::ContentType;
 use serde_json::{json, Value};
 
 /// Build a JSON Schema fragment for a single field's value type.
@@ -251,8 +251,8 @@ fn merge_obj(mut base: Value, extra: Value) -> Value {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use rustapi_core::field::Field;
-    use rustapi_core::ContentType;
+    use ferrum_core::field::Field;
+    use ferrum_core::ContentType;
     use serde_json::json;
     use uuid::Uuid;
 
@@ -408,7 +408,7 @@ mod tests {
                 },
             ],
             options: json!({}),
-            kind: rustapi_core::ContentTypeKind::Collection,
+            kind: ferrum_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

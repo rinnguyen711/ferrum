@@ -14,17 +14,17 @@ UI. To change it, you edit the TOML and restart.
 Sync is off by default. Point the server at your schema with one of two
 environment variables:
 
-- `RUSTAPI_SCHEMA_DIR` — a directory; every `*.toml` file in it (non-recursive)
+- `FERRUM_SCHEMA_DIR` — a directory; every `*.toml` file in it (non-recursive)
   is loaded and merged.
-- `RUSTAPI_SCHEMA_FILE` — a single `.toml` file.
+- `FERRUM_SCHEMA_FILE` — a single `.toml` file.
 
-If both are set, `RUSTAPI_SCHEMA_DIR` wins. See
+If both are set, `FERRUM_SCHEMA_DIR` wins. See
 [Environment variables](../reference/env-vars.md) for the full list.
 
 The repo ships a ready-to-run blog preset. Run the server against it:
 
 ```sh
-RUSTAPI_SCHEMA_DIR=examples/schema/blog cargo run -p rustapi-bin
+FERRUM_SCHEMA_DIR=examples/schema/blog cargo run -p ferrum-bin
 ```
 
 On boot the server loads the TOML, diffs it against the live registry, applies
@@ -142,7 +142,7 @@ A duplicate type `name` or component `uid` across files aborts sync.
 
 ## Sync modes
 
-`RUSTAPI_SCHEMA_SYNC` controls how aggressively sync reconciles. It defaults to
+`FERRUM_SCHEMA_SYNC` controls how aggressively sync reconciles. It defaults to
 `additive`.
 
 | Mode | Creates | Adds fields | Drops types/fields missing from TOML |
@@ -151,7 +151,7 @@ A duplicate type `name` or component `uid` across files aborts sync.
 | `full` | yes | yes | yes |
 
 ```sh
-RUSTAPI_SCHEMA_SYNC=full RUSTAPI_SCHEMA_DIR=examples/schema/blog cargo run -p rustapi-bin
+FERRUM_SCHEMA_SYNC=full FERRUM_SCHEMA_DIR=examples/schema/blog cargo run -p ferrum-bin
 ```
 
 Both modes are **safe for existing fields**: changing a field's `kind` or

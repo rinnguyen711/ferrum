@@ -2,14 +2,14 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the static `MediaLibrary.tsx` preview with a fully API-wired Media Library: browse nested folders + assets, create/edit/delete folders, multipart upload, drag/modal move, multi-select bulk actions, per-asset metadata editing, and real image thumbnails — matching `design/rustapi/media.jsx`.
+**Goal:** Replace the static `MediaLibrary.tsx` preview with a fully API-wired Media Library: browse nested folders + assets, create/edit/delete folders, multipart upload, drag/modal move, multi-select bulk actions, per-asset metadata editing, and real image thumbnails — matching `design/ferrum/media.jsx`.
 
-**Architecture:** One small backend addition (`GET /admin/media/folders?scope=all` returns the whole folder tree flat). The frontend adds media types + endpoints, a `FormData` upload helper and an authed blob fetch helper to the API client, then a `MediaLibrary` screen composed of focused sub-components under `ui/src/screens/media/` (Modal shell, FolderModal, UploadModal, MoveModal, AssetDetail, AssetThumb, Checkbox). Missing `rs-*` CSS is ported from `design/rustapi/styles.css`.
+**Architecture:** One small backend addition (`GET /admin/media/folders?scope=all` returns the whole folder tree flat). The frontend adds media types + endpoints, a `FormData` upload helper and an authed blob fetch helper to the API client, then a `MediaLibrary` screen composed of focused sub-components under `ui/src/screens/media/` (Modal shell, FolderModal, UploadModal, MoveModal, AssetDetail, AssetThumb, Checkbox). Missing `rs-*` CSS is ported from `design/ferrum/styles.css`.
 
 **Tech Stack:** Backend: Rust, Axum, sqlx (existing testcontainers harness). Frontend: TypeScript, React 18, React Router, Vite. No new UI test framework — verify via `pnpm typecheck`/`pnpm build` + manual run.
 
 **Reference files (read before starting):**
-- Design source (port layout + interactions): `design/rustapi/media.jsx`; CSS to port: `design/rustapi/styles.css` (media block ~line 432+, plus `rs-dropzone`, `rs-foldpick`, `rs-stage-*`).
+- Design source (port layout + interactions): `design/ferrum/media.jsx`; CSS to port: `design/ferrum/styles.css` (media block ~line 432+, plus `rs-dropzone`, `rs-foldpick`, `rs-stage-*`).
 - API client (extend): `ui/src/api/client.ts` (`apiFetch`, `ApiError`, `getToken`).
 - Endpoints pattern: `ui/src/api/endpoints.ts`. Types: `ui/src/api/types.ts`.
 - Real modal pattern to match: `ui/src/builder/CreateTypeModal.tsx` (`rs-modal-backdrop` > `rs-modal` with `rs-modal-head/body/foot`; backdrop-click + Esc close; NOT the prototype's `Modal` component).
@@ -88,7 +88,7 @@ async fn folders_scope_all_returns_full_tree() {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `cargo test -p rustapi-bin --test media folders_scope_all_returns_full_tree`
+Run: `cargo test -p ferrum-bin --test media folders_scope_all_returns_full_tree`
 Expected: FAIL — `?scope=all` is currently ignored, so the last assert sees 1 (only root level), not 2. (Docker required; available.)
 
 - [ ] **Step 3: Add `list_all_folders` to the DAL**
@@ -135,8 +135,8 @@ async fn list_folders(
 
 - [ ] **Step 5: Run the test to verify it passes**
 
-Run: `cargo test -p rustapi-bin --test media folders_scope_all_returns_full_tree`
-Expected: PASS. Then `cargo test -p rustapi-bin --test media` — all media tests still PASS.
+Run: `cargo test -p ferrum-bin --test media folders_scope_all_returns_full_tree`
+Expected: PASS. Then `cargo test -p ferrum-bin --test media` — all media tests still PASS.
 
 - [ ] **Step 6: Commit**
 
@@ -400,7 +400,7 @@ git commit -m "feat(media-ui): add folder/folderPlus/folderInput/upload icons"
 
 - [ ] **Step 1: Identify and copy the missing rules**
 
-Open `design/rustapi/styles.css` and copy the rule blocks for these selectors into `ui/src/styles.css` (append at the end, under a `/* Media Library */` comment). Copy verbatim — they use the same CSS variables (`--text`, `--surface-2`, `--border`, etc.) that `ui/src/styles.css` already defines:
+Open `design/ferrum/styles.css` and copy the rule blocks for these selectors into `ui/src/styles.css` (append at the end, under a `/* Media Library */` comment). Copy verbatim — they use the same CSS variables (`--text`, `--surface-2`, `--border`, etc.) that `ui/src/styles.css` already defines:
 
 - `.rs-media-bc`, `.rs-media-bc-sep`, `.rs-media-bc-here` (breadcrumb)
 - `.rs-media-sectionhead` (+ its `h2`, `.rs-count-pill`, `.rs-spacer`)
@@ -1383,7 +1383,7 @@ Expected: production build succeeds.
 
 - [ ] **Step 4: Manual verification (against running backend)**
 
-Start backend (`cargo run -p rustapi` with a Postgres + `RUSTAPI_STUDIO_DIR`, or `docker compose up`) and `cd ui && pnpm dev`. Log in, open Media Library, and verify:
+Start backend (`cargo run -p ferrum` with a Postgres + `FERRUM_STUDIO_DIR`, or `docker compose up`) and `cd ui && pnpm dev`. Log in, open Media Library, and verify:
 - Empty root shows the empty state; "Add new folder" creates a folder (appears under Folders).
 - Creating a duplicate-named folder at the same level surfaces an error.
 - "Add new assets" → drop/browse an image → Upload → a real thumbnail renders in the grid; upload a PDF/non-image → gradient + ext badge.

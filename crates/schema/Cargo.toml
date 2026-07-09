@@ -1,13 +1,13 @@
 [package]
-name = "rustapi-schema"
+name = "ferrum-schema"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-rustapi-core = { path = "../core" }
-rustapi-sql = { path = "../sql" }
+ferrum-core = { path = "../core" }
+ferrum-sql = { path = "../sql" }
 anyhow.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
@@ -25,5 +25,5 @@ testcontainers = "0.23"
 testcontainers-modules = { version = "0.11", features = ["postgres"] }
 sqlx = { workspace = true }
 serde_json = { workspace = true }
-rustapi-core = { path = "../core" }
+ferrum-core = { path = "../core" }
 tempfile = "3"

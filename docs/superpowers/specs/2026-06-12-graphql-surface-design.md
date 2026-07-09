@@ -12,7 +12,7 @@ handler.
 
 ## Context
 
-rustapi exposes content over REST today: per content type list (with
+ferrum exposes content over REST today: per content type list (with
 filter/sort/paginate/populate), get-one, create, put, delete, plus single-types
 and JWT/token auth. Content types are **defined at runtime** — created and
 edited through the admin UI, stored in `_content_types`, cached in

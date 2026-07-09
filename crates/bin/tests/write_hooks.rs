@@ -2,8 +2,8 @@ mod common;
 
 use async_trait::async_trait;
 use common::TestApp;
-use rustapi_core::{Error, ValidationErrors};
-use rustapi_http::{WriteContext, WriteHook, WriteOp};
+use ferrum_core::{Error, ValidationErrors};
+use ferrum_http::{WriteContext, WriteHook, WriteOp};
 use serde_json::{json, Map, Value};
 use std::sync::Arc;
 

@@ -9,7 +9,7 @@
 
 Replace the static preview `ui/src/screens/MediaLibrary.tsx` with a fully
 functional, API-wired Media Library screen matching the reference design in
-`design/rustapi/media.jsx` and the provided mockup. Users browse nested folders
+`design/ferrum/media.jsx` and the provided mockup. Users browse nested folders
 and assets, create/edit/delete folders, upload assets (real multipart), move
 assets between folders (drag-drop and modal), multi-select for bulk actions, and
 edit per-asset metadata (file name, alt text, caption). Real image thumbnails
@@ -99,7 +99,7 @@ folder, name-sorted, ignoring `parent_id`.
 - **`ui/src/screens/media/Checkbox.tsx`** — local checkbox (port the `rs-check`
   pattern already in `ContentList.tsx`).
 - **`ui/src/styles.css`** — port the missing `rs-*` classes from
-  `design/rustapi/styles.css`: `rs-dropzone`, `rs-folder-grid`, `rs-folder-card`,
+  `design/ferrum/styles.css`: `rs-dropzone`, `rs-folder-grid`, `rs-folder-card`,
   `rs-folder-ico`, `rs-folder-meta`, `rs-folder-menu`, `rs-media-bc`,
   `rs-media-sectionhead`, `rs-count-pill`, `rs-foldpick` (+ items/radio),
   `rs-stage-list`/`rs-stage-row`/`rs-stage-thumb`/`rs-stage-meta`,

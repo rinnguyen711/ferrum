@@ -162,7 +162,7 @@ async fn worker_delivers_pending_row_to_mock_server() {
     .await
     .unwrap();
 
-    rustapi::webhook_worker::spawn_worker(app.pool.clone());
+    ferrum::webhook_worker::spawn_worker(app.pool.clone());
 
     let delivered = mock.wait_for_delivery(8000).await;
     assert!(!delivered.is_empty(), "worker should have delivered");
@@ -197,7 +197,7 @@ async fn delivery_marked_failed_after_max_attempts() {
     .await
     .unwrap();
 
-    rustapi::webhook_worker::spawn_worker(app.pool.clone());
+    ferrum::webhook_worker::spawn_worker(app.pool.clone());
     tokio::time::sleep(std::time::Duration::from_secs(8)).await;
 
     let rows: Vec<(String, i32)> =
@@ -258,7 +258,7 @@ async fn hmac_signature_header_present_when_secret_set() {
                 let rh = rh.clone();
                 async move {
                     let sig = headers
-                        .get("x-rustapi-signature")
+                        .get("x-ferrum-signature")
                         .and_then(|v| v.to_str().ok())
                         .unwrap_or("")
                         .to_string();
@@ -303,7 +303,7 @@ async fn hmac_signature_header_present_when_secret_set() {
     .await
     .unwrap();
 
-    rustapi::webhook_worker::spawn_worker(app.pool.clone());
+    ferrum::webhook_worker::spawn_worker(app.pool.clone());
     tokio::time::sleep(std::time::Duration::from_secs(8)).await;
 
     let sigs = received_headers.lock().await.clone();

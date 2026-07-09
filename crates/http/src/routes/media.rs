@@ -9,12 +9,12 @@ use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
 use chrono::{DateTime, Utc};
-use rustapi_core::{Action, Actor, AuditEntry, Error, Principal, RequestContext};
+use ferrum_core::{Action, Actor, AuditEntry, Error, Principal, RequestContext};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 // Task 13 imports
-use rustapi_media::ProviderDescriptor;
+use ferrum_media::ProviderDescriptor;
 
 // Task 14 imports
 use axum::body::Body;
@@ -131,7 +131,7 @@ async fn create_folder(
     ensure(&state, &principal, Action::ContentWrite).await?;
     if body.name.trim().is_empty() {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::field("name", "required"),
+            ferrum_core::ValidationErrors::field("name", "required"),
         )));
     }
     // PostgreSQL UNIQUE (parent_id, name) treats NULLs as distinct, so root-level
@@ -222,7 +222,7 @@ async fn list_providers(
     Extension(principal): Extension<Principal>,
 ) -> Result<Json<Vec<ProviderDescriptor>>, ApiError> {
     ensure(&state, &principal, Action::ContentRead).await?;
-    Ok(Json(rustapi_media::descriptors()))
+    Ok(Json(ferrum_media::descriptors()))
 }
 
 const MASK: &str = "••••";
@@ -242,7 +242,7 @@ async fn get_settings(
     let view = row.map(|r| {
         let mut cfg = r.config.clone();
         if let Some(obj) = cfg.as_object_mut() {
-            for name in rustapi_media::secret_fields(&r.provider) {
+            for name in ferrum_media::secret_fields(&r.provider) {
                 if obj.contains_key(name) {
                     obj.insert(name.to_string(), serde_json::Value::String(MASK.into()));
                 }
@@ -270,13 +270,13 @@ fn prepare_config_for_save(
     mut config: serde_json::Value,
     previous: Option<&store::SettingsRow>,
 ) -> Result<serde_json::Value, ApiError> {
-    let secrets = rustapi_media::secret_fields(provider);
+    let secrets = ferrum_media::secret_fields(provider);
     if secrets.is_empty() {
         return Ok(config);
     }
     let key = state.secret_key.ok_or_else(|| {
         ApiError(Error::Conflict(
-            "RUSTAPI_SECRET_KEY not set; cannot store provider secrets".into(),
+            "FERRUM_SECRET_KEY not set; cannot store provider secrets".into(),
         ))
     })?;
     if let Some(obj) = config.as_object_mut() {
@@ -294,7 +294,7 @@ fn prepare_config_for_save(
                     }
                 }
                 Some(plain) => {
-                    let enc = rustapi_media::secret::encrypt(&key, plain)
+                    let enc = ferrum_media::secret::encrypt(&key, plain)
                         .map_err(|_| internal(anyhow::anyhow!("encrypt failed")))?;
                     obj.insert(name.to_string(), serde_json::Value::String(enc));
                 }
@@ -311,8 +311,8 @@ async fn put_settings(
     Json(body): Json<SettingsBody>,
 ) -> Result<StatusCode, ApiError> {
     ensure(&state, &principal, Action::ContentWrite).await?;
-    rustapi_media::validate(&body.provider, &body.config).map_err(|e| {
-        ApiError(Error::Validation(rustapi_core::ValidationErrors::field(
+    ferrum_media::validate(&body.provider, &body.config).map_err(|e| {
+        ApiError(Error::Validation(ferrum_core::ValidationErrors::field(
             "config",
             e.to_string(),
         )))
@@ -333,7 +333,7 @@ async fn put_settings(
     if let Some(key) = &state.secret_key {
         crate::media::boot::decrypt_secrets(&body.provider, &mut live_cfg, key);
     }
-    let provider = rustapi_media::build(&body.provider, &live_cfg)
+    let provider = ferrum_media::build(&body.provider, &live_cfg)
         .map_err(|e| ApiError(Error::Unsupported(e.to_string())))?;
     *state.storage.write().await = std::sync::Arc::from(provider);
     state
@@ -353,8 +353,8 @@ async fn test_settings(
     Json(body): Json<SettingsBody>,
 ) -> Result<StatusCode, ApiError> {
     ensure(&state, &principal, Action::ContentWrite).await?;
-    rustapi_media::validate(&body.provider, &body.config).map_err(|e| {
-        ApiError(Error::Validation(rustapi_core::ValidationErrors::field(
+    ferrum_media::validate(&body.provider, &body.config).map_err(|e| {
+        ApiError(Error::Validation(ferrum_core::ValidationErrors::field(
             "config",
             e.to_string(),
         )))
@@ -362,12 +362,12 @@ async fn test_settings(
     let mut cfg = body.config.clone();
     if let Some(obj) = cfg.as_object_mut() {
         let prev = store::get_settings(&state.pool).await.map_err(internal)?;
-        for name in rustapi_media::secret_fields(&body.provider) {
+        for name in ferrum_media::secret_fields(&body.provider) {
             if obj.get(name).and_then(|v| v.as_str()) == Some(MASK) {
                 if let (Some(prev), Some(key)) = (&prev, &state.secret_key) {
                     if prev.provider == body.provider {
                         if let Some(serde_json::Value::String(enc)) = prev.config.get(name) {
-                            if let Ok(plain) = rustapi_media::secret::decrypt(key, enc) {
+                            if let Ok(plain) = ferrum_media::secret::decrypt(key, enc) {
                                 obj.insert(name.to_string(), serde_json::Value::String(plain));
                             }
                         }
@@ -376,7 +376,7 @@ async fn test_settings(
             }
         }
     }
-    let provider = rustapi_media::build(&body.provider, &cfg)
+    let provider = ferrum_media::build(&body.provider, &cfg)
         .map_err(|e| ApiError(Error::Unsupported(e.to_string())))?;
     provider
         .test()
@@ -462,7 +462,7 @@ async fn upload_asset(
                     .map_err(|e| ApiError(Error::Unsupported(e.to_string())))?;
                 if !txt.is_empty() {
                     folder_id = Some(Uuid::parse_str(&txt).map_err(|_| {
-                        ApiError(Error::Validation(rustapi_core::ValidationErrors::field(
+                        ApiError(Error::Validation(ferrum_core::ValidationErrors::field(
                             "folder_id",
                             "invalid uuid",
                         )))
@@ -486,7 +486,7 @@ async fn upload_asset(
     }
 
     let bytes = file_bytes.ok_or_else(|| {
-        ApiError(Error::Validation(rustapi_core::ValidationErrors::field(
+        ApiError(Error::Validation(ferrum_core::ValidationErrors::field(
             "file", "required",
         )))
     })?;
@@ -538,7 +538,7 @@ async fn upload_asset(
 
 /// Active provider id: env override → DB settings → "local" default.
 async fn current_provider_id(state: &AppState) -> String {
-    if let Ok(p) = std::env::var("RUSTAPI_MEDIA_PROVIDER") {
+    if let Ok(p) = std::env::var("FERRUM_MEDIA_PROVIDER") {
         return p;
     }
     if let Ok(Some(row)) = store::get_settings(&state.pool).await {
@@ -620,7 +620,7 @@ async fn get_asset_raw(
         .ok_or(ApiError(Error::NotFound))?;
     let provider = state.storage.read().await.clone();
     let bytes = provider.get(&row.storage_key).await.map_err(|e| match e {
-        rustapi_media::StorageError::NotFound => ApiError(Error::NotFound),
+        ferrum_media::StorageError::NotFound => ApiError(Error::NotFound),
         other => ApiError(Error::Internal(anyhow::anyhow!("storage get: {other}"))),
     })?;
     Ok(([(header::CONTENT_TYPE, row.mime_type)], Body::from(bytes)).into_response())

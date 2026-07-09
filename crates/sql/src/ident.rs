@@ -1,7 +1,7 @@
 //! Identifier quoting. The only place per-type table names and column names
 //! are turned into SQL fragments. All other modules MUST go through here.
 
-use rustapi_core::reserved::is_valid_ident;
+use ferrum_core::reserved::is_valid_ident;
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 #[error("invalid SQL identifier: {0}")]

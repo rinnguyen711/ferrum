@@ -12,7 +12,7 @@
 
 **Verification commands:**
 - UI typecheck: `cd ui && pnpm typecheck`
-- Backend tests: `cargo test -p rustapi-http` (unit) and `cargo test -p rustapi --test integration_auth` (integration, needs Docker)
+- Backend tests: `cargo test -p ferrum-http` (unit) and `cargo test -p ferrum --test integration_auth` (integration, needs Docker)
 
 ---
 
@@ -54,7 +54,7 @@ pub async fn any_users(pool: &PgPool) -> Result<bool, sqlx::Error> {
 
 - [ ] **Step 2: Verify it compiles**
 
-Run: `cargo build -p rustapi-http`
+Run: `cargo build -p ferrum-http`
 Expected: compiles, no errors.
 
 - [ ] **Step 3: Commit**
@@ -109,7 +109,7 @@ pub fn public_router() -> Router<AppState> {
 
 - [ ] **Step 3: Verify it compiles**
 
-Run: `cargo build -p rustapi-http`
+Run: `cargo build -p ferrum-http`
 Expected: compiles. (`get` is already imported in `mod.rs`.)
 
 - [ ] **Step 4: Commit**
@@ -155,7 +155,7 @@ async fn setup_status_flips_after_setup() {
 
 - [ ] **Step 2: Run the test**
 
-Run: `cargo test -p rustapi --test integration_auth setup_status_flips_after_setup`
+Run: `cargo test -p ferrum --test integration_auth setup_status_flips_after_setup`
 Expected: PASS (needs Docker).
 
 - [ ] **Step 3: Commit**
@@ -177,7 +177,7 @@ git commit -m "test(bin): GET /auth/setup status integration test"
 Replace the entire contents of `ui/src/auth.ts` with:
 
 ```ts
-const TOKEN = "rustapi:token";
+const TOKEN = "ferrum:token";
 
 export function getToken(): string | null {
   try {
@@ -491,7 +491,7 @@ export function Login() {
     return (
       <div className="rs-login">
         <div className="rs-login-card">
-          <h1>Rustapi Studio</h1>
+          <h1>Ferrum Studio</h1>
           <p className="rs-cell-muted">Loading…</p>
         </div>
       </div>
@@ -502,7 +502,7 @@ export function Login() {
     return (
       <div className="rs-login">
         <div className="rs-login-card">
-          <h1>Rustapi Studio</h1>
+          <h1>Ferrum Studio</h1>
           <p className="rs-cell-muted">Can't reach the API.</p>
           <button className="rs-btn rs-btn--primary" onClick={probe}>
             Retry
@@ -517,7 +517,7 @@ export function Login() {
   return (
     <div className="rs-login">
       <form className="rs-login-card" onSubmit={submit}>
-        <h1>Rustapi Studio</h1>
+        <h1>Ferrum Studio</h1>
         <p className="rs-cell-muted">
           {isSetup ? "Create the first admin account." : "Sign in to continue."}
         </p>
@@ -767,15 +767,15 @@ git commit -m "feat(ui): Topbar shows email + sign-out button"
 
 Run (in one terminal):
 ```bash
-export DATABASE_URL=postgres://postgres:postgres@localhost:5432/rustapi_uiauth
-export RUSTAPI_JWT_SECRET=$(openssl rand -hex 32)
-export RUSTAPI_STUDIO_DIR=$PWD/ui/dist
-createdb -h localhost -U postgres rustapi_uiauth 2>/dev/null || true
-cargo run -p rustapi
+export DATABASE_URL=postgres://postgres:postgres@localhost:5432/ferrum_uiauth
+export FERRUM_JWT_SECRET=$(openssl rand -hex 32)
+export FERRUM_STUDIO_DIR=$PWD/ui/dist
+createdb -h localhost -U postgres ferrum_uiauth 2>/dev/null || true
+cargo run -p ferrum
 ```
 
 > If no local Postgres is available, use the docker-compose stack instead:
-> `RUSTAPI_JWT_SECRET=$(openssl rand -hex 32) docker compose up --build`
+> `FERRUM_JWT_SECRET=$(openssl rand -hex 32) docker compose up --build`
 > and point a browser at the compose port. Skip if no environment is available
 > and note that the smoke was not run.
 
@@ -788,7 +788,7 @@ Open `http://localhost:8080/studio`. Verify in order:
 4. Click sign-out → back to `/login`, now showing the **Sign in** form.
 5. Sign in with the same credentials → dashboard again.
 6. Reload the page → still authenticated (token persisted).
-7. In devtools, delete the `rustapi:token` localStorage key, then trigger any
+7. In devtools, delete the `ferrum:token` localStorage key, then trigger any
    API call (navigate to Content) → redirected to `/login`.
 
 - [ ] **Step 3: Record the result**

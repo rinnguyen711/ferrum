@@ -7,7 +7,7 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Extension, Json, Router};
-use rustapi_core::{Action, Actor, AuditEntry, Error, Principal, RequestContext, ValidationErrors};
+use ferrum_core::{Action, Actor, AuditEntry, Error, Principal, RequestContext, ValidationErrors};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

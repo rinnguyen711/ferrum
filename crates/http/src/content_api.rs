@@ -6,7 +6,7 @@
 //! REST handlers: authorization, write-hooks, validation, relation/media checks,
 //! event emission, and audit logging.
 //!
-//! `Principal` and `RequestContext` come from `rustapi_core`; a custom axum
+//! `Principal` and `RequestContext` come from `ferrum_core`; a custom axum
 //! handler extracts them from request extensions (the auth + reqctx middleware
 //! inject them on the protected router). For non-HTTP callers,
 //! `RequestContext::default()` is acceptable.

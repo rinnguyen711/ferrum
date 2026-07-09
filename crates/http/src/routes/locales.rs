@@ -6,7 +6,7 @@ use crate::state::AppState;
 use axum::extract::{Path, State};
 use axum::routing::get;
 use axum::{Extension, Json, Router};
-use rustapi_core::{Action, Error, Principal};
+use ferrum_core::{Action, Error, Principal};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -24,7 +24,7 @@ async fn ensure_admin(state: &AppState, principal: &Principal) -> Result<(), Api
 }
 
 async fn reload(state: &AppState) -> Result<(), ApiError> {
-    let all = rustapi_sql::locales::load_all(&state.pool)
+    let all = ferrum_sql::locales::load_all(&state.pool)
         .await
         .map_err(ApiError)?;
     state.locales.set(all).await;
@@ -36,7 +36,7 @@ async fn list(
     Extension(principal): Extension<Principal>,
 ) -> Result<Json<Value>, ApiError> {
     ensure_admin(&state, &principal).await?;
-    let all = rustapi_sql::locales::load_all(&state.pool)
+    let all = ferrum_sql::locales::load_all(&state.pool)
         .await
         .map_err(ApiError)?;
     Ok(Json(json!({ "data": all })))
@@ -58,12 +58,12 @@ async fn upsert(
     Json(body): Json<UpsertBody>,
 ) -> Result<Json<Value>, ApiError> {
     ensure_admin(&state, &principal).await?;
-    if !rustapi_core::is_valid_locale_tag(&body.code) {
+    if !ferrum_core::is_valid_locale_tag(&body.code) {
         return Err(ApiError(Error::Validation(
-            rustapi_core::ValidationErrors::single("invalid locale code"),
+            ferrum_core::ValidationErrors::single("invalid locale code"),
         )));
     }
-    let loc = rustapi_sql::locales::upsert(
+    let loc = ferrum_sql::locales::upsert(
         &state.pool,
         &body.code,
         &body.name,
@@ -82,7 +82,7 @@ async fn delete_one(
     Extension(principal): Extension<Principal>,
 ) -> Result<axum::http::StatusCode, ApiError> {
     ensure_admin(&state, &principal).await?;
-    let deleted = rustapi_sql::locales::delete(&state.pool, &code)
+    let deleted = ferrum_sql::locales::delete(&state.pool, &code)
         .await
         .map_err(ApiError)?;
     if !deleted {

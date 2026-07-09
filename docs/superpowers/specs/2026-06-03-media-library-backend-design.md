@@ -7,7 +7,7 @@ settings UI page and the media browser UI are separate specs built after this.
 
 ## Goal
 
-A standalone Media Library for rustapi. Users store assets in nested folders or at
+A standalone Media Library for ferrum. Users store assets in nested folders or at
 root, create folders, and upload assets. Each asset carries metadata: file name,
 alternative text, caption. Storage is pluggable behind a `StorageProvider` trait;
 ship **local filesystem** (default) and **S3** providers. Adding future providers
@@ -20,7 +20,7 @@ future `Media` field kind is explicitly out of scope.
 
 - **Backend first.** This spec is the trait, providers, DB, and HTTP API only.
 - **Standalone library.** No content-type integration yet.
-- **Proxy upload.** Browser → rustapi server → provider. Provider-agnostic, simple.
+- **Proxy upload.** Browser → ferrum server → provider. Provider-agnostic, simple.
 - **Proxy serve.** `GET .../raw` streams bytes from provider through the server,
   admin-auth gated. No public URLs / redirects in v1.
 - **`rust-s3` crate** for the S3 impl, wrapped behind the trait.
@@ -34,7 +34,7 @@ future `Media` field kind is explicitly out of scope.
   assets stay readable on the provider that holds them; new uploads use the new one.
 - **Block folder delete unless empty.** No surprise byte loss (409).
 - **Secrets encrypted at rest.** Only providers that declare `secret` fields need
-  this (S3 yes, local no). Key from dedicated `RUSTAPI_SECRET_KEY` env.
+  this (S3 yes, local no). Key from dedicated `FERRUM_SECRET_KEY` env.
 - **Env override wins** over DB settings, for ops lock-down.
 
 ## Architecture & Crate Placement
@@ -195,8 +195,8 @@ All under `/admin`, auth-gated, merged into the protected router.
 ## Config Resolution, Secrets, Errors
 
 ### Active provider resolution (boot, and after `PUT settings`)
-1. **Env wins**: if `RUSTAPI_MEDIA_PROVIDER` is set, build from
-   `RUSTAPI_MEDIA_*` / `RUSTAPI_S3_*` env vars (ops lock-down).
+1. **Env wins**: if `FERRUM_MEDIA_PROVIDER` is set, build from
+   `FERRUM_MEDIA_*` / `FERRUM_S3_*` env vars (ops lock-down).
 2. Else the `_media_settings` row, if present.
 3. Else **default = local**, `base_dir = ./media-data`, served via proxy.
 
@@ -206,10 +206,10 @@ Held in `AppState` as the active `Arc<dyn StorageProvider>`, swapped on PUT
 ### Secrets
 - Descriptor marks fields `secret: true`.
 - On save: encrypt those values before the JSONB write (AES-GCM; add `aes-gcm`
-  dep). Key = `RUSTAPI_SECRET_KEY` env (dedicated, separate from the JWT secret).
+  dep). Key = `FERRUM_SECRET_KEY` env (dedicated, separate from the JWT secret).
 - On `GET settings`: secret fields masked `"••••"`, never returned decrypted.
 - On build/use: decrypt in memory only.
-- Missing `RUSTAPI_SECRET_KEY` while saving/using a provider that declares secrets
+- Missing `FERRUM_SECRET_KEY` while saving/using a provider that declares secrets
   → clear, explicit error at save/startup.
 
 ### Error mapping

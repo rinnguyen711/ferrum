@@ -1,8 +1,8 @@
 //! In-memory cache of roles and their permissions. Hydrated at boot and after
 //! every roles CRUD mutation; `RoleAuthz` reads from here so authorization never
-//! hits the DB per request. Mirrors `rustapi_schema::SchemaRegistry`.
+//! hits the DB per request. Mirrors `ferrum_schema::SchemaRegistry`.
 
-use rustapi_sql::{list_roles, load_all, RolePermission};
+use ferrum_sql::{list_roles, load_all, RolePermission};
 use sqlx::PgPool;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;

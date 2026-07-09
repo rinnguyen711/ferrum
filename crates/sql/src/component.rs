@@ -1,6 +1,6 @@
 //! CRUD against the `_components` table.
 
-use rustapi_core::Field;
+use ferrum_core::Field;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 

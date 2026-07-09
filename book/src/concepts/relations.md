@@ -2,7 +2,7 @@
 
 A relation links one [content type](content-types.md) to another. A `post`
 belongs to an `author`; an `author` has many `post`s. You model that link once,
-as a `relation` [field](fields.md), and Rustapi maintains the foreign keys, the
+as a `relation` [field](fields.md), and Ferrum maintains the foreign keys, the
 join tables, and the reverse lookups.
 
 ## Declaring a relation
@@ -65,7 +65,7 @@ all links; duplicates are de-duplicated:
 }
 ```
 
-Rustapi checks every target id exists before writing. Pointing a relation at a
+Ferrum checks every target id exists before writing. Pointing a relation at a
 missing id returns `422 Unprocessable Entity` naming the offending field.
 
 ## Reading related records

@@ -5,7 +5,7 @@ Status: approved for implementation
 
 ## Context
 
-All rustapi endpoints require a user JWT today. External consumers (frontend
+All ferrum endpoints require a user JWT today. External consumers (frontend
 apps, static site generators, server-side renderers) have no way to access
 content without embedding user credentials. API tokens provide a safe,
 revocable, scoped credential designed to be embedded in client code.

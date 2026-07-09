@@ -1,5 +1,5 @@
 # Ecommerce preset — reusable components.
-# Synced via RUSTAPI_SCHEMA_DIR=examples/schema/ecommerce
+# Synced via FERRUM_SCHEMA_DIR=examples/schema/ecommerce
 
 [[component]]
 uid = "shared.price"

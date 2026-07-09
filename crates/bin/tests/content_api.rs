@@ -1,8 +1,8 @@
 mod common;
 use axum::{extract::State, routing::post, Extension, Json, Router};
 use common::{wait_for_audit, TestApp};
-use rustapi_core::{Principal, RequestContext};
-use rustapi_http::{content_api, ApiError, AppState};
+use ferrum_core::{Principal, RequestContext};
+use ferrum_http::{content_api, ApiError, AppState};
 use serde_json::{json, Map, Value};
 use sqlx::Row;
 

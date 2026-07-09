@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a standalone Media Library backend for rustapi — pluggable storage providers (local default + S3), nested folders, asset upload/metadata, and a self-describing provider settings API.
+**Goal:** Build a standalone Media Library backend for ferrum — pluggable storage providers (local default + S3), nested folders, asset upload/metadata, and a self-describing provider settings API.
 
 **Architecture:** A new `crates/media` crate owns a `StorageProvider` trait with `local` and `s3` impls plus a self-describing provider registry. The `crates/http` crate gains a `media` module: a `store` data-access layer (raw sqlx against `_media_*` tables, mirroring `auth/users.rs`), HTTP handlers in `routes/media.rs`, and the active provider held in `AppState` as an `arc_swap::ArcSwap<dyn StorageProvider>`. Migration `0003_media.sql` adds the tables. Authz reuses `Action::ContentRead`/`ContentWrite`.
 
@@ -37,14 +37,14 @@
 - `crates/http/src/routes/mod.rs` — merge `media::router()` into protected router.
 - `crates/http/src/state.rs` — add `storage: Arc<ArcSwap<dyn StorageProvider>>` + `secret_key: Option<[u8;32]>` to `AppState`.
 - `crates/http/src/lib.rs` — re-export anything tests need.
-- `crates/http/Cargo.toml` — add `rustapi-media`, `arc-swap`, `sha2`, `infer`, `imagesize`.
+- `crates/http/Cargo.toml` — add `ferrum-media`, `arc-swap`, `sha2`, `infer`, `imagesize`.
 
 **Migration:**
 - `crates/schema/migrations/0003_media.sql`.
 
 **Bin / harness:**
 - `crates/bin/src/main.rs` — build initial storage provider, pass into `AppState`.
-- `crates/bin/src/config.rs` — read `RUSTAPI_MEDIA_*` / `RUSTAPI_SECRET_KEY` env.
+- `crates/bin/src/config.rs` — read `FERRUM_MEDIA_*` / `FERRUM_SECRET_KEY` env.
 - `crates/bin/tests/common/mod.rs` — construct the new `AppState` fields.
 - `crates/bin/tests/media.rs` — integration tests.
 
@@ -79,7 +79,7 @@ arc-swap = "1"
 
 ```toml
 [package]
-name = "rustapi-media"
+name = "ferrum-media"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -140,7 +140,7 @@ pub trait StorageProvider: Send + Sync {
 - [ ] **Step 4: Write `crates/media/src/lib.rs`**
 
 ```rust
-//! Pluggable media storage for rustapi.
+//! Pluggable media storage for ferrum.
 
 pub mod provider;
 
@@ -149,7 +149,7 @@ pub use provider::{StorageError, StorageProvider};
 
 - [ ] **Step 5: Build the crate**
 
-Run: `cargo build -p rustapi-media`
+Run: `cargo build -p ferrum-media`
 Expected: compiles (no warnings-as-errors expected; clean build).
 
 - [ ] **Step 6: Commit**
@@ -278,7 +278,7 @@ Add `pub mod local;` and `pub use local::LocalProvider;` to `crates/media/src/li
 
 - [ ] **Step 2: Run the tests to verify they pass**
 
-Run: `cargo test -p rustapi-media local::`
+Run: `cargo test -p ferrum-media local::`
 Expected: PASS (3 tests). (The implementation is included above; this provider is small enough that test + impl land together.)
 
 - [ ] **Step 3: Commit**
@@ -391,7 +391,7 @@ base64 = "0.22"
 
 - [ ] **Step 3: Run tests**
 
-Run: `cargo test -p rustapi-media secret::`
+Run: `cargo test -p ferrum-media secret::`
 Expected: PASS (3 tests).
 
 - [ ] **Step 4: Commit**
@@ -611,7 +611,7 @@ pub use registry::{build, descriptors, descriptor_for, secret_fields, validate, 
 
 - [ ] **Step 3: Run tests**
 
-Run: `cargo test -p rustapi-media registry::`
+Run: `cargo test -p ferrum-media registry::`
 Expected: PASS (5 tests).
 
 - [ ] **Step 4: Commit**
@@ -707,7 +707,7 @@ impl StorageProvider for S3Provider {
 
     async fn test(&self) -> Result<(), StorageError> {
         // HEAD a definitely-absent key: 404 proves creds + bucket reachable.
-        match self.bucket.head_object("__rustapi_healthcheck__").await {
+        match self.bucket.head_object("__ferrum_healthcheck__").await {
             Ok(_) => Ok(()),
             Err(s3::error::S3Error::HttpFailWithBody(404, _)) => Ok(()),
             Err(e) => Err(map_s3_err(e)),
@@ -734,7 +734,7 @@ fn e_to_string(e: &s3::error::S3Error) -> String {
 
 - [ ] **Step 2: Build (no live S3 in unit tests)**
 
-Run: `cargo build -p rustapi-media`
+Run: `cargo build -p ferrum-media`
 Expected: compiles. (S3 needs a live endpoint; covered by the env-gated integration test below, not unit tests.)
 
 - [ ] **Step 3: Add an env-gated integration test**
@@ -742,17 +742,17 @@ Expected: compiles. (S3 needs a live endpoint; covered by the env-gated integrat
 Create `crates/media/tests/s3_minio.rs`:
 
 ```rust
-//! Live S3 round-trip against MinIO. Skipped unless RUSTAPI_TEST_S3=1.
+//! Live S3 round-trip against MinIO. Skipped unless FERRUM_TEST_S3=1.
 //! Expects env: S3_ENDPOINT, S3_BUCKET, S3_REGION, S3_KEY, S3_SECRET.
 
 use bytes::Bytes;
-use rustapi_media::s3::{S3Config, S3Provider};
-use rustapi_media::StorageProvider;
+use ferrum_media::s3::{S3Config, S3Provider};
+use ferrum_media::StorageProvider;
 
 #[tokio::test]
 async fn s3_round_trip() {
-    if std::env::var("RUSTAPI_TEST_S3").ok().as_deref() != Some("1") {
-        eprintln!("skipping: set RUSTAPI_TEST_S3=1 to run");
+    if std::env::var("FERRUM_TEST_S3").ok().as_deref() != Some("1") {
+        eprintln!("skipping: set FERRUM_TEST_S3=1 to run");
         return;
     }
     let cfg = S3Config {
@@ -774,7 +774,7 @@ Make `s3` module public path usable: ensure `crates/media/src/lib.rs` has `pub m
 
 - [ ] **Step 4: Run unit tests (S3 test self-skips)**
 
-Run: `cargo test -p rustapi-media`
+Run: `cargo test -p ferrum-media`
 Expected: PASS; the s3_minio test prints "skipping".
 
 - [ ] **Step 5: Commit**
@@ -833,7 +833,7 @@ CREATE TABLE IF NOT EXISTS _media_settings (
 
 - [ ] **Step 2: Verify the migration applies**
 
-Run: `cargo test -p rustapi-bin --test '*' -- --nocapture 2>&1 | head -40` (the integration harness runs `MIGRATOR.run`; if no bin tests exist yet, instead run `cargo build` and rely on Task 12's media integration test to exercise it).
+Run: `cargo test -p ferrum-bin --test '*' -- --nocapture 2>&1 | head -40` (the integration harness runs `MIGRATOR.run`; if no bin tests exist yet, instead run `cargo build` and rely on Task 12's media integration test to exercise it).
 Expected: no migration error. (`pgcrypto` for `gen_random_uuid()` is enabled by `0001_init.sql`.)
 
 - [ ] **Step 3: Commit**
@@ -857,7 +857,7 @@ git commit -m "feat(media): 0003 media tables migration"
 In `[dependencies]`:
 
 ```toml
-rustapi-media = { path = "../media" }
+ferrum-media = { path = "../media" }
 arc-swap = { workspace = true }
 sha2 = { workspace = true }
 infer = { workspace = true }
@@ -870,7 +870,7 @@ In `crates/http/src/state.rs`, add imports near the top:
 
 ```rust
 use arc_swap::ArcSwap;
-use rustapi_media::StorageProvider;
+use ferrum_media::StorageProvider;
 ```
 
 Add fields to the `AppState` struct (after `config`):
@@ -894,14 +894,14 @@ pub use state::{AppConfig, AppState, Authz, AlwaysAllow, EventSink, NoopSink, Ro
 Also add a convenience re-export so callers don't need a direct media dep just to construct state:
 
 ```rust
-pub use rustapi_media::{descriptors, LocalProvider, StorageProvider};
+pub use ferrum_media::{descriptors, LocalProvider, StorageProvider};
 ```
 
 (Adjust to match the existing `pub use` lines; only add what's not already there.)
 
 - [ ] **Step 4: Build (will fail at AppState construction sites — expected, fixed in Task 8 & 11)**
 
-Run: `cargo build -p rustapi-http`
+Run: `cargo build -p ferrum-http`
 Expected: FAIL — `AppState` literal(s) in `state.rs` tests and elsewhere now miss `storage`/`secret_key`. Note the error locations; they're fixed next.
 
 If `crates/http/src/state.rs` has its own `AppState { ... }` literal in tests, none currently exists (the tests construct only `RoleAuthz`), so the http crate library itself should build. The breakage will surface in `crates/bin` (Task 11) and integration harness (Task 11). If the http lib builds clean, that's fine — proceed.
@@ -1049,7 +1049,7 @@ Check `crates/http/Cargo.toml`. If `chrono` isn't listed, add `chrono = { worksp
 
 - [ ] **Step 4: Build**
 
-Run: `cargo build -p rustapi-http`
+Run: `cargo build -p ferrum-http`
 Expected: compiles (DAL is pure; no AppState literal here).
 
 - [ ] **Step 5: Commit**
@@ -1205,7 +1205,7 @@ pub async fn delete_asset(pool: &PgPool, id: Uuid) -> Result<bool, sqlx::Error> 
 
 - [ ] **Step 2: Build**
 
-Run: `cargo build -p rustapi-http`
+Run: `cargo build -p ferrum-http`
 Expected: compiles.
 
 - [ ] **Step 3: Commit**
@@ -1259,7 +1259,7 @@ pub async fn put_settings(pool: &PgPool, provider: &str, config: &serde_json::Va
 
 - [ ] **Step 2: Build**
 
-Run: `cargo build -p rustapi-http`
+Run: `cargo build -p ferrum-http`
 Expected: compiles.
 
 - [ ] **Step 3: Commit**
@@ -1290,8 +1290,8 @@ Create `crates/http/src/media/boot.rs`:
 //! → local default. Also decrypts secret config fields before building.
 
 use crate::media::store;
-use rustapi_media::{build, secret_fields, StorageProvider};
-use rustapi_media::secret as media_secret;
+use ferrum_media::{build, secret_fields, StorageProvider};
+use ferrum_media::secret as media_secret;
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -1317,12 +1317,12 @@ pub async fn resolve_provider(
     secret_key: Option<[u8; 32]>,
 ) -> Arc<dyn StorageProvider> {
     // 1. Env override.
-    if let Ok(provider) = std::env::var("RUSTAPI_MEDIA_PROVIDER") {
+    if let Ok(provider) = std::env::var("FERRUM_MEDIA_PROVIDER") {
         if let Some(cfg) = env_config(&provider) {
             if let Ok(p) = build(&provider, &cfg) {
                 return Arc::from(p);
             }
-            tracing::warn!(%provider, "RUSTAPI_MEDIA_* env config invalid; falling back");
+            tracing::warn!(%provider, "FERRUM_MEDIA_* env config invalid; falling back");
         }
     }
     // 2. DB settings.
@@ -1344,14 +1344,14 @@ pub async fn resolve_provider(
 fn env_config(provider: &str) -> Option<Value> {
     match provider {
         "local" => Some(json!({
-            "base_dir": std::env::var("RUSTAPI_MEDIA_BASE_DIR").unwrap_or_else(|_| "./media-data".into()),
+            "base_dir": std::env::var("FERRUM_MEDIA_BASE_DIR").unwrap_or_else(|_| "./media-data".into()),
         })),
         "s3" => Some(json!({
-            "bucket": std::env::var("RUSTAPI_S3_BUCKET").ok()?,
-            "region": std::env::var("RUSTAPI_S3_REGION").unwrap_or_else(|_| "us-east-1".into()),
-            "endpoint": std::env::var("RUSTAPI_S3_ENDPOINT").ok(),
-            "access_key": std::env::var("RUSTAPI_S3_ACCESS_KEY").ok()?,
-            "secret_key": std::env::var("RUSTAPI_S3_SECRET_KEY").ok()?,
+            "bucket": std::env::var("FERRUM_S3_BUCKET").ok()?,
+            "region": std::env::var("FERRUM_S3_REGION").unwrap_or_else(|_| "us-east-1".into()),
+            "endpoint": std::env::var("FERRUM_S3_ENDPOINT").ok(),
+            "access_key": std::env::var("FERRUM_S3_ACCESS_KEY").ok()?,
+            "secret_key": std::env::var("FERRUM_S3_SECRET_KEY").ok()?,
         })),
         _ => None,
     }
@@ -1367,9 +1367,9 @@ pub use media::boot::resolve_provider;
 Also add a small helper to parse the secret key, in `crates/http/src/media/boot.rs`:
 
 ```rust
-/// Parse `RUSTAPI_SECRET_KEY` (hex, 64 chars → 32 bytes). Returns None if unset.
+/// Parse `FERRUM_SECRET_KEY` (hex, 64 chars → 32 bytes). Returns None if unset.
 pub fn secret_key_from_env() -> Option<[u8; 32]> {
-    let hex = std::env::var("RUSTAPI_SECRET_KEY").ok()?;
+    let hex = std::env::var("FERRUM_SECRET_KEY").ok()?;
     let bytes = (0..hex.len()).step_by(2)
         .map(|i| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok())
         .collect::<Option<Vec<u8>>>()?;
@@ -1384,9 +1384,9 @@ Re-export it too: `pub use media::boot::secret_key_from_env;`.
 After the pool is created and migrations run, and before building `AppState`, add:
 
 ```rust
-    let secret_key = rustapi_http::secret_key_from_env();
+    let secret_key = ferrum_http::secret_key_from_env();
     let storage = std::sync::Arc::new(arc_swap::ArcSwap::from(
-        rustapi_http::resolve_provider(&pool, secret_key).await,
+        ferrum_http::resolve_provider(&pool, secret_key).await,
     ));
 ```
 
@@ -1399,16 +1399,16 @@ Add `storage` and `secret_key` to the `AppState { ... }` literal. Add `arc-swap 
 Add imports:
 
 ```rust
-use rustapi_http::{resolve_provider, secret_key_from_env};
+use ferrum_http::{resolve_provider, secret_key_from_env};
 use arc_swap::ArcSwap;
 ```
 
 Before building `state`, add (use a per-test temp base dir for the local provider so tests don't collide):
 
 ```rust
-        let media_dir = std::env::temp_dir().join(format!("rustapi-media-test-{}", uuid::Uuid::new_v4()));
-        std::env::set_var("RUSTAPI_MEDIA_BASE_DIR", media_dir.to_string_lossy().to_string());
-        std::env::set_var("RUSTAPI_MEDIA_PROVIDER", "local");
+        let media_dir = std::env::temp_dir().join(format!("ferrum-media-test-{}", uuid::Uuid::new_v4()));
+        std::env::set_var("FERRUM_MEDIA_BASE_DIR", media_dir.to_string_lossy().to_string());
+        std::env::set_var("FERRUM_MEDIA_PROVIDER", "local");
         let secret_key = secret_key_from_env();
         let storage = Arc::new(ArcSwap::from(resolve_provider(&pool, secret_key).await));
 ```
@@ -1459,7 +1459,7 @@ use axum::http::StatusCode;
 use axum::routing::{get, post, put};
 use axum::{Extension, Json, Router};
 use chrono::{DateTime, Utc};
-use rustapi_core::{Action, Error, Principal};
+use ferrum_core::{Action, Error, Principal};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -1524,7 +1524,7 @@ async fn create_folder(
 ) -> Result<(StatusCode, Json<FolderView>), ApiError> {
     ensure(&state, &principal, Action::ContentWrite).await?;
     if body.name.trim().is_empty() {
-        return Err(ApiError(Error::Validation(rustapi_core::ValidationErrors::field("name", "required"))));
+        return Err(ApiError(Error::Validation(ferrum_core::ValidationErrors::field("name", "required"))));
     }
     let row = store::create_folder(&state.pool, body.parent_id, body.name.trim())
         .await
@@ -1661,7 +1661,7 @@ async fn folder_crud_and_nonempty_delete() {
 
 - [ ] **Step 4: Run the test**
 
-Run: `cargo test -p rustapi-bin --test media folder_crud_and_nonempty_delete`
+Run: `cargo test -p ferrum-bin --test media folder_crud_and_nonempty_delete`
 Expected: PASS (requires Docker for testcontainers). If Docker unavailable, build-only: `cargo build --workspace` must pass; note the test couldn't run.
 
 - [ ] **Step 5: Commit**
@@ -1687,9 +1687,9 @@ Replace `list_providers`, `get_settings`, `put_settings`, `test_settings` stubs 
 async fn list_providers(
     State(state): State<AppState>,
     Extension(principal): Extension<Principal>,
-) -> Result<Json<Vec<rustapi_media::ProviderDescriptor>>, ApiError> {
+) -> Result<Json<Vec<ferrum_media::ProviderDescriptor>>, ApiError> {
     ensure(&state, &principal, Action::ContentRead).await?;
-    Ok(Json(rustapi_media::descriptors()))
+    Ok(Json(ferrum_media::descriptors()))
 }
 
 const MASK: &str = "••••";
@@ -1706,7 +1706,7 @@ async fn get_settings(
     let view = row.map(|r| {
         let mut cfg = r.config.clone();
         if let Some(obj) = cfg.as_object_mut() {
-            for name in rustapi_media::secret_fields(&r.provider) {
+            for name in ferrum_media::secret_fields(&r.provider) {
                 if obj.contains_key(name) {
                     obj.insert(name.to_string(), serde_json::Value::String(MASK.into()));
                 }
@@ -1728,12 +1728,12 @@ fn prepare_config_for_save(
     mut config: serde_json::Value,
     previous: Option<&store::SettingsRow>,
 ) -> Result<serde_json::Value, ApiError> {
-    let secrets = rustapi_media::secret_fields(provider);
+    let secrets = ferrum_media::secret_fields(provider);
     if secrets.is_empty() {
         return Ok(config);
     }
     let key = state.secret_key.ok_or_else(|| {
-        ApiError(Error::Conflict("RUSTAPI_SECRET_KEY not set; cannot store provider secrets".into()))
+        ApiError(Error::Conflict("FERRUM_SECRET_KEY not set; cannot store provider secrets".into()))
     })?;
     if let Some(obj) = config.as_object_mut() {
         for name in secrets {
@@ -1747,7 +1747,7 @@ fn prepare_config_for_save(
                     }
                 }
                 Some(plain) => {
-                    let enc = rustapi_media::secret::encrypt(&key, plain)
+                    let enc = ferrum_media::secret::encrypt(&key, plain)
                         .map_err(|_| internal(anyhow::anyhow!("encrypt failed")))?;
                     obj.insert(name.to_string(), serde_json::Value::String(enc));
                 }
@@ -1763,8 +1763,8 @@ async fn put_settings(
     Json(body): Json<SettingsBody>,
 ) -> Result<StatusCode, ApiError> {
     ensure(&state, &principal, Action::ContentWrite).await?;
-    rustapi_media::validate(&body.provider, &body.config)
-        .map_err(|e| ApiError(Error::Validation(rustapi_core::ValidationErrors::field("config", &e.to_string()))))?;
+    ferrum_media::validate(&body.provider, &body.config)
+        .map_err(|e| ApiError(Error::Validation(ferrum_core::ValidationErrors::field("config", &e.to_string()))))?;
 
     let previous = store::get_settings(&state.pool).await.map_err(internal)?;
     let to_store = prepare_config_for_save(&state, &body.provider, body.config.clone(), previous.as_ref())?;
@@ -1775,7 +1775,7 @@ async fn put_settings(
     if let Some(key) = &state.secret_key {
         crate::media::boot::decrypt_secrets(&body.provider, &mut live_cfg, key);
     }
-    let provider = rustapi_media::build(&body.provider, &live_cfg)
+    let provider = ferrum_media::build(&body.provider, &live_cfg)
         .map_err(|e| ApiError(Error::Unsupported(e.to_string())))?;
     state.storage.store(std::sync::Arc::from(provider));
     Ok(StatusCode::NO_CONTENT)
@@ -1787,18 +1787,18 @@ async fn test_settings(
     Json(body): Json<SettingsBody>,
 ) -> Result<StatusCode, ApiError> {
     ensure(&state, &principal, Action::ContentWrite).await?;
-    rustapi_media::validate(&body.provider, &body.config)
-        .map_err(|e| ApiError(Error::Validation(rustapi_core::ValidationErrors::field("config", &e.to_string()))))?;
+    ferrum_media::validate(&body.provider, &body.config)
+        .map_err(|e| ApiError(Error::Validation(ferrum_core::ValidationErrors::field("config", &e.to_string()))))?;
     // If secrets are masked, fill from stored config so "Test" works after load.
     let mut cfg = body.config.clone();
     if let Some(obj) = cfg.as_object_mut() {
         let prev = store::get_settings(&state.pool).await.map_err(internal)?;
-        for name in rustapi_media::secret_fields(&body.provider) {
+        for name in ferrum_media::secret_fields(&body.provider) {
             if obj.get(name).and_then(|v| v.as_str()) == Some(MASK) {
                 if let (Some(prev), Some(key)) = (&prev, &state.secret_key) {
                     if prev.provider == body.provider {
                         if let Some(serde_json::Value::String(enc)) = prev.config.get(name) {
-                            if let Ok(plain) = rustapi_media::secret::decrypt(key, enc) {
+                            if let Ok(plain) = ferrum_media::secret::decrypt(key, enc) {
                                 obj.insert(name.to_string(), serde_json::Value::String(plain));
                             }
                         }
@@ -1807,7 +1807,7 @@ async fn test_settings(
             }
         }
     }
-    let provider = rustapi_media::build(&body.provider, &cfg)
+    let provider = ferrum_media::build(&body.provider, &cfg)
         .map_err(|e| ApiError(Error::Unsupported(e.to_string())))?;
     provider.test().await
         .map_err(|e| ApiError(Error::Conflict(format!("connection test failed: {e}"))))?;
@@ -1815,7 +1815,7 @@ async fn test_settings(
 }
 ```
 
-> **Note:** `rustapi_media::secret` must be public. Confirm `crates/media/src/lib.rs` has `pub mod secret;` (Task 3) and `boot::decrypt_secrets` is `pub` (Task 11).
+> **Note:** `ferrum_media::secret` must be public. Confirm `crates/media/src/lib.rs` has `pub mod secret;` (Task 3) and `boot::decrypt_secrets` is `pub` (Task 11).
 
 - [ ] **Step 2: Add settings integration test**
 
@@ -1846,11 +1846,11 @@ async fn settings_masks_secrets_and_lists_providers() {
 }
 ```
 
-> A secret-masking test for S3 requires `RUSTAPI_SECRET_KEY` to be set in the harness. The harness does not set it by default, so saving an S3 provider returns 409 ("RUSTAPI_SECRET_KEY not set"). That path is covered by the `prepare_config_for_save` unit logic; the integration test covers the local (no-secret) happy path. If desired, the implementer may set `RUSTAPI_SECRET_KEY` in the harness and add an S3 mask assertion, but it is optional.
+> A secret-masking test for S3 requires `FERRUM_SECRET_KEY` to be set in the harness. The harness does not set it by default, so saving an S3 provider returns 409 ("FERRUM_SECRET_KEY not set"). That path is covered by the `prepare_config_for_save` unit logic; the integration test covers the local (no-secret) happy path. If desired, the implementer may set `FERRUM_SECRET_KEY` in the harness and add an S3 mask assertion, but it is optional.
 
 - [ ] **Step 3: Run tests**
 
-Run: `cargo test -p rustapi-bin --test media`
+Run: `cargo test -p ferrum-bin --test media`
 Expected: PASS (Docker required). Build must pass regardless: `cargo build --workspace`.
 
 - [ ] **Step 4: Commit**
@@ -1942,7 +1942,7 @@ async fn upload_asset(
                 let txt = field.text().await.map_err(|e| ApiError(Error::Unsupported(e.to_string())))?;
                 if !txt.is_empty() {
                     folder_id = Some(Uuid::parse_str(&txt).map_err(|_| {
-                        ApiError(Error::Validation(rustapi_core::ValidationErrors::field("folder_id", "invalid uuid")))
+                        ApiError(Error::Validation(ferrum_core::ValidationErrors::field("folder_id", "invalid uuid")))
                     })?);
                 }
             }
@@ -1956,7 +1956,7 @@ async fn upload_asset(
     }
 
     let bytes = file_bytes.ok_or_else(|| {
-        ApiError(Error::Validation(rustapi_core::ValidationErrors::field("file", "required")))
+        ApiError(Error::Validation(ferrum_core::ValidationErrors::field("file", "required")))
     })?;
 
     // Mime sniff (fallback to octet-stream), checksum, optional image dims.
@@ -2001,7 +2001,7 @@ async fn upload_asset(
 
 /// Active provider id: env override → DB settings → "local" default.
 async fn current_provider_id(state: &AppState) -> String {
-    if let Ok(p) = std::env::var("RUSTAPI_MEDIA_PROVIDER") { return p; }
+    if let Ok(p) = std::env::var("FERRUM_MEDIA_PROVIDER") { return p; }
     if let Ok(Some(row)) = store::get_settings(&state.pool).await { return row.provider; }
     "local".to_string()
 }
@@ -2066,7 +2066,7 @@ async fn get_asset_raw(
         .ok_or(ApiError(Error::NotFound))?;
     let provider = state.storage.load();
     let bytes = provider.get(&row.storage_key).await.map_err(|e| match e {
-        rustapi_media::StorageError::NotFound => ApiError(Error::NotFound),
+        ferrum_media::StorageError::NotFound => ApiError(Error::NotFound),
         other => ApiError(Error::Internal(anyhow::anyhow!("storage get: {other}"))),
     })?;
     Ok((
@@ -2140,7 +2140,7 @@ async fn asset_upload_and_raw_round_trip() {
 
 - [ ] **Step 3: Run the full media test suite**
 
-Run: `cargo test -p rustapi-bin --test media`
+Run: `cargo test -p ferrum-bin --test media`
 Expected: PASS — `folder_crud_and_nonempty_delete`, `settings_masks_secrets_and_lists_providers`, `asset_upload_and_raw_round_trip` (Docker required).
 
 - [ ] **Step 4: Run the whole workspace test suite**
@@ -2173,19 +2173,19 @@ The Media Library defaults to **local filesystem** storage under `./media-data`
 — no configuration needed. To use S3 (or an S3-compatible service) set:
 
 ```sh
-export RUSTAPI_MEDIA_PROVIDER=s3
-export RUSTAPI_S3_BUCKET=my-bucket
-export RUSTAPI_S3_REGION=us-east-1
-export RUSTAPI_S3_ENDPOINT=https://...   # optional, for MinIO/R2/Spaces
-export RUSTAPI_S3_ACCESS_KEY=...
-export RUSTAPI_S3_SECRET_KEY=...
+export FERRUM_MEDIA_PROVIDER=s3
+export FERRUM_S3_BUCKET=my-bucket
+export FERRUM_S3_REGION=us-east-1
+export FERRUM_S3_ENDPOINT=https://...   # optional, for MinIO/R2/Spaces
+export FERRUM_S3_ACCESS_KEY=...
+export FERRUM_S3_SECRET_KEY=...
 ```
 
 Alternatively configure the provider at runtime via `PUT /admin/media/settings`.
 Storing provider secrets in the database requires a 32-byte hex encryption key:
 
 ```sh
-export RUSTAPI_SECRET_KEY=$(openssl rand -hex 32)
+export FERRUM_SECRET_KEY=$(openssl rand -hex 32)
 ```
 
 Env configuration always overrides database settings.

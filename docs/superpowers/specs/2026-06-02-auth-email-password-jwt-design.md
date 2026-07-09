@@ -5,7 +5,7 @@
 
 ## Goal
 
-Replace the static `RUSTAPI_ADMIN_KEY` shared-secret with real user
+Replace the static `FERRUM_ADMIN_KEY` shared-secret with real user
 authentication (email/password → JWT) and role-based authorization. This is
 slice 1 of a larger auth effort; later methods (basic auth, OAuth) and
 features (refresh, logout, user CRUD) build on the foundation laid here.
@@ -19,7 +19,7 @@ features (refresh, logout, user CRUD) build on the foundation laid here.
 | Password hash | **Argon2id** (PHC string) |
 | Authz model | RBAC, **multi-role per user** (`Vec<String>`), **hardcoded** role→Action map |
 | Default role | `admin` |
-| Bootstrap | **Remove `RUSTAPI_ADMIN_KEY`** → first-run `POST /auth/setup` (self-closing) |
+| Bootstrap | **Remove `FERRUM_ADMIN_KEY`** → first-run `POST /auth/setup` (self-closing) |
 | Endpoints (slice 1) | `/auth/setup`, `/auth/login`, `/auth/me` |
 
 ## Architecture
@@ -133,17 +133,17 @@ Replace `require_admin_key` with `require_auth`:
 
 `crates/bin/src/config.rs` and `AppConfig` (`crates/http/src/state.rs`):
 
-- **Remove** `admin_key` / `RUSTAPI_ADMIN_KEY`.
-- **Add** `jwt_secret` from `RUSTAPI_JWT_SECRET` — required, min 32 chars
+- **Remove** `admin_key` / `FERRUM_ADMIN_KEY`.
+- **Add** `jwt_secret` from `FERRUM_JWT_SECRET` — required, min 32 chars
   (same validation pattern the old admin key used).
 - **Add** `jwt_ttl_secs` (default `86400`), optionally from
-  `RUSTAPI_JWT_TTL_SECS`.
+  `FERRUM_JWT_TTL_SECS`.
 - `main.rs`: construct `AppState` with `authz: Arc::new(RoleAuthz)` instead of
   `AlwaysAllow`, and the new JWT config fields.
 
 ## Error Handling
 
-Extend `rustapi_core::Error` and the `ApiError` → HTTP mapping:
+Extend `ferrum_core::Error` and the `ApiError` → HTTP mapping:
 
 - `Unauthorized` → `401` (reuse; update message — no longer "API key").
 - **New** `Forbidden` → `403` (authz deny). Current code returns
@@ -174,8 +174,8 @@ the majority of call sites with one change.
 
 ## Migration / Breaking-Change Impact
 
-- `docker-compose.yml` + `README.md`: drop `RUSTAPI_ADMIN_KEY`, add
-  `RUSTAPI_JWT_SECRET`, document the first-run `/auth/setup` step.
+- `docker-compose.yml` + `README.md`: drop `FERRUM_ADMIN_KEY`, add
+  `FERRUM_JWT_SECRET`, document the first-run `/auth/setup` step.
 - Content seed path (`seed_if_empty`) is unaffected — user setup is separate
   from content seeding.
 - UI: studio currently renders from mock data (API wiring still TBD per

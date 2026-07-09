@@ -79,7 +79,7 @@ export async function apiFetch<T>(path: string, opts: FetchOpts = {}): Promise<T
 
   if (!resp.ok) {
     // The server serializes per-field errors as `{field, reason}` (see
-    // rustapi_core::FieldValidation). Normalize `reason` into `message` so
+    // ferrum_core::FieldValidation). Normalize `reason` into `message` so
     // consumers can read a single field.
     type WireField = { field: string; reason?: string; message?: string };
     const env = (payload as { error?: { code?: string; message?: string; details?: { fields?: WireField[] } } } | null)?.error;

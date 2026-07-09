@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use rustapi_core::{ContentType, Error, Field, NewContentType, ValidationErrors};
+use ferrum_core::{ContentType, Error, Field, NewContentType, ValidationErrors};
 use serde::Deserialize;
 
 /// How aggressively sync reconciles the DB toward the TOML.
@@ -18,7 +18,7 @@ pub enum SyncMode {
 }
 
 impl SyncMode {
-    /// Parse from the `RUSTAPI_SCHEMA_SYNC` env value. Unknown/empty → Additive.
+    /// Parse from the `FERRUM_SCHEMA_SYNC` env value. Unknown/empty → Additive.
     pub fn from_env_str(s: &str) -> Self {
         match s.trim().to_ascii_lowercase().as_str() {
             "full" => SyncMode::Full,
@@ -71,7 +71,7 @@ struct TomlContentType {
     name: String,
     display_name: String,
     #[serde(default)]
-    kind: rustapi_core::ContentTypeKind,
+    kind: ferrum_core::ContentTypeKind,
     #[serde(default)]
     options: serde_json::Value,
     #[serde(default, rename = "field")]
@@ -158,7 +158,7 @@ pub(crate) fn plan_sync(
                 if mode == SyncMode::Full {
                     for f in &existing.fields {
                         if !des_fields.contains_key(f.name.as_str())
-                            && !rustapi_core::is_system_column(&f.name)
+                            && !ferrum_core::is_system_column(&f.name)
                         {
                             drop_fields.push(f.name.clone());
                         }
@@ -413,7 +413,7 @@ pub async fn sync_from_path(
                 if add_fields.is_empty() && drop_fields.is_empty() && !options_changed {
                     continue;
                 }
-                let patch = rustapi_core::PatchContentType {
+                let patch = ferrum_core::PatchContentType {
                     display_name: None,
                     add_fields,
                     drop_fields,
@@ -438,7 +438,7 @@ pub async fn sync_from_path(
                 if let Some(existing) = schemas.registry().get(&name).await {
                     let mut obj = existing.options.as_object().cloned().unwrap_or_default();
                     obj.remove("managed");
-                    let patch = rustapi_core::PatchContentType {
+                    let patch = ferrum_core::PatchContentType {
                         display_name: None,
                         add_fields: vec![],
                         drop_fields: vec![],
@@ -535,7 +535,7 @@ async fn referencing_types(
     names.into_iter().collect()
 }
 
-use rustapi_sql::Component;
+use ferrum_sql::Component;
 
 /// One reconciliation step for components.
 #[derive(Debug, Clone, PartialEq)]
@@ -586,7 +586,7 @@ pub(crate) fn plan_components(
 mod tests {
     use super::*;
     use chrono::Utc;
-    use rustapi_core::FieldKind;
+    use ferrum_core::FieldKind;
     use serde_json::json;
     use uuid::Uuid;
 
@@ -608,7 +608,7 @@ mod tests {
             display_name: name.into(),
             fields,
             options: json!({}),
-            kind: rustapi_core::ContentTypeKind::Collection,
+            kind: ferrum_core::ContentTypeKind::Collection,
         }
     }
 
@@ -623,14 +623,14 @@ mod tests {
             } else {
                 json!({})
             },
-            kind: rustapi_core::ContentTypeKind::Collection,
+            kind: ferrum_core::ContentTypeKind::Collection,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
     }
 
-    fn comp(uid: &str, fields: Vec<Field>, managed: bool) -> rustapi_sql::Component {
-        rustapi_sql::Component {
+    fn comp(uid: &str, fields: Vec<Field>, managed: bool) -> ferrum_sql::Component {
+        ferrum_sql::Component {
             uid: uid.into(),
             display_name: uid.into(),
             fields,

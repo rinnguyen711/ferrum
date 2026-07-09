@@ -29,7 +29,7 @@ i18n, single-type editing, component types. These appear as placeholders only.
 ## Decisions (from brainstorming)
 
 - **Seeding:** backend bootstrap on startup (gated behind empty-DB check + a
-  `RUSTAPI_SEED` flag, default on for the demo). Real, persistent, works for raw API.
+  `FERRUM_SEED` flag, default on for the demo). Real, persistent, works for raw API.
 - **Relations:** wire real relations — seed authors + categories, capture their UUIDs,
   seed articles pointing at them.
 - **Identity:** generic "Admin" identity in shell (not the fictional "Mara Velez").
@@ -51,7 +51,7 @@ Flow:
 1. If `cfg.seed` is false → return.
 2. If `schemas.registry().all().await` is non-empty → return (idempotent; never
    touches an existing dataset).
-3. Build three `NewContentType` values matching `design/rustapi/data.js` schemas,
+3. Build three `NewContentType` values matching `design/ferrum/data.js` schemas,
    mapped to real `FieldKind`s:
    - Article: title (String, req), slug (Slug, req), status (Enum draft/review/published, req),
      excerpt (Text), body (Text, req), author (Relation→author, req),
@@ -67,15 +67,15 @@ Flow:
    fails, declare the inverse relations via a follow-up `patch` after both types exist,
    or omit the inverse `articles` field (it is populate-only convenience, not required).
 4. Insert rows by reusing the existing write path helpers:
-   - `rustapi_http::entry::body_to_binds(&ct, body_map, true)` → binds + relation checks
-   - `rustapi_sql::insert(&ct, &binds)` → SQL + binds
+   - `ferrum_http::entry::body_to_binds(&ct, body_map, true)` → binds + relation checks
+   - `ferrum_sql::insert(&ct, &binds)` → SQL + binds
    - `bind_all(sqlx::query(&sql), &binds).fetch_one(pool)` → returns the row; capture `id`.
    Seed authors first (capture id by name), categories next (capture id by name),
    then articles referencing those captured UUIDs for `author` and `categories`.
-   Data drawn from `design/rustapi/data.js` (4 authors, 5 categories, 10 articles).
+   Data drawn from `design/ferrum/data.js` (4 authors, 5 categories, 10 articles).
 5. Log a one-line summary (`tracing::info!`) of what was created.
 
-Config: add `seed: bool` to `crates/bin/src/config.rs`, env `RUSTAPI_SEED`
+Config: add `seed: bool` to `crates/bin/src/config.rs`, env `FERRUM_SEED`
 (default `true`). Document in README + docker-compose comment.
 
 Errors during seed are logged but **non-fatal** unless a hard DB error — the server
@@ -87,7 +87,7 @@ exists → treat as already-seeded, continue.)
 The shell (`rs-app` rail + secondary panel + topbar) already matches the design.
 CSS classes for the richer screens largely exist in `ui/src/styles.css`; the gap
 list (`rs-builder-empty`, `rs-radio-cards`, `rs-rel*`, `rs-setting-row`, modal
-classes, etc.) will be ported from `design/rustapi/styles.css` where missing.
+classes, etc.) will be ported from `design/ferrum/styles.css` where missing.
 
 Per-screen changes:
 

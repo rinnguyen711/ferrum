@@ -2,7 +2,7 @@
 
 use crate::registry::SchemaRegistry;
 use chrono::Utc;
-use rustapi_core::{
+use ferrum_core::{
     Cardinality, ContentType, Error, Field, NewContentType, PatchContentType, ValidationErrors,
 };
 use sqlx::{PgPool, Postgres, Transaction};
@@ -15,7 +15,7 @@ use uuid::Uuid;
 pub(crate) fn published_at_transition(was_enabled: bool, now_enabled: bool) -> Result<bool, Error> {
     match (was_enabled, now_enabled) {
         (false, true) => Ok(true),
-        (true, false) => Err(Error::Validation(rustapi_core::ValidationErrors::single(
+        (true, false) => Err(Error::Validation(ferrum_core::ValidationErrors::single(
             "disabling Draft & Publish is not supported",
         ))),
         _ => Ok(false),
@@ -28,7 +28,7 @@ pub(crate) fn published_at_transition(was_enabled: bool, now_enabled: bool) -> R
 pub(crate) fn localize_transition(was_localized: bool, now_localized: bool) -> Result<bool, Error> {
     match (was_localized, now_localized) {
         (false, true) => Ok(true),
-        (true, false) => Err(Error::Validation(rustapi_core::ValidationErrors::single(
+        (true, false) => Err(Error::Validation(ferrum_core::ValidationErrors::single(
             "de-localizing a content type is not supported",
         ))),
         _ => Ok(false),
@@ -65,8 +65,8 @@ impl SchemaService {
         let id = Uuid::new_v4();
         let now = Utc::now();
         let kind_str = match payload.kind {
-            rustapi_core::ContentTypeKind::Collection => "collection",
-            rustapi_core::ContentTypeKind::Single => "single",
+            ferrum_core::ContentTypeKind::Collection => "collection",
+            ferrum_core::ContentTypeKind::Single => "single",
         };
         let ct = ContentType {
             id,
@@ -79,7 +79,7 @@ impl SchemaService {
             updated_at: now,
         };
 
-        let create_table_sql = rustapi_sql::create_table(&ct)
+        let create_table_sql = ferrum_sql::create_table(&ct)
             .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
 
         let mut tx: Transaction<'_, Postgres> = self.pool.begin().await.map_err(internal)?;
@@ -153,14 +153,14 @@ impl SchemaService {
                 .map(|m| m.multiple)
                 .unwrap_or(false);
             if is_m2m {
-                let sql = rustapi_sql::drop_join_table(name, drop_name)
+                let sql = ferrum_sql::drop_join_table(name, drop_name)
                     .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
                 sqlx::query(&sql)
                     .execute(&mut *tx)
                     .await
                     .map_err(map_db_err)?;
             } else if is_multi_media {
-                let sql = rustapi_sql::drop_media_join_table(name, drop_name)
+                let sql = ferrum_sql::drop_media_join_table(name, drop_name)
                     .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
                 sqlx::query(&sql)
                     .execute(&mut *tx)
@@ -171,7 +171,7 @@ impl SchemaService {
                 let col = dropped
                     .map(|f| f.physical_column())
                     .unwrap_or_else(|| drop_name.clone());
-                let sql = rustapi_sql::drop_column(name, &col)
+                let sql = ferrum_sql::drop_column(name, &col)
                     .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
                 sqlx::query(&sql)
                     .execute(&mut *tx)
@@ -192,7 +192,7 @@ impl SchemaService {
                     continue;
                 }
             }
-            let sql = rustapi_sql::add_column(name, f)
+            let sql = ferrum_sql::add_column(name, f)
                 .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
             sqlx::query(&sql)
                 .execute(&mut *tx)
@@ -212,7 +212,7 @@ impl SchemaService {
                 .enum_meta()
                 .expect("validated to be enum by PatchContentType::validate");
             meta.values.extend(ext.append.iter().cloned());
-            let sql = rustapi_sql::alter_enum_values(name, &ext.field, &meta.values)
+            let sql = ferrum_sql::alter_enum_values(name, &ext.field, &meta.values)
                 .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
             // alter_enum_values returns two statements joined by "; ". Split and
             // execute each on the same transaction.
@@ -242,7 +242,7 @@ impl SchemaService {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         if published_at_transition(was_enabled, now_enabled)? {
-            let sql = rustapi_sql::add_published_at_column(name)
+            let sql = ferrum_sql::add_published_at_column(name)
                 .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
             sqlx::query(&sql)
                 .execute(&mut *tx)
@@ -266,7 +266,7 @@ impl SchemaService {
             .map_err(map_db_err)?
             .unwrap_or_else(|| "en".to_string());
 
-            let ddl = rustapi_sql::ddl::localize_table(name, &default_code)
+            let ddl = ferrum_sql::ddl::localize_table(name, &default_code)
                 .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
             // localize_table returns 7 `;`-separated statements. The only
             // interpolated value is the validated default-locale tag (no `;`),
@@ -316,14 +316,14 @@ impl SchemaService {
         }
         let owned = self.registry.m2m_targets(name).await;
         let referencing = self.registry.m2m_referencing(name).await;
-        let drop_sql = rustapi_sql::drop_table(name)
+        let drop_sql = ferrum_sql::drop_table(name)
             .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
 
         let mut tx = self.pool.begin().await.map_err(internal)?;
         // Drop dependent join tables first so the main DROP TABLE has no
         // lingering FK references.
         for (field, _target) in &owned {
-            let sql = rustapi_sql::drop_join_table(name, field)
+            let sql = ferrum_sql::drop_join_table(name, field)
                 .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
             sqlx::query(&sql)
                 .execute(&mut *tx)
@@ -334,7 +334,7 @@ impl SchemaService {
             if owner == name {
                 continue; // already handled in `owned`
             }
-            let sql = rustapi_sql::drop_join_table(owner, field)
+            let sql = ferrum_sql::drop_join_table(owner, field)
                 .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
             sqlx::query(&sql)
                 .execute(&mut *tx)
@@ -458,7 +458,7 @@ fn map_db_err(e: sqlx::Error) -> Error {
         // Per spec §5.6, surface other DB errors (DDL failures, constraint
         // violations) as 422 with the PG code + message under details.db.
         let code = db.code().map(|c| c.into_owned()).unwrap_or_default();
-        return Error::Validation(rustapi_core::ValidationErrors::db(code, db.message()));
+        return Error::Validation(ferrum_core::ValidationErrors::db(code, db.message()));
     }
     internal(e)
 }
@@ -471,7 +471,7 @@ async fn exec_create_join_table(
     field: &str,
     target: &str,
 ) -> Result<(), Error> {
-    let (jt, idx) = rustapi_sql::create_join_table(owner, field, target)
+    let (jt, idx) = ferrum_sql::create_join_table(owner, field, target)
         .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
     sqlx::query(&jt)
         .execute(&mut **tx)
@@ -491,7 +491,7 @@ async fn exec_create_media_join_table(
     ct: &str,
     field: &str,
 ) -> Result<(), Error> {
-    let (jt, idx) = rustapi_sql::create_media_join_table(ct, field)
+    let (jt, idx) = ferrum_sql::create_media_join_table(ct, field)
         .map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
     sqlx::query(&jt)
         .execute(&mut **tx)
@@ -508,7 +508,7 @@ async fn exec_create_media_join_table(
 mod tests {
     use super::*;
     use chrono::Utc;
-    use rustapi_core::{ContentType, ContentTypeKind, Field, FieldKind};
+    use ferrum_core::{ContentType, ContentTypeKind, Field, FieldKind};
     use serde_json::json;
 
     fn user_ct() -> ContentType {

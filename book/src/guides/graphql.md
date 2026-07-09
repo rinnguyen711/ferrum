@@ -14,7 +14,7 @@ GraphQL is served at a single endpoint:
 POST /api/graphql
 ```
 
-When docs are enabled (`RUSTAPI_DOCS_ENABLED`, on by default), opening
+When docs are enabled (`FERRUM_DOCS_ENABLED`, on by default), opening
 `/api/graphql` in a browser serves an interactive GraphiQL playground. Auth
 works the same as REST — send a `Bearer` token, whether a user JWT or an
 [API token](api-tokens.md).

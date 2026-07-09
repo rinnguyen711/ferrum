@@ -4,7 +4,7 @@ pub mod resolve;
 pub mod scalars;
 
 use async_graphql::dynamic::{Schema, SchemaError};
-use rustapi_core::ContentType;
+use ferrum_core::ContentType;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
