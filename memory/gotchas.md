@@ -56,8 +56,8 @@ Bugs, edge cases, surprises.
 - Fix: skip `from_json` validation for Media and Relation kinds inside component instance validation
 
 ## Dev backend :8080 — compose stack, creds unknown to agent
-- Runs via docker compose: `rustapi-ferrum-1` + `rustapi-postgres-1` (DB internal-only,
-  `postgres://ferrum:ferrum@postgres:5432/ferrum`). Post-rename (2026-07-09): compose SERVICE is now `ferrum`, but the on-disk dir is still `rustapi` so the compose PROJECT prefix stays `rustapi-`. Any running pre-rename stack still uses old `rustapi` DB creds until recreated.
+- Runs via docker compose: `ferrum-ferrum-1` + `ferrum-postgres-1` (DB internal-only,
+  `postgres://ferrum:ferrum@postgres:5432/ferrum`). Post-rename (2026-07-09): service `ferrum`, on-disk dir renamed to `~/projects/ferrum` so compose PROJECT prefix is `ferrum-`. Any pre-rename stack still running uses the old `rustapi-*` container names + `rustapi` DB creds until torn down + recreated.
 - Admin login is NOT the README example (`admin@example.com` / `change-me-please` fails)
 - For browser testing: ask user for creds. Do NOT insert users/data into this DB (user rejected)
 - Vite proxy hardcoded to `:8080` in `ui/vite.config.ts` — can't point dev UI at alternate backend
